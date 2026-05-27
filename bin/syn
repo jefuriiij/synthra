@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import("../dist/cli/index.js").catch((err) => {
+  console.error("[syn] failed to load CLI:", err?.message ?? err);
+  process.exit(1);
+});
