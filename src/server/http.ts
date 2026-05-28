@@ -13,6 +13,7 @@ import type { ServerContext } from "./context.js";
 import { handleMcpRequest } from "./mcp.js";
 import { findFreePort } from "./port.js";
 import { handleActivity } from "./routes/activity.js";
+import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
 import { handleLog } from "./routes/log.js";
 import { handlePack } from "./routes/pack.js";
@@ -83,6 +84,11 @@ function buildApp(ctx: ServerContext, port: number): Hono {
     return c.json(
       await handleActivity(Number.isFinite(sinceMs) ? sinceMs : undefined, ctx),
     );
+  });
+
+  app.post("/context-update", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleContextUpdate(body, ctx));
   });
 
   app.post("/mcp", async (c) => {

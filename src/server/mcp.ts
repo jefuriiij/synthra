@@ -10,6 +10,8 @@
 
 import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, SymbolNode } from "../graph/types.js";
+import { recallEntries, rememberEntry } from "../memory/index.js";
+import type { EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
 import type { ServerContext } from "./context.js";
 
@@ -97,6 +99,50 @@ const TOOLS = [
       required: ["files"],
     },
   },
+  {
+    name: "context_remember",
+    description:
+      "Persist a decision/task/next-step/fact/blocker into the project's branch-aware context store. Use when the user makes a decision worth keeping, identifies a TODO, or surfaces a key fact. Entries land in `.synthra/context-store.json` on the default branch, or `.synthra/branches/<sanitized>/context-store.json` on a feature branch — git-tracked, so teammates inherit them and they merge naturally.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "The thing to remember (1–3 sentences)." },
+        kind: {
+          type: "string",
+          enum: ["decision", "task", "next", "fact", "blocker"],
+          description: "What kind of entry. Required.",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tags for grouping (e.g. 'auth', 'perf').",
+        },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional project-relative file paths this entry relates to.",
+        },
+      },
+      required: ["text", "kind"],
+    },
+  },
+  {
+    name: "context_recall",
+    description:
+      "Read previously-stored decisions/tasks/facts from the project's branch-aware context store. Defaults to the current branch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["decision", "task", "next", "fact", "blocker"],
+          description: "Filter to a single kind.",
+        },
+        branch: { type: "string", description: "Override which branch to read from." },
+        limit: { type: "number", description: "Return only the most recent N entries." },
+      },
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -111,6 +157,10 @@ async function callTool(
       return graphRead(args, ctx);
     case "graph_register_edit":
       return graphRegisterEdit(args, ctx);
+    case "context_remember":
+      return contextRemember(args, ctx);
+    case "context_recall":
+      return contextRecall(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -173,6 +223,61 @@ function graphRegisterEdit(args: Record<string, unknown> | undefined, _ctx: Serv
 
 export function getRegisteredEdits(): string[] {
   return Array.from(editedFiles);
+}
+
+const VALID_KINDS = new Set<EntryKind>(["decision", "task", "next", "fact", "blocker"]);
+
+async function contextRemember(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const text = typeof args?.text === "string" ? args.text.trim() : "";
+  const kindRaw = typeof args?.kind === "string" ? args.kind : "";
+  if (!text) return errorContent("context_remember: 'text' (string) is required");
+  if (!VALID_KINDS.has(kindRaw as EntryKind)) {
+    return errorContent(
+      `context_remember: 'kind' must be one of ${Array.from(VALID_KINDS).join(", ")}`,
+    );
+  }
+  const tags = Array.isArray(args?.tags)
+    ? (args.tags as unknown[]).filter((t): t is string => typeof t === "string")
+    : [];
+  const files = Array.isArray(args?.files)
+    ? (args.files as unknown[]).filter((f): f is string => typeof f === "string")
+    : [];
+
+  const result = await rememberEntry(ctx.paths, {
+    text,
+    kind: kindRaw as EntryKind,
+    tags,
+    files,
+  });
+
+  return textContent(
+    `Remembered ${result.entry.type} on branch '${result.branch}'.\n` +
+      `Stored: ${result.storePath}\n` +
+      `CONTEXT.md refreshed: ${result.contextMdPath}`,
+  );
+}
+
+async function contextRecall(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const kind = typeof args?.kind === "string" && VALID_KINDS.has(args.kind as EntryKind)
+    ? (args.kind as EntryKind)
+    : undefined;
+  const branch = typeof args?.branch === "string" ? args.branch : undefined;
+  const limit = typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : undefined;
+
+  const result = await recallEntries(ctx.paths, { kind, branch, limit });
+
+  if (result.entries.length === 0) {
+    const filter = kind ? ` of kind '${kind}'` : "";
+    return textContent(`No context entries${filter} on branch '${result.branch}'.`);
+  }
+
+  const lines = [`# Context entries — branch: ${result.branch}`, ""];
+  for (const e of result.entries) {
+    const tags = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
+    lines.push(`- **${e.type}**${tags} (${e.date}): ${e.content}`);
+    if (e.files.length) lines.push(`  files: ${e.files.join(", ")}`);
+  }
+  return textContent(lines.join("\n"));
 }
 
 export async function handleMcpRequest(

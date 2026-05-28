@@ -1,7 +1,9 @@
 // Structured decisions/tasks/facts that persist across sessions.
 // Stored in .synthra/ (GIT-TRACKED) so teammates inherit them.
 // Branch-partitioned via branches.ts.
-// TODO: M4 — improvement #2
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 export type EntryKind = "decision" | "task" | "next" | "fact" | "blocker";
 
@@ -13,10 +15,31 @@ export interface ContextEntry {
   date: string;
 }
 
-export async function readEntries(_path: string): Promise<ContextEntry[]> {
-  throw new Error("Synthra: readEntries not yet implemented (M4)");
+interface Store {
+  schema_version: number;
+  entries: ContextEntry[];
 }
 
-export async function appendEntry(_path: string, _entry: ContextEntry): Promise<void> {
-  throw new Error("Synthra: appendEntry not yet implemented (M4)");
+const SCHEMA_VERSION = 1;
+
+export async function readEntries(path: string): Promise<ContextEntry[]> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as Partial<Store>;
+    return Array.isArray(parsed.entries) ? parsed.entries : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function writeEntries(path: string, entries: ContextEntry[]): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const store: Store = { schema_version: SCHEMA_VERSION, entries };
+  await writeFile(path, JSON.stringify(store, null, 2) + "\n", "utf8");
+}
+
+export async function appendEntry(path: string, entry: ContextEntry): Promise<void> {
+  const entries = await readEntries(path);
+  entries.push(entry);
+  await writeEntries(path, entries);
 }

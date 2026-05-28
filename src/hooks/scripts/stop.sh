@@ -58,4 +58,9 @@ curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
     '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"stop-hook", project:$p}')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 
+# Refresh CONTEXT.md from the branch-scoped store.
+curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
+  --data "$(jq -nc --arg t "$TRANSCRIPT" '{transcript_path:$t}')" \
+  "http://127.0.0.1:$PORT/context-update" >/dev/null 2>&1
+
 exit 0

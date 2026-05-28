@@ -62,4 +62,13 @@ try {
 } catch {
     # silent
 }
+
+# Refresh CONTEXT.md from the branch-scoped store.
+$ctxPayload = @{ transcript_path = $transcript } | ConvertTo-Json -Compress
+try {
+    Invoke-RestMethod -Uri "http://127.0.0.1:$port/context-update" -Method POST `
+        -Body $ctxPayload -ContentType "application/json" -TimeoutSec 3 | Out-Null
+} catch {
+    # silent
+}
 exit 0
