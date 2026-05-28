@@ -9,6 +9,7 @@ import { writeFile } from "node:fs/promises";
 import { ActivityStore } from "../activity/activity-log.js";
 import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js";
 import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
+import { scanProject } from "../cli/scan-command.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
@@ -125,9 +126,27 @@ export async function startServer(
   const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) =>
     ctx.activity.add(e),
   );
-  const gitWatcher: GitWatcher = createGitWatcher(paths.projectRoot, (e) =>
-    ctx.activity.add(e),
-  );
+  const gitWatcher: GitWatcher = createGitWatcher(paths.projectRoot, async (e) => {
+    await ctx.activity.add(e);
+    // Per-branch graph: rebuild on branch switch so the in-memory graph
+    // matches whichever branch is currently checked out.
+    if (e.kind === "branch-switch") {
+      try {
+        const to = (e.details as { to?: string } | undefined)?.to ?? "unknown";
+        log.info(`branch switched to '${to}' — rebuilding graph…`);
+        await scanProject(paths.projectRoot, { silent: true });
+        const [g, idx] = await Promise.all([
+          readGraph(paths.infoGraph),
+          readSymbolIndex(paths.symbolIndex),
+        ]);
+        ctx.graph = g;
+        ctx.symbolIndex = idx;
+        log.info(`graph rebuilt for '${to}' (${g.symbol_count} symbols).`);
+      } catch (err) {
+        log.warn(`branch rescan failed: ${(err as Error).message}`);
+      }
+    }
+  });
   try {
     await fileWatcher.start();
   } catch (err) {

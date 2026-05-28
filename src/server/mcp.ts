@@ -171,6 +171,30 @@ const TOOLS = [
       required: ["text"],
     },
   },
+  {
+    name: "blast_radius",
+    description:
+      "Given a file (or 'file::symbol' target), return all files that depend on it transitively via imports + tests edges. Use BEFORE editing a widely-used file to see what could break. Symbol-level granularity is approximated at the file level (we don't track call edges in v0.1).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "File path or 'file::symbol' notation." },
+        depth: { type: "number", description: "Max hops to traverse. Default 3." },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "dead_code",
+    description:
+      "Return files in the project that no other file imports and no test file references — strong candidates for unused/orphaned code. File-level granularity (v0.1 limitation — symbol-level needs call-graph edges). Common entry-point patterns (main, index, app, CLI, bin/) are excluded heuristically.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Cap on returned files. Default 50." },
+      },
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -193,6 +217,10 @@ async function callTool(
       return recentActivity(args, ctx);
     case "count_tokens":
       return countTokens(args);
+    case "blast_radius":
+      return blastRadius(args, ctx);
+    case "dead_code":
+      return deadCode(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -203,6 +231,122 @@ function countTokens(args: Record<string, unknown> | undefined) {
   if (!text) return errorContent("count_tokens: 'text' (string) is required");
   const tokens = Math.ceil(text.length / 4);
   return textContent(JSON.stringify({ tokens, method: "chars/4 estimate", chars: text.length }));
+}
+
+function blastRadius(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const targetRaw = typeof args?.target === "string" ? args.target.trim() : "";
+  const maxDepth = typeof args?.depth === "number" && args.depth > 0 ? Math.floor(args.depth) : 3;
+  if (!targetRaw) return errorContent("blast_radius: 'target' (string) is required");
+
+  const filePath = targetRaw.split("::", 1)[0]?.trim() ?? targetRaw;
+  const root = ctx.graph.nodes.find(
+    (n): n is FileNode => n.kind === "file" && n.path === filePath,
+  );
+  if (!root) return errorContent(`blast_radius: file not in graph: ${filePath}`);
+
+  // Index reverse edges (to → [{from, kind}]) once per call.
+  const incoming = new Map<string, Array<{ from: string; kind: string }>>();
+  for (const e of ctx.graph.edges) {
+    if (e.kind !== "imports" && e.kind !== "tests") continue;
+    const list = incoming.get(e.to) ?? [];
+    list.push({ from: e.from, kind: e.kind });
+    incoming.set(e.to, list);
+  }
+
+  interface Hit {
+    path: string;
+    depth: number;
+    via: string;
+  }
+
+  const visited = new Set<string>([root.id]);
+  const hits: Hit[] = [];
+  const pathById = new Map<string, string>();
+  for (const n of ctx.graph.nodes) if (n.kind === "file") pathById.set(n.id, n.path);
+
+  let frontier = [root.id];
+  for (let d = 1; d <= maxDepth; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      const callers = incoming.get(cur) ?? [];
+      for (const c of callers) {
+        if (visited.has(c.from)) continue;
+        visited.add(c.from);
+        next.push(c.from);
+        const path = pathById.get(c.from) ?? c.from;
+        hits.push({ path, depth: d, via: c.kind });
+      }
+    }
+    frontier = next;
+    if (next.length === 0) break;
+  }
+
+  if (hits.length === 0) {
+    return textContent(`# Blast radius for ${filePath}\n\n_(no dependents — file is isolated)_`);
+  }
+
+  hits.sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
+  const lines = [`# Blast radius for ${filePath}  (depth ≤ ${maxDepth})`, ""];
+  lines.push(`${hits.length} dependent file(s):`);
+  for (const h of hits) {
+    lines.push(`- **depth ${h.depth}** \`${h.path}\` _(via ${h.via})_`);
+  }
+  return textContent(lines.join("\n"));
+}
+
+const LIKELY_ENTRY_PATTERNS = [
+  /(?:^|\/)main\.[a-z0-9_]+$/i,
+  /(?:^|\/)index\.[a-z0-9_]+$/i,
+  /(?:^|\/)app\.[a-z0-9_]+$/i,
+  /(?:^|\/)entry\.[a-z0-9_]+$/i,
+  /(?:^|\/)cli[\/.]/i,
+  /(?:^|\/)bin[\/.]/i,
+  /(?:^|\/)server\.[a-z0-9_]+$/i,
+  /\.test\.[a-z0-9_]+$/i,
+  /\.spec\.[a-z0-9_]+$/i,
+  /(?:^|\/)tests?\//i,
+  /(?:^|\/)__tests__\//i,
+  /(?:^|\/)__init__\.py$/i,
+];
+
+function isLikelyEntry(path: string): boolean {
+  return LIKELY_ENTRY_PATTERNS.some((re) => re.test(path));
+}
+
+function deadCode(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const limit = typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 50;
+
+  const hasIncoming = new Set<string>();
+  for (const e of ctx.graph.edges) {
+    if (e.kind === "imports" || e.kind === "tests") hasIncoming.add(e.to);
+  }
+
+  const candidates = ctx.graph.nodes
+    .filter((n): n is FileNode => n.kind === "file")
+    .filter((f) => !hasIncoming.has(f.id))
+    .filter((f) => !isLikelyEntry(f.path));
+
+  if (candidates.length === 0) {
+    return textContent(
+      `# Dead code\n\n_(no file is unreferenced — every file is either imported by another, has a linked test, or matches an entry-point pattern)_`,
+    );
+  }
+
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  const shown = candidates.slice(0, limit);
+  const lines = [`# Dead code candidates  (file-level, v0.1)`, ""];
+  lines.push(
+    `${shown.length} of ${candidates.length} unreferenced file(s) — no other file imports them and no test links them:`,
+  );
+  lines.push("");
+  for (const f of shown) {
+    lines.push(`- \`${f.path}\``);
+  }
+  lines.push("");
+  lines.push(
+    `_v0.1 caveat:_ this is file-level only. Symbol-level dead code (unused exports) needs call-graph edges, which land in v0.2.`,
+  );
+  return textContent(lines.join("\n"));
 }
 
 async function graphContinue(args: Record<string, unknown> | undefined, ctx: ServerContext) {

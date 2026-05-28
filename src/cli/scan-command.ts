@@ -37,23 +37,36 @@ export interface ScanResult {
   durationMs: number;
 }
 
-export async function scanCommand(rawPath: string): Promise<ScanResult> {
-  const projectRoot = resolve(rawPath);
+export interface ScanOptions {
+  /** Suppress per-step log output (used for branch-switch rescans). */
+  silent?: boolean;
+}
+
+/**
+ * Core scan pipeline — bootstrap + walk + parse + write graph. Importable
+ * from anywhere (server, CLI, tests). `scanCommand` is just a logging wrapper
+ * around this. Pass `silent: true` to skip the chatty progress output.
+ */
+export async function scanProject(projectRootRaw: string, opts: ScanOptions = {}): Promise<ScanResult> {
+  const projectRoot = resolve(projectRootRaw);
   const paths = resolvePaths(projectRoot);
   const start = Date.now();
+  const verbose = !opts.silent;
 
-  log.info(`scanning ${projectRoot}`);
+  if (verbose) log.info(`scanning ${projectRoot}`);
 
   const boot = await bootstrap(paths);
-  if (boot.graphCreated) log.info("  created .synthra-graph/");
-  if (boot.contextCreated) log.info("  created .synthra/");
-  if (boot.gitignoreUpdated) log.info("  updated .gitignore");
-  if (boot.claudeMdCreated) log.info("  created CLAUDE.md");
-  else if (boot.claudeMdUpdated) log.info("  updated CLAUDE.md");
+  if (verbose) {
+    if (boot.graphCreated) log.info("  created .synthra-graph/");
+    if (boot.contextCreated) log.info("  created .synthra/");
+    if (boot.gitignoreUpdated) log.info("  updated .gitignore");
+    if (boot.claudeMdCreated) log.info("  created CLAUDE.md");
+    else if (boot.claudeMdUpdated) log.info("  updated CLAUDE.md");
+  }
 
   const walked: WalkedFile[] = [];
   for await (const file of walk(projectRoot)) walked.push(file);
-  log.info(`  walked ${walked.length} files`);
+  if (verbose) log.info(`  walked ${walked.length} files`);
 
   const parsable = walked.filter((f) => PARSABLE_EXTS.has(f.ext));
   const parsed: ParsedFile[] = [];
@@ -63,14 +76,16 @@ export async function scanCommand(rawPath: string): Promise<ScanResult> {
       parsed.push(await parseFile(file));
     } catch (err) {
       parseErrors += 1;
-      log.debug(`    parse failed: ${file.relPath} — ${(err as Error).message}`);
+      if (verbose) log.debug(`    parse failed: ${file.relPath} — ${(err as Error).message}`);
     }
   }
-  log.info(
-    `  parsed ${parsed.length} files (${walked.length - parsable.length} skipped` +
-      (parseErrors ? `, ${parseErrors} errored` : "") +
-      ")",
-  );
+  if (verbose) {
+    log.info(
+      `  parsed ${parsed.length} files (${walked.length - parsable.length} skipped` +
+        (parseErrors ? `, ${parseErrors} errored` : "") +
+        ")",
+    );
+  }
 
   const graph = await buildGraph(projectRoot, parsed);
   const symbolIndex = buildSymbolIndex(graph);
@@ -78,13 +93,15 @@ export async function scanCommand(rawPath: string): Promise<ScanResult> {
   await writeGraph(paths.infoGraph, graph);
   await writeSymbolIndex(paths.symbolIndex, symbolIndex);
 
-  log.info(
-    `  wrote ${paths.infoGraph} — ${graph.symbol_count} symbols, ${graph.edge_count} edges`,
-  );
-  log.info(`  wrote ${paths.symbolIndex} — ${Object.keys(symbolIndex).length} names`);
+  if (verbose) {
+    log.info(
+      `  wrote ${paths.infoGraph} — ${graph.symbol_count} symbols, ${graph.edge_count} edges`,
+    );
+    log.info(`  wrote ${paths.symbolIndex} — ${Object.keys(symbolIndex).length} names`);
+  }
 
   const durationMs = Date.now() - start;
-  log.info(`done in ${(durationMs / 1000).toFixed(2)}s`);
+  if (verbose) log.info(`done in ${(durationMs / 1000).toFixed(2)}s`);
 
   return {
     walked: walked.length,
@@ -93,4 +110,10 @@ export async function scanCommand(rawPath: string): Promise<ScanResult> {
     edgeCount: graph.edge_count,
     durationMs,
   };
+}
+
+// Thin alias so the CLI command keeps its current name. Drop in v0.2 if we
+// settle on a single public function.
+export async function scanCommand(rawPath: string): Promise<ScanResult> {
+  return scanProject(rawPath);
 }
