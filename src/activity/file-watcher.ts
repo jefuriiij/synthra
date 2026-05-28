@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
 
+import { log } from "../shared/logger.js";
 import type { FileEvent } from "./activity-log.js";
 
 const ALWAYS_IGNORE = [
@@ -81,12 +82,24 @@ export function createFileWatcher(root: string, onEvent: FileEventHandler): File
     async start() {
       ig = await buildMatcher(root);
       watcher = chokidar.watch(root, {
-        // We layer our own .gitignore/.synthraignore handling via emit().
-        // Restrict at the chokidar level to skip the heaviest dirs.
-        ignored: (path: string) => ALWAYS_IGNORE.some((d) => path.includes(`${sep}${d}${sep}`) || path.endsWith(`${sep}${d}`)),
+        // Cross-platform glob ignore. We match both the directory itself and
+        // anything inside it. picomatch (chokidar's matcher) normalizes path
+        // separators so a single set of forward-slash globs handles
+        // Windows + POSIX. Function-based ignore was unreliable on Windows
+        // and let chokidar descend into .git/, which crashed on transient
+        // index.lock files held exclusively by git.
+        ignored: ALWAYS_IGNORE.flatMap((d) => [`**/${d}`, `**/${d}/**`]),
         ignoreInitial: true,
         persistent: true,
         awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+      });
+
+      // Chokidar emits "error" for transient OS-level issues — most commonly
+      // EPERM/ENOENT on rapidly created+deleted files. We never want one of
+      // these to crash the syn process. Log + swallow.
+      watcher.on("error", (err) => {
+        const e = err as NodeJS.ErrnoException;
+        log.debug(`file watcher error (swallowed): ${e?.code ?? ""} ${e?.message ?? String(err)}`);
       });
 
       watcher.on("add", (path) => emit("create", path));

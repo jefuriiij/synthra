@@ -12,7 +12,10 @@ import { listProjects } from "../shared/project-registry.js";
 const AVG_TOKENS_PER_BLOCKED_GREP = 500;
 
 export interface TokenLogEntry {
-  ts: string;
+  /** Stop-hook-supplied timestamp (preferred). */
+  ts?: string;
+  /** Server-side fallback added by handleLog when ts isn't provided. */
+  written_at?: string;
   input_tokens: number;
   output_tokens: number;
   cache_creation_input_tokens?: number;
@@ -237,7 +240,9 @@ export async function computeDashboardData(
   for (const p of loaded) {
     for (const t of p.tokens) {
       allTurns.push({
-        ts: t.ts ?? "",
+        // Fall back to written_at — the Stop hook today posts entries without
+        // a `ts` field, and the server tags them with written_at on receive.
+        ts: t.ts ?? t.written_at ?? "",
         project_name: p.name,
         project_path: p.path,
         input: t.input_tokens ?? 0,

@@ -98,16 +98,23 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   }
 
   const retrieval = await retrieve(ctx.graph, query);
-  if (retrieval.confidence !== "high") {
+  // "low" = no real matches → let Grep through; Synthra has nothing useful.
+  // "medium" + "high" = Synthra has structured context for this query →
+  // bias toward blocking. The pitch ("use graph_continue instead of Grep")
+  // holds at medium too — on real codebases of any size, "high" is rare
+  // because almost every query matches multiple files.
+  if (retrieval.confidence === "low") {
     const res: GateResponse = {
       decision: "allow",
-      reason: `confidence=${retrieval.confidence} — letting ${req.tool_name} through`,
+      reason: `confidence=low — no graph context for "${query}", letting ${req.tool_name} through`,
     };
     await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
     return res;
   }
 
-  // High confidence — but check if recent activity overlaps the query first.
+  // Medium / high — but check if recent activity overlaps the query first.
+  // If the user just touched a file matching the query, static context may
+  // be stale and they probably want a fresh search.
   const qTokens = new Set(tokenizeQuery(query));
   const recentPaths = ctx.activity.recentFilePaths(RECENT_ACTIVITY_WINDOW_MS);
   const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens);
@@ -116,7 +123,7 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     const res: GateResponse = {
       decision: "allow",
       reason:
-        `confidence=high but human just touched ${overlap.slice(0, 3).join(", ")} — ` +
+        `confidence=${retrieval.confidence} but human just touched ${overlap.slice(0, 3).join(", ")} — ` +
         `static context may be stale, letting ${req.tool_name} through.`,
     };
     await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
@@ -127,7 +134,7 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   const res: GateResponse = {
     decision: "block",
     reason:
-      `Synthra has high-confidence context for "${query}" (top files: ${top}). ` +
+      `Synthra has ${retrieval.confidence}-confidence context for "${query}" (top files: ${top}). ` +
       `Use the \`graph_continue\` MCP tool with this query instead of ${req.tool_name}, ` +
       `or read a specific file/symbol with \`graph_read\`.`,
   };

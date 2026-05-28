@@ -104,6 +104,12 @@ export function createGitWatcher(root: string, onEvent: GitEventHandler): GitWat
         headWatcher = watch(join(root, ".git", "HEAD"), () => {
           void checkHead();
         });
+        // fs.watch emits "error" for transient OS issues (EPERM on lock
+        // files, ENOENT when refs get rewritten). Swallow them — we never
+        // want a transient FS event to crash the syn process.
+        headWatcher.on("error", () => {
+          // silent — branch-switch detection is best-effort
+        });
       } catch {
         // .git/HEAD not present — silently no-op
       }
