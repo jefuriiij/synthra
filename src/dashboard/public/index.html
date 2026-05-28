@@ -21,28 +21,39 @@
 
   <main>
     <section>
-      <h2>Global totals  <span class="muted">(all projects)</span></h2>
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        Global totals
+        <span class="muted">(all projects)</span>
+      </h2>
       <div class="cards" id="cards"></div>
     </section>
 
     <section>
-      <h2>Projects</h2>
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Projects
+      </h2>
       <div class="projects" id="projects"></div>
       <p class="empty hidden" id="projects-empty">No projects registered yet. Run <code>syn .</code> in any project to add it.</p>
     </section>
 
     <section>
-      <h2>Recent calls  <span class="muted">(across all projects)</span></h2>
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Recent calls
+        <span class="muted">(across all projects)</span>
+      </h2>
       <table id="turns">
         <thead>
           <tr>
             <th>Time</th>
             <th>Project</th>
             <th>Model</th>
-            <th class="num">Input</th>
-            <th class="num">Output</th>
-            <th class="num">Cache R / W</th>
-            <th class="num">Cost</th>
+            <th class="num"><span class="has-tooltip" data-tooltip="New (uncached) tokens you sent to Claude this turn. Usually small — most of the conversation comes from cache.">Input <span class="help-icon">i</span></span></th>
+            <th class="num"><span class="has-tooltip" data-tooltip="Tokens Claude generated in its response. The most expensive line item — ~5× the input rate on Opus.">Output <span class="help-icon">i</span></span></th>
+            <th class="num"><span class="has-tooltip" data-tooltip="Cache read / cache write. Reads (~10% of input rate) reuse prior context; writes (~125% of input rate) save new context for future turns.">Cache R / W <span class="help-icon">i</span></span></th>
+            <th class="num"><span class="has-tooltip" data-tooltip="Approximate USD cost for this turn — input × rate + output × 5×rate + cache_read × 0.1×rate + cache_write × 1.25×rate, using the turn's model.">Cost <span class="help-icon">i</span></span></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -51,14 +62,17 @@
     </section>
 
     <section>
-      <h2>Recent gate decisions</h2>
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Recent gate decisions
+      </h2>
       <table id="gates">
         <thead>
           <tr>
             <th>Time</th>
             <th>Project</th>
             <th>Tool</th>
-            <th>Decision</th>
+            <th><span class="has-tooltip" data-tooltip="ALLOW = Synthra let the tool call through. BLOCK = Synthra intercepted it because the graph already had high-confidence context — Claude should use graph_continue instead.">Decision <span class="help-icon">i</span></span></th>
             <th>Query</th>
           </tr>
         </thead>
@@ -69,11 +83,42 @@
   </main>
 
   <footer>
-    <span>Token Counter MCP · live polling every 2s</span>
-    <span class="muted">Cost figures are approximate — see /docs/PROTOCOL.md</span>
+    <span>Synthra Token Dashboard · live polling every 2s</span>
+    <span class="muted">Cost figures are approximate — based on published Anthropic rates.</span>
   </footer>
 
   <script>
+    // Inline SVG icons. Each is a stroke-based icon, currentColor for the
+    // stroke, designed to inherit color from the parent's CSS.
+    const ICONS = {
+      dollar:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+      chat:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
+      arrowUp:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+      refresh:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+      save:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
+      folder:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+      shield:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+      trending:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+      ban:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+    };
+
+    // Classify a model name into a family for color-coding.
+    function modelFamily(model) {
+      if (!model) return 'unknown';
+      const m = model.toLowerCase();
+      if (m === '<synthetic>') return 'unknown';
+      if (m.includes('opus'))   return 'opus';
+      if (m.includes('sonnet')) return 'sonnet';
+      if (m.includes('haiku'))  return 'haiku';
+      return 'unknown';
+    }
+
+    function modelLabel(model) {
+      if (!model || model === '<synthetic>') return model === '<synthetic>' ? 'synthetic' : 'unknown';
+      return model;
+    }
+
     const $ = (sel) => document.querySelector(sel);
     const cardsEl = $("#cards");
     const projectsEl = $("#projects");
@@ -116,23 +161,84 @@
       }
     }
 
+    // Definitions for the global-totals cards. Each: label, value-source key,
+    // icon, optional class (accent | money), tooltip text.
+    function cardConfigs(g) {
+      return [
+        {
+          label: "Total cost",
+          value: fmtCost(g.estimated_cost_usd),
+          icon: ICONS.dollar,
+          cls: "money",
+          tooltip: "Approximate USD cost across all projects. Computed from per-model pricing (Opus, Sonnet, Haiku) applied to each turn's input/output/cache. Tilde everywhere — real cost depends on Anthropic's current rates.",
+        },
+        {
+          label: "Turns",
+          value: fmt(g.total_turns),
+          icon: ICONS.chat,
+          tooltip: "Total number of back-and-forth exchanges with Claude across all projects. One turn = you send a message, Claude responds.",
+        },
+        {
+          label: "Input",
+          value: fmt(g.total_input_tokens),
+          icon: ICONS.arrowDown,
+          tooltip: "New (uncached) tokens sent to Claude across all turns. Usually small — most of the conversation comes from cache.",
+        },
+        {
+          label: "Output",
+          value: fmt(g.total_output_tokens),
+          icon: ICONS.arrowUp,
+          tooltip: "Tokens Claude generated in responses. The most expensive line item per turn (~5× input rate on Opus).",
+        },
+        {
+          label: "Cache read",
+          value: fmt(g.total_cache_read),
+          icon: ICONS.refresh,
+          tooltip: "Tokens read from Claude's prompt cache — conversation history, system prompt, Synthra's pack. Cheap: ~10% of the input rate. The bulk of every long session.",
+        },
+        {
+          label: "Cache write",
+          value: fmt(g.total_cache_create),
+          icon: ICONS.save,
+          tooltip: "Tokens newly added to the prompt cache so future turns can read them cheaply. Premium-priced (~125% of input) but pays back over the rest of the session.",
+        },
+        {
+          label: "Projects",
+          value: fmt(g.project_count),
+          icon: ICONS.folder,
+          tooltip: "Projects that have ever run `syn .` on this machine. Tracked in ~/.synthra/projects.json.",
+        },
+        {
+          label: "Blocked Grep / Glob",
+          value: fmt(g.blocked_count),
+          icon: ICONS.shield,
+          cls: "accent",
+          tooltip: "PreToolUse hook intercepts: Synthra blocked these Grep/Glob calls because the graph already had high-confidence context for the query. Claude pivots to graph_continue or graph_read instead.",
+        },
+        {
+          label: "Tokens saved",
+          value: fmt(g.estimated_tokens_saved),
+          icon: ICONS.trending,
+          cls: "accent",
+          tooltip: "Estimated tokens avoided by blocking exploratory Grep/Glob calls. Calculated as blocks × 500 — conservative; under-counts the cache thrash you also avoid.",
+        },
+      ];
+    }
+
     function renderCards(g) {
       cardsEl.innerHTML = "";
-      const cards = [
-        { label: "Total cost", value: fmtCost(g.estimated_cost_usd), accent: true },
-        { label: "Turns",        value: fmt(g.total_turns) },
-        { label: "Input",        value: fmt(g.total_input_tokens) },
-        { label: "Output",       value: fmt(g.total_output_tokens) },
-        { label: "Cache read",   value: fmt(g.total_cache_read) },
-        { label: "Cache write",  value: fmt(g.total_cache_create) },
-        { label: "Projects",     value: fmt(g.project_count) },
-        { label: "Blocked Grep / Glob", value: fmt(g.blocked_count), accent: true },
-        { label: "Tokens saved",        value: fmt(g.estimated_tokens_saved), accent: true },
-      ];
-      for (const c of cards) {
+      for (const c of cardConfigs(g)) {
         const el = document.createElement("div");
-        el.className = "card" + (c.accent ? " accent" : "");
-        el.innerHTML = '<div class="card-label">' + c.label + '</div><div class="card-value">' + c.value + '</div>';
+        el.className = "card" + (c.cls ? " " + c.cls : "");
+        el.innerHTML =
+          '<div class="card-head">' +
+            '<div class="card-label has-tooltip" data-tooltip="' + c.tooltip.replace(/"/g, '&quot;') + '">' +
+              c.label +
+              ' <span class="help-icon">i</span>' +
+            '</div>' +
+            '<span class="card-icon">' + c.icon + '</span>' +
+          '</div>' +
+          '<div class="card-value">' + c.value + '</div>';
         cardsEl.appendChild(el);
       }
     }
@@ -153,7 +259,7 @@
         row.className = "project-row";
         row.innerHTML =
           '<div class="project-name">' +
-            '<strong>' + p.name + '</strong>' +
+            '<strong>' + ICONS.folder + p.name + '</strong>' +
             '<code class="project-path">' + p.path + '</code>' +
           '</div>' +
           '<div class="project-stats">' +
@@ -175,15 +281,12 @@
       }
       turnsEmpty.classList.add("hidden");
       for (const t of turns) {
+        const family = modelFamily(t.model);
         const tr = document.createElement("tr");
-        const modelCell =
-          t.model && t.model !== "<synthetic>"
-            ? "<code>" + t.model + "</code>"
-            : '<span class="muted">' + (t.model === "<synthetic>" ? "synthetic" : "unknown") + "</span>";
         tr.innerHTML =
           "<td>" + fmtTs(t.ts) + "</td>" +
           "<td><code>" + t.project_name + "</code></td>" +
-          "<td>" + modelCell + "</td>" +
+          '<td><span class="model-pill ' + family + '">' + modelLabel(t.model) + "</span></td>" +
           '<td class="num">' + fmtFull(t.input) + "</td>" +
           '<td class="num">' + fmtFull(t.output) + "</td>" +
           '<td class="num">' + fmt(t.cache_read) + " / " + fmt(t.cache_create) + "</td>" +
@@ -201,12 +304,16 @@
       gatesEmpty.classList.add("hidden");
       for (const g of gates) {
         const tr = document.createElement("tr");
-        const cls = g.decision === "block" ? "decision-block" : "decision-allow";
+        const isBlock = g.decision === "block";
+        const cls = isBlock ? "decision-block" : "decision-allow";
+        const label = isBlock
+          ? '<span class="' + cls + '">' + ICONS.ban + ' BLOCK</span>'
+          : '<span class="' + cls + '">ALLOW</span>';
         tr.innerHTML =
           "<td>" + fmtTs(g.ts) + "</td>" +
           "<td><code>" + g.project_name + "</code></td>" +
           "<td><code>" + g.tool + "</code></td>" +
-          '<td class="' + cls + '">' + g.decision + "</td>" +
+          "<td>" + label + "</td>" +
           "<td><code>" + (g.query || "") + "</code></td>";
         gatesBody.appendChild(tr);
       }
