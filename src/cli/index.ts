@@ -15,6 +15,10 @@
 import sade from "sade";
 import { resolve } from "node:path";
 
+// Inlined at build time by tsup's JSON loader so `syn --version` always
+// matches the published package.
+import pkgJson from "../../package.json" with { type: "json" };
+
 import { startDashboard, type DashboardServerHandle } from "../dashboard/server.js";
 import { installHooks } from "../hooks/installer.js";
 import { startServer, type ServerHandle } from "../server/http.js";
@@ -29,7 +33,7 @@ import { logUpdateHintIfNeeded } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
 import { registerMcp, spawnClaude, unregisterMcp } from "./start-claude.js";
 
-const VERSION = "0.0.1";
+const VERSION = (pkgJson as { version: string }).version;
 
 interface DefaultOpts {
   resume?: string;
