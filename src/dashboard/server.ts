@@ -1,15 +1,22 @@
-// Standalone dashboard server on 8901 (default; override via SYN_DASHBOARD_PORT).
+// Standalone dashboard server. Default port 8901 (override via
+// SYN_DASHBOARD_PORT); falls back through a small range 8901–8910 if the
+// preferred port is busy (so we can coexist with other dashboards like
+// GrapeRoot's on the same machine).
 // Reads .synthra-graph/token_log.jsonl + .synthra-graph/gate_log.jsonl for the
 // given project and renders a live SPA backed by GET /data polled every 2s.
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
+import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
+import { findFreePort } from "../server/port.js";
 import { computeDashboardData } from "./delta.js";
 
 import indexHtml from "./public/index.html";
 import styleCss from "./public/style.css";
+
+const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
 
 export interface DashboardServerHandle {
   port: number;
@@ -19,8 +26,14 @@ export interface DashboardServerHandle {
 
 export async function startDashboard(
   paths: SynthraPaths,
-  port = 8901,
+  preferredPort = 8901,
 ): Promise<DashboardServerHandle> {
+  const port = await findFreePort(preferredPort, preferredPort + FALLBACK_RANGE);
+  if (port !== preferredPort) {
+    log.info(
+      `dashboard port ${preferredPort} was busy — bound to ${port} instead (likely another dashboard from a coexisting tool).`,
+    );
+  }
   const app = new Hono();
 
   app.get("/", (c) => c.html(indexHtml));
