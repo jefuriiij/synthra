@@ -34,8 +34,8 @@ export async function startDashboard(
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.get("/data", async (c) => {
-    const data = await computeDashboardData(paths.tokenLog, paths.gateLog);
-    return c.json({ project_root: paths.projectRoot, ...data });
+    const data = await computeDashboardData(paths);
+    return c.json(data);
   });
 
   const nodeServer = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });

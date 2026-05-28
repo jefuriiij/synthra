@@ -21,6 +21,7 @@ import { startServer, type ServerHandle } from "../server/http.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
+import { recordProject } from "../shared/project-registry.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
@@ -82,7 +83,9 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   const paths = resolvePaths(projectRoot);
   const cfg = loadConfig();
 
-  // 1. bootstrap + scan
+  // 1. bootstrap + scan + record in the global registry so the dashboard
+  //    can list this project alongside any others.
+  await recordProject(projectRoot);
   const scan = await scanCommand(rawPath);
 
   // 2. MCP server (background within this process)

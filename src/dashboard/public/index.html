@@ -8,38 +8,55 @@
 </head>
 <body>
   <header>
-    <h1>Synthra</h1>
-    <span class="tag">Token Dashboard</span>
-    <span class="project" id="project">…</span>
+    <div class="brand">
+      <h1>Synthra</h1>
+      <span class="tag">Token Dashboard</span>
+    </div>
+    <div class="meta">
+      <span class="active-project" id="active-project">…</span>
+      <span class="dot" id="dot"></span>
+      <span id="status">connecting…</span>
+    </div>
   </header>
 
   <main>
-    <section class="cards" id="cards"></section>
+    <section>
+      <h2>Global totals  <span class="muted">(all projects)</span></h2>
+      <div class="cards" id="cards"></div>
+    </section>
 
-    <section class="panel">
-      <h2>Recent turns</h2>
+    <section>
+      <h2>Projects</h2>
+      <div class="projects" id="projects"></div>
+      <p class="empty hidden" id="projects-empty">No projects registered yet. Run <code>syn .</code> in any project to add it.</p>
+    </section>
+
+    <section>
+      <h2>Recent calls  <span class="muted">(across all projects)</span></h2>
       <table id="turns">
         <thead>
           <tr>
-            <th>Timestamp</th>
+            <th>Time</th>
+            <th>Project</th>
             <th>Model</th>
             <th class="num">Input</th>
             <th class="num">Output</th>
-            <th class="num">Cache read</th>
-            <th class="num">Cache create</th>
+            <th class="num">Cache R / W</th>
+            <th class="num">Cost</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
-      <p class="empty hidden" id="turns-empty">No turns logged yet. Run a Claude session via <code>syn .</code>.</p>
+      <p class="empty hidden" id="turns-empty">No turns logged yet. Use Claude via the IDE extension or <code>claude</code> CLI while <code>syn .</code> is running.</p>
     </section>
 
-    <section class="panel">
+    <section>
       <h2>Recent gate decisions</h2>
       <table id="gates">
         <thead>
           <tr>
-            <th>Timestamp</th>
+            <th>Time</th>
+            <th>Project</th>
             <th>Tool</th>
             <th>Decision</th>
             <th>Query</th>
@@ -52,53 +69,101 @@
   </main>
 
   <footer>
-    <span id="status">connecting…</span>
-    <span class="dot" id="dot"></span>
+    <span>Token Counter MCP · live polling every 2s</span>
+    <span class="muted">Cost figures are approximate — see /docs/PROTOCOL.md</span>
   </footer>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
     const cardsEl = $("#cards");
+    const projectsEl = $("#projects");
     const turnsBody = $("#turns tbody");
     const gatesBody = $("#gates tbody");
     const turnsEmpty = $("#turns-empty");
     const gatesEmpty = $("#gates-empty");
+    const projectsEmpty = $("#projects-empty");
     const statusEl = $("#status");
     const dotEl = $("#dot");
-    const projectEl = $("#project");
+    const activeProjectEl = $("#active-project");
 
     function fmt(n) {
       if (typeof n !== "number" || !Number.isFinite(n)) return "0";
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+      if (n >= 1000) return (n / 1000).toFixed(1) + "K";
       return n.toLocaleString();
+    }
+
+    function fmtFull(n) {
+      return (typeof n === "number" ? n : 0).toLocaleString();
+    }
+
+    function fmtCost(usd) {
+      if (typeof usd !== "number") return "~$0.00";
+      if (usd >= 1) return "~$" + usd.toFixed(2);
+      if (usd >= 0.01) return "~$" + usd.toFixed(3);
+      return "~$" + usd.toFixed(4);
     }
 
     function fmtTs(iso) {
       try {
         const d = new Date(iso);
+        const today = new Date();
+        const isToday = d.toDateString() === today.toDateString();
+        if (isToday) return d.toLocaleTimeString();
         return d.toLocaleString();
       } catch {
         return iso;
       }
     }
 
-    function renderCards(s) {
+    function renderCards(g) {
       cardsEl.innerHTML = "";
       const cards = [
-        { label: "Turns", value: fmt(s.total_turns) },
-        { label: "Input tokens", value: fmt(s.total_input_tokens) },
-        { label: "Output tokens", value: fmt(s.total_output_tokens) },
-        { label: "Cache reads", value: fmt(s.total_cache_read) },
-        { label: "Cache writes", value: fmt(s.total_cache_create) },
-        { label: "Gate calls", value: fmt(s.total_gate_calls) },
-        { label: "Blocked Grep / Glob", value: fmt(s.blocked_count), accent: true },
-        { label: "Est. tokens saved", value: fmt(s.estimated_tokens_saved), accent: true },
-        { label: "Saved %", value: s.saved_percent + "%", accent: true },
+        { label: "Total cost", value: fmtCost(g.estimated_cost_usd), accent: true },
+        { label: "Turns",        value: fmt(g.total_turns) },
+        { label: "Input",        value: fmt(g.total_input_tokens) },
+        { label: "Output",       value: fmt(g.total_output_tokens) },
+        { label: "Cache read",   value: fmt(g.total_cache_read) },
+        { label: "Cache write",  value: fmt(g.total_cache_create) },
+        { label: "Projects",     value: fmt(g.project_count) },
+        { label: "Blocked Grep / Glob", value: fmt(g.blocked_count), accent: true },
+        { label: "Tokens saved",        value: fmt(g.estimated_tokens_saved), accent: true },
       ];
       for (const c of cards) {
         const el = document.createElement("div");
         el.className = "card" + (c.accent ? " accent" : "");
         el.innerHTML = '<div class="card-label">' + c.label + '</div><div class="card-value">' + c.value + '</div>';
         cardsEl.appendChild(el);
+      }
+    }
+
+    function renderProjects(projects, globalCost) {
+      projectsEl.innerHTML = "";
+      if (!projects.length) {
+        projectsEmpty.classList.remove("hidden");
+        return;
+      }
+      projectsEmpty.classList.add("hidden");
+      const maxTokens = Math.max(1, ...projects.map((p) => p.total_input_tokens + p.total_output_tokens));
+      for (const p of projects) {
+        const total = p.total_input_tokens + p.total_output_tokens;
+        const pct = Math.round((total / maxTokens) * 100);
+        const sharePct = globalCost > 0 ? ((p.estimated_cost_usd / globalCost) * 100).toFixed(1) : "0.0";
+        const row = document.createElement("div");
+        row.className = "project-row";
+        row.innerHTML =
+          '<div class="project-name">' +
+            '<strong>' + p.name + '</strong>' +
+            '<code class="project-path">' + p.path + '</code>' +
+          '</div>' +
+          '<div class="project-stats">' +
+            '<div class="stat"><span class="stat-value cost">' + fmtCost(p.estimated_cost_usd) + '</span><span class="stat-label">cost (' + sharePct + '%)</span></div>' +
+            '<div class="stat"><span class="stat-value">' + fmt(total) + '</span><span class="stat-label">tokens</span></div>' +
+            '<div class="stat"><span class="stat-value">' + fmt(p.total_turns) + '</span><span class="stat-label">turns</span></div>' +
+            '<div class="stat"><span class="stat-value">' + fmt(p.blocked_count) + '</span><span class="stat-label">blocks</span></div>' +
+          '</div>' +
+          '<div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
+        projectsEl.appendChild(row);
       }
     }
 
@@ -109,15 +174,16 @@
         return;
       }
       turnsEmpty.classList.add("hidden");
-      for (const t of turns.slice().reverse()) {
+      for (const t of turns) {
         const tr = document.createElement("tr");
         tr.innerHTML =
           "<td>" + fmtTs(t.ts) + "</td>" +
+          "<td><code>" + t.project_name + "</code></td>" +
           "<td><code>" + (t.model || "") + "</code></td>" +
-          '<td class="num">' + fmt(t.input) + "</td>" +
-          '<td class="num">' + fmt(t.output) + "</td>" +
-          '<td class="num">' + fmt(t.cache_read) + "</td>" +
-          '<td class="num">' + fmt(t.cache_create) + "</td>";
+          '<td class="num">' + fmtFull(t.input) + "</td>" +
+          '<td class="num">' + fmtFull(t.output) + "</td>" +
+          '<td class="num">' + fmt(t.cache_read) + " / " + fmt(t.cache_create) + "</td>" +
+          '<td class="num cost">' + fmtCost(t.cost_usd) + "</td>";
         turnsBody.appendChild(tr);
       }
     }
@@ -129,11 +195,12 @@
         return;
       }
       gatesEmpty.classList.add("hidden");
-      for (const g of gates.slice().reverse()) {
+      for (const g of gates) {
         const tr = document.createElement("tr");
         const cls = g.decision === "block" ? "decision-block" : "decision-allow";
         tr.innerHTML =
           "<td>" + fmtTs(g.ts) + "</td>" +
+          "<td><code>" + g.project_name + "</code></td>" +
           "<td><code>" + g.tool + "</code></td>" +
           '<td class="' + cls + '">' + g.decision + "</td>" +
           "<td><code>" + (g.query || "") + "</code></td>";
@@ -146,11 +213,12 @@
         const res = await fetch("/data");
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
-        projectEl.textContent = data.project_root || "";
-        renderCards(data.summary);
+        activeProjectEl.textContent = data.active.project_root;
+        renderCards(data.global);
+        renderProjects(data.projects, data.global.estimated_cost_usd);
         renderTurns(data.recent_turns);
         renderGates(data.recent_gates);
-        statusEl.textContent = "live · last update " + new Date().toLocaleTimeString();
+        statusEl.textContent = "live · " + new Date().toLocaleTimeString();
         dotEl.classList.add("live");
         dotEl.classList.remove("dead");
       } catch (e) {

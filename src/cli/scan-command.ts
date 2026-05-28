@@ -17,6 +17,16 @@ const PARSABLE_EXTS = new Set([
   ".py", ".pyi",
   ".svelte",
   ".vue",
+  ".go",
+  ".rs",
+  ".java",
+  ".kt", ".kts",
+  ".php",
+  ".rb",
+  ".c", ".h",
+  ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
+  ".dart",
+  ".cs",
 ]);
 
 export interface ScanResult {

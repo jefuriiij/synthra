@@ -7,7 +7,17 @@ import { createRequire } from "node:module";
 import Parser from "web-tree-sitter";
 
 import type { SymbolKind } from "../graph/types.js";
+import { parseC } from "./parsers/c.js";
+import { parseCpp } from "./parsers/cpp.js";
+import { parseCSharp } from "./parsers/csharp.js";
+import { parseDart } from "./parsers/dart.js";
+import { parseGo } from "./parsers/go.js";
+import { parseJava } from "./parsers/java.js";
+import { parseKotlin } from "./parsers/kotlin.js";
+import { parsePhp } from "./parsers/php.js";
 import { parsePython } from "./parsers/python.js";
+import { parseRuby } from "./parsers/ruby.js";
+import { parseRust } from "./parsers/rust.js";
 import { parseSvelte } from "./parsers/svelte.js";
 import { parseTypeScript } from "./parsers/typescript.js";
 import { parseVue } from "./parsers/vue.js";
@@ -31,13 +41,37 @@ export interface ParsedFile {
 
 const require = createRequire(import.meta.url);
 
-export type GrammarName = "typescript" | "tsx" | "javascript" | "python";
+export type GrammarName =
+  | "typescript"
+  | "tsx"
+  | "javascript"
+  | "python"
+  | "go"
+  | "rust"
+  | "java"
+  | "kotlin"
+  | "php"
+  | "ruby"
+  | "c"
+  | "cpp"
+  | "dart"
+  | "csharp";
 
 const GRAMMAR_FILES: Record<GrammarName, string> = {
   typescript: "tree-sitter-wasms/out/tree-sitter-typescript.wasm",
   tsx: "tree-sitter-wasms/out/tree-sitter-tsx.wasm",
   javascript: "tree-sitter-wasms/out/tree-sitter-javascript.wasm",
   python: "tree-sitter-wasms/out/tree-sitter-python.wasm",
+  go: "tree-sitter-wasms/out/tree-sitter-go.wasm",
+  rust: "tree-sitter-wasms/out/tree-sitter-rust.wasm",
+  java: "tree-sitter-wasms/out/tree-sitter-java.wasm",
+  kotlin: "tree-sitter-wasms/out/tree-sitter-kotlin.wasm",
+  php: "tree-sitter-wasms/out/tree-sitter-php.wasm",
+  ruby: "tree-sitter-wasms/out/tree-sitter-ruby.wasm",
+  c: "tree-sitter-wasms/out/tree-sitter-c.wasm",
+  cpp: "tree-sitter-wasms/out/tree-sitter-cpp.wasm",
+  dart: "tree-sitter-wasms/out/tree-sitter-dart.wasm",
+  csharp: "tree-sitter-wasms/out/tree-sitter-c_sharp.wasm",
 };
 
 let parserInit: Promise<void> | null = null;
@@ -101,6 +135,33 @@ export async function parseFile(f: WalkedFile): Promise<ParsedFile> {
       return parseSvelte(f, source);
     case ".vue":
       return parseVue(f, source);
+    case ".go":
+      return parseGo(f, source);
+    case ".rs":
+      return parseRust(f, source);
+    case ".java":
+      return parseJava(f, source);
+    case ".kt":
+    case ".kts":
+      return parseKotlin(f, source);
+    case ".php":
+      return parsePhp(f, source);
+    case ".rb":
+      return parseRuby(f, source);
+    case ".c":
+    case ".h":
+      return parseC(f, source);
+    case ".cpp":
+    case ".cc":
+    case ".cxx":
+    case ".hpp":
+    case ".hh":
+    case ".hxx":
+      return parseCpp(f, source);
+    case ".dart":
+      return parseDart(f, source);
+    case ".cs":
+      return parseCSharp(f, source);
     default:
       return emptyParsed(f, source);
   }
