@@ -55,7 +55,7 @@ if [ "$IN" = "0" ] && [ "$OUT" = "0" ]; then exit 0; fi
 
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
   --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$PWD" \
-    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"stop-hook", project:$p}')" \
+    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p}')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 
 # Refresh CONTEXT.md from the branch-scoped store.

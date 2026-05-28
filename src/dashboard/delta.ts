@@ -169,11 +169,66 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [tokens, gates] = await Promise.all([
+  const [rawTokens, gates] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
   ]);
-  return { path, name, last_seen: lastSeen, tokens, gates };
+  return { path, name, last_seen: lastSeen, tokens: dedupeTokens(rawTokens), gates };
+}
+
+/**
+ * Collapse duplicate token-log entries from co-installed AI tools.
+ *
+ * Synthra is friendly with other tools that share the .synthra-graph/
+ * token_log.jsonl shape (GrapeRoot writes to it too). Both Stop hooks
+ * fire on the same turn and emit nearly-identical entries within ~10ms,
+ * which double-counts every metric in the dashboard.
+ *
+ * Strategy: group by (project, usage counts, second-rounded timestamp);
+ * inside a group, keep the entry with the most credible model field —
+ * a real Claude model > "<synthetic>" > empty.
+ */
+function dedupeTokens(entries: TokenLogEntry[]): TokenLogEntry[] {
+  const score = (model: string | undefined): number => {
+    if (!model) return 0;
+    if (model === "<synthetic>") return 1;
+    return 2; // real model name
+  };
+
+  const groups = new Map<string, TokenLogEntry[]>();
+  for (const e of entries) {
+    const ts = e.ts ?? e.written_at ?? "";
+    const second = ts.slice(0, 19); // YYYY-MM-DDTHH:mm:ss
+    const key = [
+      e.project ?? "",
+      e.input_tokens ?? 0,
+      e.output_tokens ?? 0,
+      e.cache_creation_input_tokens ?? 0,
+      e.cache_read_input_tokens ?? 0,
+      second,
+    ].join("|");
+    const arr = groups.get(key) ?? [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+
+  const out: TokenLogEntry[] = [];
+  for (const arr of groups.values()) {
+    if (arr.length === 1) {
+      out.push(arr[0]!);
+      continue;
+    }
+    arr.sort((a, b) => score(b.model) - score(a.model));
+    out.push(arr[0]!);
+  }
+
+  // Preserve chronological order in the per-project list.
+  out.sort((a, b) => {
+    const at = a.ts ?? a.written_at ?? "";
+    const bt = b.ts ?? b.written_at ?? "";
+    return at.localeCompare(bt);
+  });
+  return out;
 }
 
 export async function computeDashboardData(

@@ -176,10 +176,14 @@
       turnsEmpty.classList.add("hidden");
       for (const t of turns) {
         const tr = document.createElement("tr");
+        const modelCell =
+          t.model && t.model !== "<synthetic>"
+            ? "<code>" + t.model + "</code>"
+            : '<span class="muted">' + (t.model === "<synthetic>" ? "synthetic" : "unknown") + "</span>";
         tr.innerHTML =
           "<td>" + fmtTs(t.ts) + "</td>" +
           "<td><code>" + t.project_name + "</code></td>" +
-          "<td><code>" + (t.model || "") + "</code></td>" +
+          "<td>" + modelCell + "</td>" +
           '<td class="num">' + fmtFull(t.input) + "</td>" +
           '<td class="num">' + fmtFull(t.output) + "</td>" +
           '<td class="num">' + fmt(t.cache_read) + " / " + fmt(t.cache_create) + "</td>" +

@@ -52,7 +52,7 @@ $payload = @{
     cache_creation_input_tokens = $cc
     cache_read_input_tokens     = $cr
     model                       = $model
-    description                 = "stop-hook"
+    description                 = "synthra-stop-hook"
     project                     = $PWD.Path
 } | ConvertTo-Json -Compress
 
