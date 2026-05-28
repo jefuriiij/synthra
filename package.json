@@ -45,8 +45,10 @@
   "dependencies": {
     "chokidar": "^5.0.0",
     "hono": "^4.12.23",
+    "ignore": "^7.0.0",
     "sade": "^1.8.1",
-    "web-tree-sitter": "^0.26.9"
+    "tree-sitter-wasms": "^0.1.12",
+    "web-tree-sitter": "~0.22.6"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

@@ -1,20 +1,35 @@
 // Reads/writes info_graph.json and symbol_index.json.
-// TODO: M1
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import type { GraphSchema, SymbolIndex } from "./types.js";
 
-export async function writeGraph(_path: string, _graph: GraphSchema): Promise<void> {
-  throw new Error("Synthra: writeGraph not yet implemented (M1)");
+async function writeJson(path: string, data: unknown, pretty: boolean): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const text = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+  await writeFile(path, text + "\n", "utf8");
 }
 
-export async function readGraph(_path: string): Promise<GraphSchema> {
-  throw new Error("Synthra: readGraph not yet implemented (M1)");
+async function readJson<T>(path: string): Promise<T> {
+  const text = await readFile(path, "utf8");
+  return JSON.parse(text) as T;
 }
 
-export async function writeSymbolIndex(_path: string, _index: SymbolIndex): Promise<void> {
-  throw new Error("Synthra: writeSymbolIndex not yet implemented (M1)");
+export async function writeGraph(path: string, graph: GraphSchema): Promise<void> {
+  // Pretty-printing a graph with full file contents balloons disk size and
+  // the JSON is only ever read by machines; keep it compact.
+  await writeJson(path, graph, false);
 }
 
-export async function readSymbolIndex(_path: string): Promise<SymbolIndex> {
-  throw new Error("Synthra: readSymbolIndex not yet implemented (M1)");
+export async function readGraph(path: string): Promise<GraphSchema> {
+  return readJson<GraphSchema>(path);
+}
+
+export async function writeSymbolIndex(path: string, index: SymbolIndex): Promise<void> {
+  await writeJson(path, index, true);
+}
+
+export async function readSymbolIndex(path: string): Promise<SymbolIndex> {
+  return readJson<SymbolIndex>(path);
 }
