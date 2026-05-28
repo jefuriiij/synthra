@@ -14,8 +14,23 @@ export interface BootstrapResult {
   claudeMdCreated: boolean;
 }
 
-const GITIGNORE_MARKER = "# added by synthra";
-const GITIGNORE_ENTRY = ".synthra-graph/";
+// Entries Synthra appends to the project .gitignore on bootstrap.
+// Each is gated by a check: if the entry is already present (any
+// indentation, trimmed match), it's skipped. Comments are per-entry so
+// users understand why each line is there and can remove what they don't
+// want without breaking the rest.
+const GITIGNORE_ENTRIES: { comment: string; entry: string }[] = [
+  {
+    comment: "added by synthra (heavy generated state — gitignored by design)",
+    entry: ".synthra-graph/",
+  },
+  {
+    comment:
+      "added by synthra — MCP registration. Remove this line if you want " +
+      "to share the synthra MCP entry with teammates via committed .mcp.json",
+    entry: ".mcp.json",
+  },
+];
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -39,12 +54,16 @@ async function patchGitignore(path: string): Promise<boolean> {
   } catch {
     /* file may not exist */
   }
-  const lines = existing.split(/\r?\n/);
-  if (lines.some((l) => l.trim() === GITIGNORE_ENTRY)) return false;
+  const trimmed = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
+  const missing = GITIGNORE_ENTRIES.filter((e) => !trimmed.has(e.entry));
+  if (missing.length === 0) return false;
 
-  const appendix = (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
+  const block =
+    missing.map((m) => `# ${m.comment}\n${m.entry}`).join("\n") + "\n";
+  const appendix =
+    (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
     (existing.length ? "\n" : "") +
-    `${GITIGNORE_MARKER}\n${GITIGNORE_ENTRY}\n`;
+    block;
   await writeFile(path, existing + appendix, "utf8");
   return true;
 }

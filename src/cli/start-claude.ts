@@ -43,10 +43,10 @@ function runClaude(
 
 export async function registerMcp(bin: string, mcpPort: number, cwd: string): Promise<boolean> {
   const url = `http://127.0.0.1:${mcpPort}/mcp`;
-  await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "local"], cwd).catch(() => undefined);
+  await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "project"], cwd).catch(() => undefined);
   const reg = await runClaude(
     bin,
-    ["mcp", "add", MCP_NAME, "--transport", "http", "--scope", "local", url],
+    ["mcp", "add", MCP_NAME, "--transport", "http", "--scope", "project", url],
     cwd,
   );
   if (reg.code !== 0) {
@@ -59,7 +59,7 @@ export async function registerMcp(bin: string, mcpPort: number, cwd: string): Pr
 }
 
 export async function unregisterMcp(bin: string, cwd: string): Promise<void> {
-  const r = await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "local"], cwd);
+  const r = await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "project"], cwd);
   if (r.code === 0) log.debug("unregistered MCP server");
 }
 
