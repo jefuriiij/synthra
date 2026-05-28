@@ -10,10 +10,158 @@
   <header>
     <h1>Synthra</h1>
     <span class="tag">Token Dashboard</span>
+    <span class="project" id="project">…</span>
   </header>
+
   <main>
-    <p class="placeholder">Dashboard not yet implemented (M6). See ROADMAP.md.</p>
+    <section class="cards" id="cards"></section>
+
+    <section class="panel">
+      <h2>Recent turns</h2>
+      <table id="turns">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Model</th>
+            <th class="num">Input</th>
+            <th class="num">Output</th>
+            <th class="num">Cache read</th>
+            <th class="num">Cache create</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty hidden" id="turns-empty">No turns logged yet. Run a Claude session via <code>syn .</code>.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Recent gate decisions</h2>
+      <table id="gates">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Tool</th>
+            <th>Decision</th>
+            <th>Query</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty hidden" id="gates-empty">No gate decisions yet.</p>
+    </section>
   </main>
-  <script src="./app.js" type="module"></script>
+
+  <footer>
+    <span id="status">connecting…</span>
+    <span class="dot" id="dot"></span>
+  </footer>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const cardsEl = $("#cards");
+    const turnsBody = $("#turns tbody");
+    const gatesBody = $("#gates tbody");
+    const turnsEmpty = $("#turns-empty");
+    const gatesEmpty = $("#gates-empty");
+    const statusEl = $("#status");
+    const dotEl = $("#dot");
+    const projectEl = $("#project");
+
+    function fmt(n) {
+      if (typeof n !== "number" || !Number.isFinite(n)) return "0";
+      return n.toLocaleString();
+    }
+
+    function fmtTs(iso) {
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString();
+      } catch {
+        return iso;
+      }
+    }
+
+    function renderCards(s) {
+      cardsEl.innerHTML = "";
+      const cards = [
+        { label: "Turns", value: fmt(s.total_turns) },
+        { label: "Input tokens", value: fmt(s.total_input_tokens) },
+        { label: "Output tokens", value: fmt(s.total_output_tokens) },
+        { label: "Cache reads", value: fmt(s.total_cache_read) },
+        { label: "Cache writes", value: fmt(s.total_cache_create) },
+        { label: "Gate calls", value: fmt(s.total_gate_calls) },
+        { label: "Blocked Grep / Glob", value: fmt(s.blocked_count), accent: true },
+        { label: "Est. tokens saved", value: fmt(s.estimated_tokens_saved), accent: true },
+        { label: "Saved %", value: s.saved_percent + "%", accent: true },
+      ];
+      for (const c of cards) {
+        const el = document.createElement("div");
+        el.className = "card" + (c.accent ? " accent" : "");
+        el.innerHTML = '<div class="card-label">' + c.label + '</div><div class="card-value">' + c.value + '</div>';
+        cardsEl.appendChild(el);
+      }
+    }
+
+    function renderTurns(turns) {
+      turnsBody.innerHTML = "";
+      if (!turns.length) {
+        turnsEmpty.classList.remove("hidden");
+        return;
+      }
+      turnsEmpty.classList.add("hidden");
+      for (const t of turns.slice().reverse()) {
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + fmtTs(t.ts) + "</td>" +
+          "<td><code>" + (t.model || "") + "</code></td>" +
+          '<td class="num">' + fmt(t.input) + "</td>" +
+          '<td class="num">' + fmt(t.output) + "</td>" +
+          '<td class="num">' + fmt(t.cache_read) + "</td>" +
+          '<td class="num">' + fmt(t.cache_create) + "</td>";
+        turnsBody.appendChild(tr);
+      }
+    }
+
+    function renderGates(gates) {
+      gatesBody.innerHTML = "";
+      if (!gates.length) {
+        gatesEmpty.classList.remove("hidden");
+        return;
+      }
+      gatesEmpty.classList.add("hidden");
+      for (const g of gates.slice().reverse()) {
+        const tr = document.createElement("tr");
+        const cls = g.decision === "block" ? "decision-block" : "decision-allow";
+        tr.innerHTML =
+          "<td>" + fmtTs(g.ts) + "</td>" +
+          "<td><code>" + g.tool + "</code></td>" +
+          '<td class="' + cls + '">' + g.decision + "</td>" +
+          "<td><code>" + (g.query || "") + "</code></td>";
+        gatesBody.appendChild(tr);
+      }
+    }
+
+    async function tick() {
+      try {
+        const res = await fetch("/data");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        projectEl.textContent = data.project_root || "";
+        renderCards(data.summary);
+        renderTurns(data.recent_turns);
+        renderGates(data.recent_gates);
+        statusEl.textContent = "live · last update " + new Date().toLocaleTimeString();
+        dotEl.classList.add("live");
+        dotEl.classList.remove("dead");
+      } catch (e) {
+        statusEl.textContent = "disconnected · " + e.message;
+        dotEl.classList.add("dead");
+        dotEl.classList.remove("live");
+      }
+    }
+
+    tick();
+    setInterval(tick, 2000);
+  </script>
 </body>
 </html>

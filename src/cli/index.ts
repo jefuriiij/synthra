@@ -13,6 +13,7 @@ import { startServer } from "../server/http.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
 import { cleanup } from "./cleanup.js";
+import { dashboardCommand } from "./dashboard-command.js";
 import { scanCommand } from "./scan-command.js";
 import { serveCommand } from "./serve-command.js";
 import { startClaude } from "./start-claude.js";
@@ -20,13 +21,6 @@ import { startClaude } from "./start-claude.js";
 import { resolve } from "node:path";
 
 const VERSION = "0.0.1";
-
-function notYet(name: string, milestone: string): () => void {
-  return () => {
-    log.error(`'${name}' is not yet implemented (${milestone}).`);
-    process.exit(2);
-  };
-}
 
 interface DefaultOpts {
   resume?: string;
@@ -94,7 +88,11 @@ export function buildProgram() {
       await serveCommand(path ?? ".");
     });
 
-  prog.command("dashboard", "Open the token dashboard.").action(notYet("dashboard", "M6"));
+  prog
+    .command("dashboard [path]", "Run the token dashboard server (localhost:8901).")
+    .action(async (path: string | undefined) => {
+      await dashboardCommand(path ?? ".");
+    });
 
   return prog;
 }

@@ -11,6 +11,7 @@ export interface SynthraPaths {
   sessionState: string;
   activityLog: string;
   tokenLog: string;
+  gateLog: string;
   mcpPort: string;
   mcpServerLog: string;
   mcpServerErrLog: string;
@@ -38,6 +39,7 @@ export function resolvePaths(projectRoot: string): SynthraPaths {
     sessionState: join(graphDir, "session.json"),
     activityLog: join(graphDir, "activity.jsonl"),
     tokenLog: join(graphDir, "token_log.jsonl"),
+    gateLog: join(graphDir, "gate_log.jsonl"),
     mcpPort: join(graphDir, "mcp_port"),
     mcpServerLog: join(graphDir, "mcp_server.log"),
     mcpServerErrLog: join(graphDir, "mcp_server.err.log"),

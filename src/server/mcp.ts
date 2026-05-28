@@ -159,6 +159,18 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "count_tokens",
+    description:
+      "Estimate token count for a piece of text using a char/4 approximation. Accurate within ~10% for English + code. Useful for budgeting prompt content before sending.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "The text to estimate tokens for." },
+      },
+      required: ["text"],
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -179,9 +191,18 @@ async function callTool(
       return contextRecall(args, ctx);
     case "recent_activity":
       return recentActivity(args, ctx);
+    case "count_tokens":
+      return countTokens(args);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
+}
+
+function countTokens(args: Record<string, unknown> | undefined) {
+  const text = typeof args?.text === "string" ? args.text : "";
+  if (!text) return errorContent("count_tokens: 'text' (string) is required");
+  const tokens = Math.ceil(text.length / 4);
+  return textContent(JSON.stringify({ tokens, method: "chars/4 estimate", chars: text.length }));
 }
 
 async function graphContinue(args: Record<string, unknown> | undefined, ctx: ServerContext) {

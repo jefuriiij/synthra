@@ -8,6 +8,9 @@
 //     pointing at graph_continue / graph_read.
 //   - Otherwise → ALLOW.
 
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { retrieve } from "../../graph/retrieve.js";
 import { tokenizeQuery } from "../../graph/rank.js";
 import type { ServerContext } from "../context.js";
@@ -55,6 +58,28 @@ function recentlyTouchedMatchesQuery(
   return matches;
 }
 
+async function logDecision(
+  ctx: ServerContext,
+  toolName: string,
+  query: string | null,
+  decision: "allow" | "block",
+  reason: string | undefined,
+): Promise<void> {
+  try {
+    await mkdir(dirname(ctx.paths.gateLog), { recursive: true });
+    const entry = {
+      ts: new Date().toISOString(),
+      tool: toolName,
+      decision,
+      query,
+      reason,
+    };
+    await appendFile(ctx.paths.gateLog, JSON.stringify(entry) + "\n", "utf8");
+  } catch {
+    // Durability is best-effort; an unwritable disk shouldn't fail the gate.
+  }
+}
+
 export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<GateResponse> {
   if (!req?.tool_name || typeof req.tool_name !== "string") {
     return { decision: "allow", reason: "no tool_name" };
@@ -66,14 +91,20 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
 
   const input = (req.tool_input && typeof req.tool_input === "object" ? req.tool_input : {}) as Record<string, unknown>;
   const query = extractQuery(req.tool_name, input);
-  if (!query) return { decision: "allow", reason: "no extractable query" };
+  if (!query) {
+    const res: GateResponse = { decision: "allow", reason: "no extractable query" };
+    await logDecision(ctx, req.tool_name, null, res.decision, res.reason);
+    return res;
+  }
 
   const retrieval = await retrieve(ctx.graph, query);
   if (retrieval.confidence !== "high") {
-    return {
+    const res: GateResponse = {
       decision: "allow",
       reason: `confidence=${retrieval.confidence} — letting ${req.tool_name} through`,
     };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
   }
 
   // High confidence — but check if recent activity overlaps the query first.
@@ -82,20 +113,24 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens);
 
   if (overlap.length > 0) {
-    return {
+    const res: GateResponse = {
       decision: "allow",
       reason:
         `confidence=high but human just touched ${overlap.slice(0, 3).join(", ")} — ` +
         `static context may be stale, letting ${req.tool_name} through.`,
     };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
   }
 
   const top = retrieval.files.slice(0, 3).map((f) => f.path).join(", ");
-  return {
+  const res: GateResponse = {
     decision: "block",
     reason:
       `Synthra has high-confidence context for "${query}" (top files: ${top}). ` +
       `Use the \`graph_continue\` MCP tool with this query instead of ${req.tool_name}, ` +
       `or read a specific file/symbol with \`graph_read\`.`,
   };
+  await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+  return res;
 }

@@ -18,5 +18,7 @@ export default defineConfig({
   loader: {
     ".ps1": "text",
     ".sh": "text",
+    ".html": "text",
+    ".css": "text",
   },
 });
