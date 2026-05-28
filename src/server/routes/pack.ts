@@ -1,14 +1,54 @@
-// POST /pack { query } → returns a ContextPack.
-// Called by the packer-aware MCP tools.
-// TODO: M2
+// POST /pack { query, maxTokens? } → ContextPack JSON.
+// Runs retrieve → pack against the in-memory graph.
 
-import type { ContextPack } from "../../packer/index.js";
+import { retrieve } from "../../graph/retrieve.js";
+import { scoreFiles } from "../../graph/rank.js";
+import { pack, type ContextPack } from "../../packer/index.js";
+import type { ServerContext } from "../context.js";
 
 export interface PackRequest {
   query: string;
   maxTokens?: number;
+  includeTests?: boolean;
 }
 
-export async function handlePack(_req: PackRequest): Promise<ContextPack> {
-  throw new Error("Synthra: handlePack not yet implemented (M2)");
+export interface PackResponse extends ContextPack {
+  query: string;
+  confidence: "high" | "medium" | "low";
+  retrievalReason: string;
+}
+
+export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<PackResponse> {
+  if (!req?.query || typeof req.query !== "string") {
+    throw new Error("pack: 'query' (string) is required");
+  }
+
+  const retrieval = await retrieve(ctx.graph, req.query);
+
+  // Surface per-file scoring rationale in the rendered pack.
+  const allFiles = ctx.graph.nodes.filter((n) => n.kind === "file");
+  const scored = scoreFiles({
+    candidates: allFiles as Parameters<typeof scoreFiles>[0]["candidates"],
+    query: req.query,
+    graph: ctx.graph,
+  });
+  const reasons = new Map<string, string>();
+  for (const s of scored) {
+    if (s.reasons.length) reasons.set(s.file.path, s.reasons.join(","));
+  }
+
+  const result = await pack(retrieval.files, {
+    query: req.query,
+    graph: ctx.graph,
+    budgetTokens: req.maxTokens,
+    includeTests: req.includeTests,
+    reasons,
+  });
+
+  return {
+    ...result,
+    query: req.query,
+    confidence: retrieval.confidence,
+    retrievalReason: retrieval.reason,
+  };
 }

@@ -43,6 +43,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@hono/node-server": "^1.18.0",
     "chokidar": "^5.0.0",
     "hono": "^4.12.23",
     "ignore": "^7.0.0",

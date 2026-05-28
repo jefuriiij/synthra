@@ -8,6 +8,7 @@ import sade from "sade";
 
 import { log } from "../shared/logger.js";
 import { scanCommand } from "./scan-command.js";
+import { serveCommand } from "./serve-command.js";
 
 const VERSION = "0.0.1";
 
@@ -38,7 +39,11 @@ export function buildProgram() {
       await scanCommand(path ?? ".");
     });
 
-  prog.command("serve [path]", "Start the MCP server only.").action(notYet("serve", "M2"));
+  prog
+    .command("serve [path]", "Start the HTTP MCP server against a scanned project.")
+    .action(async (path: string | undefined) => {
+      await serveCommand(path ?? ".");
+    });
   prog.command("dashboard", "Open the token dashboard.").action(notYet("dashboard", "M6"));
 
   return prog;
