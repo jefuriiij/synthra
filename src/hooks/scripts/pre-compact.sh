@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# PreCompact hook — macOS/Linux.
-# Re-injects context priming after Claude's auto-compaction.
-# TODO: M3
+# PreCompact hook — bash. Re-injects the primer after Claude auto-compacts.
 
-echo "[syn] pre-compact.sh not yet implemented (M3)" >&2
+set +e
+
+PORT_FILE="$PWD/.synthra-graph/mcp_port"
+if [ ! -f "$PORT_FILE" ]; then exit 0; fi
+PORT=$(cat "$PORT_FILE" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$PORT" ]; then exit 0; fi
+
+PRIMER=$(curl -sS --max-time 3 "http://127.0.0.1:$PORT/prime" 2>/dev/null \
+  | sed -n 's/.*"primer"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' \
+  | head -c 8000)
+
+if [ -n "$PRIMER" ]; then
+  printf '%b\n' "$PRIMER"
+fi
+exit 0

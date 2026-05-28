@@ -15,4 +15,8 @@ export default defineConfig({
   sourcemap: true,
   splitting: false,
   shims: false,
+  loader: {
+    ".ps1": "text",
+    ".sh": "text",
+  },
 });

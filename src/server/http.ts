@@ -10,6 +10,7 @@ import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
+import { handleMcpRequest } from "./mcp.js";
 import { findFreePort } from "./port.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleGate } from "./routes/gate.js";
@@ -82,6 +83,11 @@ function buildApp(ctx: ServerContext, port: number): Hono {
     return c.json(
       await handleActivity(Number.isFinite(sinceMs) ? sinceMs : undefined, ctx),
     );
+  });
+
+  app.post("/mcp", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    return c.json(await handleMcpRequest(body, ctx));
   });
 
   app.onError((err, c) => {

@@ -1,14 +1,23 @@
 // `syn` entry point. Parses args and dispatches to commands.
-// Commands implemented in M1:
-//   syn scan [path]       → walk + parse + write graph
-//   syn .                 → alias for `syn scan .` (M3 will chain start-claude)
-// Stubs (M2-M6) print a "not yet implemented" message rather than crash.
+//
+// Commands:
+//   syn  [path]              → default: bootstrap + scan + serve + launch Claude
+//   syn . [path]             → alias for default
+//   syn scan [path]          → scan only — walk + parse + write graph
+//   syn serve [path]         → start the HTTP MCP server only
+//   syn --resume <id> [path] → default flow, but resume an existing session
 
 import sade from "sade";
 
+import { startServer } from "../server/http.js";
 import { log } from "../shared/logger.js";
+import { resolvePaths } from "../shared/paths.js";
+import { cleanup } from "./cleanup.js";
 import { scanCommand } from "./scan-command.js";
 import { serveCommand } from "./serve-command.js";
+import { startClaude } from "./start-claude.js";
+
+import { resolve } from "node:path";
 
 const VERSION = "0.0.1";
 
@@ -19,6 +28,45 @@ function notYet(name: string, milestone: string): () => void {
   };
 }
 
+interface DefaultOpts {
+  resume?: string;
+}
+
+async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
+  const projectRoot = resolve(rawPath);
+  const paths = resolvePaths(projectRoot);
+
+  // 1. bootstrap + scan
+  await scanCommand(rawPath);
+
+  // 2. start MCP server (background within this process)
+  const handle = await startServer(paths);
+  log.info(`MCP server listening on ${handle.url}`);
+
+  try {
+    // 3. install hooks + register MCP + spawn claude (waits for exit)
+    const code = await startClaude({
+      paths,
+      mcpPort: handle.port,
+      resumeSessionId: opts.resume,
+    });
+    log.info(`claude exited with code ${code}`);
+  } finally {
+    // 4. always tear down
+    try {
+      await handle.stop();
+      log.info("MCP server stopped.");
+    } catch (err) {
+      log.warn(`server stop error: ${(err as Error).message}`);
+    }
+    try {
+      await cleanup(paths);
+    } catch (err) {
+      log.warn(`cleanup error: ${(err as Error).message}`);
+    }
+  }
+}
+
 export function buildProgram() {
   const prog = sade("syn");
   prog
@@ -26,15 +74,16 @@ export function buildProgram() {
     .describe("Local context engine for AI coding assistants.");
 
   prog
-    .command("scan [path]", "Scan a project and write the context graph.", { default: true })
-    .example("scan")
-    .example("scan ./packages/api")
-    .action(async (path: string | undefined) => {
-      await scanCommand(path ?? ".");
+    .command(". [path]", "Bootstrap + scan + launch Claude with Synthra MCP.", {
+      default: true,
+    })
+    .option("--resume <id>", "Resume a Claude session by id")
+    .action(async (path: string | undefined, opts: DefaultOpts) => {
+      await defaultFlow(path ?? ".", opts);
     });
 
   prog
-    .command(". [path]", "Alias for `scan`. M3 will also launch Claude Code.")
+    .command("scan [path]", "Scan only — walk + parse + write graph.")
     .action(async (path: string | undefined) => {
       await scanCommand(path ?? ".");
     });
@@ -44,6 +93,7 @@ export function buildProgram() {
     .action(async (path: string | undefined) => {
       await serveCommand(path ?? ".");
     });
+
   prog.command("dashboard", "Open the token dashboard.").action(notYet("dashboard", "M6"));
 
   return prog;
@@ -54,8 +104,5 @@ export async function main(argv: string[]): Promise<void> {
   prog.parse(argv);
 }
 
-main(process.argv).catch((err) => {
-  log.error("fatal:", err?.message ?? String(err));
-  if (err?.stack) log.debug(err.stack);
-  process.exit(1);
-});
+// Note: `main` is invoked by bin/syn, NOT here. Top-level invocation on
+// import would side-effect any consumer that just wants to read exports.
