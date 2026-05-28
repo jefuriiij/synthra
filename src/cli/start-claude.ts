@@ -6,7 +6,7 @@
 //     kept for any external callers; cli/index.ts now composes the pieces
 //     itself so the default flow can skip the CLI spawn.
 
-import { spawn } from "node:child_process";
+import spawn from "cross-spawn";
 
 import { installHooks } from "../hooks/installer.js";
 import { loadConfig } from "../shared/config.js";
@@ -15,6 +15,12 @@ import type { SynthraPaths } from "../shared/paths.js";
 
 const MCP_NAME = "synthra";
 
+// We use `cross-spawn` instead of `node:child_process` so Windows .cmd
+// shims (e.g. claude.cmd) resolve correctly without setting shell:true.
+// shell:true triggers Node's DEP0190 deprecation because args get
+// concatenated into a single command line with no escaping. cross-spawn
+// handles shim resolution + proper arg escaping internally, so we avoid
+// the deprecation and the underlying security concern in one move.
 function runClaude(
   bin: string,
   args: string[],
@@ -25,7 +31,6 @@ function runClaude(
     const proc = spawn(bin, args, {
       cwd,
       stdio: stdio === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"],
-      shell: process.platform === "win32",
     });
     let stdout = "";
     let stderr = "";
