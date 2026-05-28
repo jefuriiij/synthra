@@ -25,6 +25,7 @@ import { recordProject } from "../shared/project-registry.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
+import { logUpdateHintIfNeeded } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
 import { registerMcp, spawnClaude, unregisterMcp } from "./start-claude.js";
 
@@ -82,6 +83,11 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   const projectRoot = resolve(rawPath);
   const paths = resolvePaths(projectRoot);
   const cfg = loadConfig();
+
+  // Fire-and-forget version check. Logs a one-liner if a newer version is on
+  // npm. Cached at ~/.synthra/version-check.json for 24h; SYN_NO_UPDATE_CHECK=1
+  // opts out. Never blocks the startup flow.
+  void logUpdateHintIfNeeded();
 
   // 1. bootstrap + scan + record in the global registry so the dashboard
   //    can list this project alongside any others.
