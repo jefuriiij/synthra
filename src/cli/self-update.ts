@@ -8,11 +8,12 @@ import { join } from "node:path";
 
 import { log } from "../shared/logger.js";
 
-const PKG_NAME = "synthra";
+const PKG_NAME = "@jefuriiij/synthra";
 const CACHE_DIR = join(homedir(), ".synthra");
 const CACHE_PATH = join(CACHE_DIR, "version-check.json");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const REGISTRY_URL = `https://registry.npmjs.org/${PKG_NAME}/latest`;
+// Scoped package: encode '@' and '/' for the registry URL.
+const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PKG_NAME)}/latest`;
 const FETCH_TIMEOUT_MS = 2000;
 
 interface CheckCache {
@@ -123,7 +124,7 @@ export async function logUpdateHintIfNeeded(): Promise<void> {
     const r = await checkForUpdate();
     if (r.hasUpdate && r.latest) {
       log.info(
-        `Synthra ${r.latest} is available (you have ${r.current}) — run: npm install -g synthra@latest`,
+        `Synthra ${r.latest} is available (you have ${r.current}) — run: npm install -g @jefuriiij/synthra@latest`,
       );
     }
   } catch {

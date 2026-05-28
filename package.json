@@ -1,6 +1,9 @@
 {
-  "name": "synthra",
+  "name": "@jefuriiij/synthra",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Local context engine for AI coding assistants — graph-based context, branch-aware memory, real-time human-activity awareness, deterministic Grep/Glob gating, and a live token dashboard.",
   "type": "module",
   "bin": {

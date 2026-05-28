@@ -5,7 +5,7 @@
 Built first for Claude Code (IDE extension + CLI). Anything that speaks the Model Context Protocol can plug in.
 
 ```bash
-npm install -g synthra
+npm install -g @jefuriiij/synthra
 cd your-project
 syn .
 ```
