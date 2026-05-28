@@ -1,7 +1,10 @@
-// Registers Synthra's MCP with Claude Code, installs hooks, spawns `claude`.
-// Waits for `claude` to exit (the user's Ctrl+C goes to claude first because
-// of stdio:inherit). On exit, unregisters the MCP entry so subsequent
-// `claude` invocations outside syn don't dangle.
+// Subroutines for plugging Synthra into Claude Code:
+//   - registerMcp     → `claude mcp add --transport http --scope local`
+//   - unregisterMcp   → `claude mcp remove`
+//   - spawnClaude     → spawn the terminal CLI (used only by `--launch-cli`)
+//   - startClaude     → legacy composite (install hooks + register + spawn + unregister)
+//     kept for any external callers; cli/index.ts now composes the pieces
+//     itself so the default flow can skip the CLI spawn.
 
 import { spawn } from "node:child_process";
 
@@ -9,13 +12,6 @@ import { installHooks } from "../hooks/installer.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
-
-export interface StartClaudeOptions {
-  paths: SynthraPaths;
-  mcpPort: number;
-  resumeSessionId?: string;
-  initialPrompt?: string;
-}
 
 const MCP_NAME = "synthra";
 
@@ -40,9 +36,8 @@ function runClaude(
   });
 }
 
-async function registerMcp(bin: string, port: number, cwd: string): Promise<void> {
-  const url = `http://127.0.0.1:${port}/mcp`;
-  // Best-effort remove first so re-registration is clean.
+export async function registerMcp(bin: string, mcpPort: number, cwd: string): Promise<boolean> {
+  const url = `http://127.0.0.1:${mcpPort}/mcp`;
   await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "local"], cwd).catch(() => undefined);
   const reg = await runClaude(
     bin,
@@ -51,33 +46,52 @@ async function registerMcp(bin: string, port: number, cwd: string): Promise<void
   );
   if (reg.code !== 0) {
     log.warn(`claude mcp add failed (code ${reg.code}). stderr: ${reg.stderr.trim()}`);
-    log.warn(`Synthra's tools won't be visible to Claude this session.`);
-  } else {
-    log.info(`registered MCP server with Claude: ${MCP_NAME} → ${url}`);
+    log.warn(`Synthra's MCP tools won't be visible to Claude this session.`);
+    return false;
   }
+  log.info(`registered MCP with Claude: ${MCP_NAME} → ${url}`);
+  return true;
 }
 
-async function unregisterMcp(bin: string, cwd: string): Promise<void> {
+export async function unregisterMcp(bin: string, cwd: string): Promise<void> {
   const r = await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "local"], cwd);
   if (r.code === 0) log.debug("unregistered MCP server");
 }
 
-export async function startClaude(opts: StartClaudeOptions): Promise<number> {
-  const cfg = loadConfig();
-  const bin = cfg.claudeBin;
+export interface SpawnClaudeOptions {
+  cwd: string;
+  resumeSessionId?: string;
+  initialPrompt?: string;
+}
 
-  await installHooks(opts.paths);
-  await registerMcp(bin, opts.mcpPort, opts.paths.projectRoot);
-
+export async function spawnClaude(bin: string, opts: SpawnClaudeOptions): Promise<number> {
   const args: string[] = [];
   if (opts.resumeSessionId) args.push("--resume", opts.resumeSessionId);
   if (opts.initialPrompt) args.push(opts.initialPrompt);
-
   log.info(`launching ${bin} ${args.join(" ")}`);
-
-  const result = await runClaude(bin, args, opts.paths.projectRoot, "inherit");
-
-  await unregisterMcp(bin, opts.paths.projectRoot);
-
+  const result = await runClaude(bin, args, opts.cwd, "inherit");
   return result.code;
+}
+
+// Legacy composite — install hooks + register MCP + spawn claude + cleanup.
+// cli/index.ts no longer relies on this; it composes the pieces above so the
+// new default `syn .` flow can skip the CLI spawn. Kept for compatibility.
+export interface StartClaudeOptions {
+  paths: SynthraPaths;
+  mcpPort: number;
+  resumeSessionId?: string;
+  initialPrompt?: string;
+}
+
+export async function startClaude(opts: StartClaudeOptions): Promise<number> {
+  const bin = loadConfig().claudeBin;
+  await installHooks(opts.paths);
+  await registerMcp(bin, opts.mcpPort, opts.paths.projectRoot);
+  const code = await spawnClaude(bin, {
+    cwd: opts.paths.projectRoot,
+    resumeSessionId: opts.resumeSessionId,
+    initialPrompt: opts.initialPrompt,
+  });
+  await unregisterMcp(bin, opts.paths.projectRoot);
+  return code;
 }
