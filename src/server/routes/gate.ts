@@ -1,13 +1,15 @@
 // POST /gate — PreToolUse hook calls this with the tool name + arguments.
 // THE MOAT — improvement #1. Strategy:
-//   - For Grep/Glob: extract the search pattern, run retrieve(); if confidence
-//     is "high", block with a reason naming the graph_continue tool.
-//   - For everything else: allow.
-//
-// Activity-aware relaxation (block override when human just touched the
-// query's files) is layered in during M5.
+//   - For Grep/Glob: extract the search pattern, run retrieve().
+//   - If recent human activity touches a file matching the query → ALLOW
+//     even at high confidence (the user's head is in that file; static
+//     context may be stale).
+//   - If confidence === "high" and no recent overlap → BLOCK with a reason
+//     pointing at graph_continue / graph_read.
+//   - Otherwise → ALLOW.
 
 import { retrieve } from "../../graph/retrieve.js";
+import { tokenizeQuery } from "../../graph/rank.js";
 import type { ServerContext } from "../context.js";
 
 export interface GateRequest {
@@ -21,6 +23,7 @@ export interface GateResponse {
 }
 
 const BLOCKABLE_TOOLS = new Set(["Grep", "Glob"]);
+const RECENT_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;
 
 function extractQuery(toolName: string, input: Record<string, unknown>): string | null {
   if (toolName === "Grep") {
@@ -30,11 +33,26 @@ function extractQuery(toolName: string, input: Record<string, unknown>): string 
   }
   if (toolName === "Glob") {
     const pattern = typeof input.pattern === "string" ? input.pattern : "";
-    // For Glob we strip wildcard chars and path separators to recover a usable
-    // query — e.g. "**/auth*.ts" → "auth ts".
     return pattern.replace(/[*?/\\.]+/g, " ").trim() || null;
   }
   return null;
+}
+
+function recentlyTouchedMatchesQuery(
+  recentPaths: string[],
+  queryTokens: Set<string>,
+): string[] {
+  const matches: string[] = [];
+  for (const path of recentPaths) {
+    const lower = path.toLowerCase();
+    for (const t of queryTokens) {
+      if (lower.includes(t)) {
+        matches.push(path);
+        break;
+      }
+    }
+  }
+  return matches;
 }
 
 export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<GateResponse> {
@@ -55,6 +73,20 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return {
       decision: "allow",
       reason: `confidence=${retrieval.confidence} — letting ${req.tool_name} through`,
+    };
+  }
+
+  // High confidence — but check if recent activity overlaps the query first.
+  const qTokens = new Set(tokenizeQuery(query));
+  const recentPaths = ctx.activity.recentFilePaths(RECENT_ACTIVITY_WINDOW_MS);
+  const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens);
+
+  if (overlap.length > 0) {
+    return {
+      decision: "allow",
+      reason:
+        `confidence=high but human just touched ${overlap.slice(0, 3).join(", ")} — ` +
+        `static context may be stale, letting ${req.tool_name} through.`,
     };
   }
 

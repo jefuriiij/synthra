@@ -23,7 +23,8 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
     throw new Error("pack: 'query' (string) is required");
   }
 
-  const retrieval = await retrieve(ctx.graph, req.query);
+  const recentlyEditedPaths = ctx.activity.recentFilePaths(15 * 60 * 1000);
+  const retrieval = await retrieve(ctx.graph, req.query, { recentlyEditedPaths });
 
   // Surface per-file scoring rationale in the rendered pack.
   const allFiles = ctx.graph.nodes.filter((n) => n.kind === "file");
@@ -31,6 +32,7 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
     candidates: allFiles as Parameters<typeof scoreFiles>[0]["candidates"],
     query: req.query,
     graph: ctx.graph,
+    recentlyEditedPaths,
   });
   const reasons = new Map<string, string>();
   for (const s of scored) {

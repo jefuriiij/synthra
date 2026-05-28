@@ -143,6 +143,22 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "recent_activity",
+    description:
+      "What has the human been doing in the editor recently — file saves, branch switches, and uncommitted-diff changes. Use this to check whether the static context pack may be stale (e.g. before answering a question about a file that was just edited).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since_ms: {
+          type: "number",
+          description:
+            "Epoch milliseconds. Only return events newer than this. Defaults to the last 60 minutes.",
+        },
+        limit: { type: "number", description: "Cap on returned events." },
+      },
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -161,6 +177,8 @@ async function callTool(
       return contextRemember(args, ctx);
     case "context_recall":
       return contextRecall(args, ctx);
+    case "recent_activity":
+      return recentActivity(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -255,6 +273,37 @@ async function contextRemember(args: Record<string, unknown> | undefined, ctx: S
       `Stored: ${result.storePath}\n` +
       `CONTEXT.md refreshed: ${result.contextMdPath}`,
   );
+}
+
+const DEFAULT_RECENT_WINDOW_MS = 60 * 60 * 1000;
+
+function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const sinceMs =
+    typeof args?.since_ms === "number" && Number.isFinite(args.since_ms)
+      ? args.since_ms
+      : Date.now() - DEFAULT_RECENT_WINDOW_MS;
+  const limit =
+    typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : undefined;
+
+  let events = ctx.activity.getEvents(sinceMs);
+  if (limit) events = events.slice(-limit);
+
+  if (events.length === 0) {
+    return textContent(
+      `No human-activity events since ${new Date(sinceMs).toISOString()}.`,
+    );
+  }
+
+  const lines = [`# Recent human activity (${events.length} events)`, ""];
+  for (const e of events) {
+    if ("path" in e) {
+      lines.push(`- **${e.kind}** ${e.path}  _(${e.ts})_`);
+    } else {
+      const summary = JSON.stringify(e.details);
+      lines.push(`- **${e.kind}** ${summary}  _(${e.ts})_`);
+    }
+  }
+  return textContent(lines.join("\n"));
 }
 
 async function contextRecall(args: Record<string, unknown> | undefined, ctx: ServerContext) {

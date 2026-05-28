@@ -6,6 +6,9 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { writeFile } from "node:fs/promises";
 
+import { ActivityStore } from "../activity/activity-log.js";
+import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js";
+import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
@@ -36,7 +39,8 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
       readGraph(paths.infoGraph),
       readSymbolIndex(paths.symbolIndex),
     ]);
-    return { paths, graph, symbolIndex };
+    const activity = new ActivityStore(paths.activityLog);
+    return { paths, graph, symbolIndex, activity };
   } catch (err) {
     throw new Error(
       `failed to load graph from ${paths.infoGraph}: ${(err as Error).message}. ` +
@@ -116,12 +120,33 @@ export async function startServer(
 
   await writeFile(paths.mcpPort, String(port), "utf8");
 
+  // Spin up the human-activity watchers. Both are best-effort — if chokidar
+  // can't watch (e.g. unsupported FS) or .git is missing, they no-op silently.
+  const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) =>
+    ctx.activity.add(e),
+  );
+  const gitWatcher: GitWatcher = createGitWatcher(paths.projectRoot, (e) =>
+    ctx.activity.add(e),
+  );
+  try {
+    await fileWatcher.start();
+  } catch (err) {
+    log.warn(`file watcher failed to start: ${(err as Error).message}`);
+  }
+  try {
+    await gitWatcher.start();
+  } catch (err) {
+    log.warn(`git watcher failed to start: ${(err as Error).message}`);
+  }
+
   const url = `http://127.0.0.1:${port}`;
 
   return {
     port,
     url,
     async stop() {
+      await fileWatcher.stop().catch(() => undefined);
+      await gitWatcher.stop().catch(() => undefined);
       await new Promise<void>((resolve, reject) => {
         nodeServer.close((err) => (err ? reject(err) : resolve()));
       });
