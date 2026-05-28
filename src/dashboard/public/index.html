@@ -3,107 +3,439 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Synthra — Token Dashboard</title>
+  <title>Synthra · Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <header>
+
+  <!-- ============ Top nav ============ -->
+  <header class="topnav">
     <div class="brand">
-      <h1>Synthra</h1>
-      <span class="tag">Token Dashboard</span>
+      <div class="brand-mark"></div>
+      <div class="brand-name">Synth<em>ra</em></div>
+      <div class="brand-eyebrow">Dashboard</div>
     </div>
-    <div class="meta">
-      <span class="active-project" id="active-project">…</span>
-      <span class="dot" id="dot"></span>
-      <span id="status">connecting…</span>
+    <div class="top-right">
+      <span class="status-pill">
+        <span class="dot" id="dot"></span>
+        <span id="status">connecting…</span>
+      </span>
+    </div>
+    <div class="topnav-right">
+      <span class="port-badge">port <span class="mono" id="port-num">8901</span></span>
+      <button class="faq-btn has-tooltip" id="faq-btn" data-tooltip="Open the FAQ — explains where every number on this dashboard comes from, how cost is calculated, and what the savings floor actually measures." aria-label="Open FAQ">?</button>
     </div>
   </header>
 
-  <main>
-    <section>
-      <h2>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
-        Global totals
-        <span class="muted">(all projects)</span>
-      </h2>
-      <div class="cards" id="cards"></div>
-    </section>
+  <!-- ============ Hero strip ============ -->
+  <section class="hero-strip">
+    <div class="date-block">
+      <div class="d-day" id="hero-day">—</div>
+      <div class="d-rest">
+        <div id="hero-weekday">—</div>
+        <div class="d-mute" id="hero-month">—</div>
+      </div>
+    </div>
 
-    <section>
-      <h2>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        Projects
-      </h2>
-      <div class="projects" id="projects"></div>
-      <p class="empty hidden" id="projects-empty">No projects registered yet. Run <code>syn .</code> in any project to add it.</p>
-    </section>
+    <div class="hero-spacer"></div>
 
-    <section>
-      <h2>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Recent calls
-        <span class="muted">(across all projects)</span>
-      </h2>
-      <table id="turns">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Project</th>
-            <th>Model</th>
-            <th class="num"><span class="has-tooltip" data-tooltip="New (uncached) tokens you sent to Claude this turn. Usually small — most of the conversation comes from cache.">Input <span class="help-icon">i</span></span></th>
-            <th class="num"><span class="has-tooltip" data-tooltip="Tokens Claude generated in its response. The most expensive line item — ~5× the input rate on Opus.">Output <span class="help-icon">i</span></span></th>
-            <th class="num"><span class="has-tooltip" data-tooltip="Cache read / cache write. Reads (~10% of input rate) reuse prior context; writes (~125% of input rate) save new context for future turns.">Cache R / W <span class="help-icon">i</span></span></th>
-            <th class="num"><span class="has-tooltip" data-tooltip="Approximate USD cost for this turn — input × rate + output × 5×rate + cache_read × 0.1×rate + cache_write × 1.25×rate, using the turn's model.">Cost <span class="help-icon">i</span></span></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <p class="empty hidden" id="turns-empty">No turns logged yet. Use Claude via the IDE extension or <code>claude</code> CLI while <code>syn .</code> is running.</p>
-    </section>
+    <div class="active-block">
+      <div class="ab-label">Active project</div>
+      <div class="ab-value" id="active-project">—</div>
+    </div>
 
-    <section>
-      <h2>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Recent gate decisions
-      </h2>
-      <table id="gates">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Project</th>
-            <th>Tool</th>
-            <th><span class="has-tooltip" data-tooltip="ALLOW = Synthra let the tool call through. BLOCK = Synthra intercepted it because the graph already had high-confidence context — Claude should use graph_continue instead.">Decision <span class="help-icon">i</span></span></th>
-            <th>Query</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <p class="empty hidden" id="gates-empty">No gate decisions yet.</p>
-    </section>
+  </section>
+
+  <!-- ============ Main 3-column grid ============ -->
+  <main class="grid-main">
+
+    <!-- ===== Left ===== -->
+    <aside class="col-left">
+      <div class="panel">
+        <div class="p-head">Legend</div>
+
+        <div class="p-section">
+          <div class="ps-head">Model family</div>
+          <div class="check"><span class="dot-sq opus"></span><span>Opus</span></div>
+          <div class="check"><span class="dot-sq sonnet"></span><span>Sonnet</span></div>
+          <div class="check"><span class="dot-sq haiku"></span><span>Haiku</span></div>
+          <div class="check"><span class="dot-sq unknown"></span><span>Other</span></div>
+        </div>
+
+        <div class="p-section">
+          <div class="ps-head">Projects</div>
+          <div class="proj-filter" id="proj-filter"></div>
+        </div>
+      </div>
+
+      <div class="card donut-card has-tooltip" data-tooltip="Which Claude models you've been calling, weighted by turn count. Opus = slow and expensive; Sonnet = workhorse; Haiku = cheap and fast. Helps you see where your budget is actually going.">
+        <div class="card-head">
+          <div class="card-eyebrow">Model usage</div>
+          <div class="card-meta">by turns</div>
+        </div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 140 140" class="donut" id="donut-svg" aria-hidden="true">
+            <circle cx="70" cy="70" r="52" class="donut-track"/>
+          </svg>
+          <div class="donut-center">
+            <div class="donut-total" id="donut-total">0</div>
+            <div class="donut-total-k">turns</div>
+          </div>
+        </div>
+        <div class="donut-legend" id="donut-legend"></div>
+      </div>
+    </aside>
+
+    <!-- ===== Center ===== -->
+    <div class="col-center">
+
+      <!-- Metric strip — divider-separated, no individual card chrome -->
+      <div class="metric-strip">
+        <div class="metric-item has-tooltip" data-tooltip="Total back-and-forth exchanges with Claude across all projects. One turn = you send a message, Claude responds. Counted from the Stop hook against transcript JSONL files.">
+          <div class="m-label">Turns</div>
+          <div class="m-value" id="m-turns">0</div>
+        </div>
+        <div class="metric-item has-tooltip" data-tooltip="↓ Input — new, uncached tokens you sent to Claude. Usually small (a few hundred per turn) because most of the conversation history comes from prompt cache.">
+          <div class="m-label">↓ Input</div>
+          <div class="m-value" id="m-input">0</div>
+        </div>
+        <div class="metric-item has-tooltip" data-tooltip="↑ Output — tokens Claude generated in its responses. Most expensive line item per turn (~5× input rate on Opus). High output usually means long code edits.">
+          <div class="m-label">↑ Output</div>
+          <div class="m-value" id="m-output">0</div>
+        </div>
+        <div class="metric-item has-tooltip" data-tooltip="⟲ Cache read — tokens reused from the prompt cache (system prompt, conversation history, Synthra's pre-packed context). Cheap, around 10% of the input rate. The bulk of every long session.">
+          <div class="m-label">⟲ Cache R</div>
+          <div class="m-value" id="m-cache-r">0</div>
+        </div>
+        <div class="metric-item has-tooltip" data-tooltip="＋ Cache write — tokens newly added to the prompt cache so future turns can read them cheaply. Premium-priced (~125% of input rate) but pays back across the session.">
+          <div class="m-label">＋ Cache W</div>
+          <div class="m-value" id="m-cache-w">0</div>
+        </div>
+      </div>
+
+      <!-- Savings hero -->
+      <div class="card savings has-tooltip" data-tooltip="What Synthra has saved you, as a deliberately conservative floor estimate. Each time the gate blocks an exploratory Grep/Glob, we credit 500 tokens × $3 per million-token input rate. Real savings are usually higher because the formula ignores cache thrash and follow-up Reads that the block also prevents. The audit line below shows the exact math live.">
+        <div class="card-head">
+          <div class="card-eyebrow">Synthra savings <span class="src-badge estimated">floor</span></div>
+          <div class="card-meta" id="savings-pct">— off</div>
+        </div>
+        <div class="savings-body">
+          <div class="savings-figure">
+            <div class="savings-money" id="savings-money">$0.00</div>
+            <div class="savings-tokens"><span id="savings-tokens">0</span> tokens avoided</div>
+          </div>
+          <div class="savings-bar">
+            <div class="savings-actual" id="savings-actual-bar" style="width:100%"></div>
+            <div class="savings-saved"  id="savings-saved-bar"  style="width:0%"></div>
+          </div>
+          <div class="savings-legend">
+            <div class="sl-row"><span class="sl-dot actual"></span>You paid <b id="savings-actual-amt">$0.00</b></div>
+            <div class="sl-row"><span class="sl-dot saved"></span>Baseline <b id="savings-baseline-amt">$0.00</b></div>
+          </div>
+        </div>
+        <div class="savings-audit">
+          <span class="audit-formula">
+            <b id="audit-blocks">0</b> blocks × <b>500</b> tokens × <b>$3</b> / M input rate = <b id="audit-result" class="audit-result">$0.00</b>
+          </span>
+        </div>
+      </div>
+
+      <!-- Recent turns -->
+      <div class="card turns-card has-tooltip" data-tooltip="Every conversational turn Synthra has observed across all your projects, newest first. Each row shows when, which project, which model, and how the cost broke down between fresh input, generated output, and cache.">
+        <div class="card-head">
+          <div class="card-eyebrow">Recent turns</div>
+          <div class="card-meta" id="turns-count">— shown</div>
+        </div>
+        <div class="turns-scroll">
+          <table class="turns-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Project</th>
+                <th>Model</th>
+                <th class="num">In</th>
+                <th class="num">Out</th>
+                <th class="num">Cache R/W</th>
+                <th class="num">Cost</th>
+              </tr>
+            </thead>
+            <tbody id="turns-body"></tbody>
+          </table>
+          <p class="empty hidden" id="turns-empty">No turns logged yet. Run <code>syn .</code> in any project and chat with Claude.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== Right ===== -->
+    <aside class="col-right">
+
+      <!-- Cost hero -->
+      <div class="card cost-hero has-tooltip" data-tooltip="Your all-time Claude spend across every project Synthra has tracked on this machine. Token counts come from Claude's transcript JSONL files; dollar amounts are computed by multiplying those counts by Anthropic's published per-model rates. See the FAQ for full rate tables.">
+        <div class="card-head">
+          <div class="card-eyebrow">Total spend · <em>all time</em></div>
+        </div>
+        <div class="big-money" id="big-cost">$0.<em>00</em></div>
+        <div class="cost-sub">
+          <div class="cs-row">
+            <span class="cs-k">Tokens (in+out)</span>
+            <span class="cs-v" id="cs-tokens">0</span>
+          </div>
+          <div class="cs-row">
+            <span class="cs-k">Avg / turn</span>
+            <span class="cs-v" id="cs-avg">$0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- The Moat -->
+      <div class="card moat has-tooltip" data-tooltip="Synthra's PreToolUse hook intercepts. Each block = Synthra recognized the graph already had high-confidence context for the query, so it stopped Claude from running an exploratory Grep or Glob. The list below shows the latest decisions across all projects.">
+        <div class="card-head">
+          <div class="card-eyebrow">The <em>Moat</em></div>
+          <div class="card-meta">PreToolUse</div>
+        </div>
+        <div class="moat-value"><span id="blocks">0</span> <em>blocks</em></div>
+        <div class="gate-mini" id="gate-mini"></div>
+      </div>
+
+    </aside>
   </main>
 
-  <footer>
-    <span>Synthra Token Dashboard · live polling every 2s</span>
-    <span class="muted">Cost figures are approximate — based on published Anthropic rates.</span>
+  <!-- ============ Project dialog ============ -->
+  <div class="dialog-backdrop hidden" id="dialog-backdrop" role="dialog" aria-modal="true">
+    <div class="dialog">
+      <button class="dialog-close" id="dialog-close" aria-label="Close">×</button>
+      <div class="dialog-eyebrow">Project · <em>details</em></div>
+      <div class="dialog-name" id="d-name">—</div>
+      <div class="dialog-path" id="d-path">—</div>
+      <div class="dialog-grid">
+        <div class="dg-cell">
+          <div class="dg-k">Total cost</div>
+          <div class="dg-v money" id="d-cost">$0.00</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">Turns</div>
+          <div class="dg-v" id="d-turns">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">↓ Raw input</div>
+          <div class="dg-v" id="d-input">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">↑ Output</div>
+          <div class="dg-v" id="d-output">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">⟲ Cache read</div>
+          <div class="dg-v" id="d-cache-r">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">＋ Cache write</div>
+          <div class="dg-v" id="d-cache-w">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">Moat blocks</div>
+          <div class="dg-v" id="d-blocks">0</div>
+        </div>
+        <div class="dg-cell">
+          <div class="dg-k">Last active</div>
+          <div class="dg-v dg-v-sm" id="d-last">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FAQ dialog ============ -->
+  <div class="dialog-backdrop hidden" id="faq-backdrop" role="dialog" aria-modal="true" aria-label="Dashboard FAQ">
+    <div class="dialog dialog-faq">
+      <button class="dialog-close" id="faq-close" aria-label="Close">×</button>
+      <div class="dialog-eyebrow">FAQ · <em>where every number comes from</em></div>
+      <div class="dialog-name">Understanding your dashboard</div>
+      <div class="dialog-path">Synthra reports what Claude actually used — read from transcripts, not estimated.</div>
+
+      <div class="faq-content">
+
+        <details open>
+          <summary>Where does Synthra get these numbers from?</summary>
+          <div class="faq-body">
+            <p>Synthra <strong>does not estimate</strong> token counts — it reads them directly from Claude's own log files. Every number on this dashboard is traceable:</p>
+            <table>
+              <tr><td>Turns, ↓ In, ↑ Out, Cache R/W</td><td>Parsed from Claude's transcript JSONLs at <code>~/.claude/projects/&lt;encoded-cwd&gt;/*.jsonl</code></td></tr>
+              <tr><td>Model used per turn</td><td>From each turn's <code>model</code> field in the same transcripts</td></tr>
+              <tr><td>Moat blocks + gate decisions</td><td>From <code>.synthra-graph/gate_log.jsonl</code> inside each project</td></tr>
+              <tr><td>Active project, project list</td><td>From <code>~/.synthra/projects.json</code> (built up as you run <code>syn .</code>)</td></tr>
+              <tr><td>Total spend (USD)</td><td>Above token counts × Anthropic's published per-model rates — see "How is cost calculated?" below</td></tr>
+              <tr><td>Synthra savings (USD)</td><td><strong>Estimated</strong> — see "About the Savings (floor) card" below</td></tr>
+            </table>
+            <p>The cost-calculation logic lives in <code>src/shared/pricing.ts</code>; the aggregation logic in <code>src/dashboard/delta.ts</code>. Both are linked at the bottom.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>What do the columns in Recent Turns mean?</summary>
+          <div class="faq-body">
+            <table>
+              <tr><td><code>Time</code></td><td>When this turn happened (local time)</td></tr>
+              <tr><td><code>Project</code></td><td>Which directory the turn ran in</td></tr>
+              <tr><td><code>Model</code></td><td>Claude model used — Opus, Sonnet, or Haiku (color-coded in the model pill)</td></tr>
+              <tr><td><code>In</code></td><td>Raw input tokens — brand-new content sent to Claude this turn, not cached</td></tr>
+              <tr><td><code>Out</code></td><td>Tokens Claude generated in its response</td></tr>
+              <tr><td><code>Cache R/W</code></td><td>Cache <strong>R</strong>ead (reused from prior turns) / Cache <strong>W</strong>rite (newly cached for future turns)</td></tr>
+              <tr><td><code>Cost</code></td><td>Per-turn USD estimate using Anthropic's published rates</td></tr>
+            </table>
+            <p><strong>Why is Raw Input often tiny (e.g. 6 tokens)?</strong> Because Claude Code aggressively caches the system prompt, CLAUDE.md, tool definitions, and conversation history. On each turn, only your brand-new message is "raw input" — everything else is a cheap cache read. This is normal and saves significant money.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How is cost calculated?</summary>
+          <div class="faq-body">
+            <p>Each token type has a different per-million-token rate. Synthra uses these rates (defined in <code>src/shared/pricing.ts</code>):</p>
+            <table>
+              <thead><tr><td><strong>Token type</strong></td><td><strong>Haiku 4.5</strong></td><td><strong>Sonnet 4.x</strong></td><td><strong>Opus 4.x</strong></td></tr></thead>
+              <tr><td>Raw Input</td><td>$1.00/M</td><td>$3.00/M</td><td>$15.00/M</td></tr>
+              <tr><td>Cache Write</td><td>$1.25/M</td><td>$3.75/M</td><td>$18.75/M</td></tr>
+              <tr><td>Cache Read</td><td>$0.10/M</td><td>$0.30/M</td><td>$1.50/M</td></tr>
+              <tr><td>Output</td><td>$5.00/M</td><td>$15.00/M</td><td>$75.00/M</td></tr>
+            </table>
+            <p><strong>Cost</strong> = (Input × input rate) + (Output × output rate) + (Cache Read × read rate) + (Cache Write × write rate)</p>
+            <p>Cache reads are <strong>10× cheaper</strong> than raw input. Cache writes are <strong>25% more expensive</strong> than raw input. So Claude Code's caching strategy pays for itself quickly across a session.</p>
+            <div class="warning"><span class="icon">⚠</span>These are <strong>Anthropic API rates</strong>, not your plan billing. If you're on Claude Pro, Team, Max, or Enterprise, your actual billing is different — the costs shown are estimates of <em>API-equivalent</em> usage, useful for comparing sessions against each other. See <a href="https://www.anthropic.com/pricing" target="_blank" rel="noopener noreferrer">anthropic.com/pricing</a> for the source of these rates.</div>
+          </div>
+        </details>
+
+        <details>
+          <summary>What is the total context size per turn?</summary>
+          <div class="faq-body">
+            <p><code>Total context = Raw Input + Cache Read + Cache Write</code></p>
+            <p>Example: if Raw Input is 6, Cache Read is 60K, and Cache Write is 13K, your turn used ~73K tokens of context — but 99.99% was efficiently cached, so you only paid the cache-read rate on most of it. The Recent Turns table lets you scan this row by row.</p>
+            <p>Anthropic's prompt-caching mechanics are documented at <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer">docs.anthropic.com/.../prompt-caching</a>.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>About the "Savings (floor)" card</summary>
+          <div class="faq-body">
+            <p>This is the only number on the dashboard that's <strong>estimated</strong> rather than measured. Here's the math:</p>
+            <p class="formula-box">savings = blocks × 500 tokens × $3 per million input rate</p>
+            <p>Each time Synthra's PreToolUse hook blocks a <code>Grep</code> or <code>Glob</code> call (because the graph already has high-confidence context), we credit a deliberately conservative 500 tokens at the Sonnet input rate.</p>
+            <p>It under-counts on purpose because the formula ignores:</p>
+            <ul>
+              <li><strong>Cache thrash</strong> — the blocked tool result would have been written to the cache at ~125% of the input rate, which we don't count</li>
+              <li><strong>Cascading reads</strong> — Claude usually follows a Grep with several <code>Read</code> calls, which the block also prevents but we don't credit</li>
+              <li><strong>Bigger codebases</strong> — actual Grep results often exceed 500 tokens by 3–6× in a real repo</li>
+            </ul>
+            <p>Real savings are typically <strong>2–5× the floor</strong>. The audit row on the Savings card shows the formula live so you can verify the math.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>What is "The Moat"?</summary>
+          <div class="faq-body">
+            <p>"The Moat" is Synthra's <strong>PreToolUse hook</strong>. Every time Claude Code is about to run a <code>Grep</code> or <code>Glob</code>, the hook calls Synthra's local server first and asks: "do you already have high-confidence context for this query?"</p>
+            <p>If yes, Synthra returns <code>{"decision":"block"}</code> — Claude can't run the tool. Claude then has to use Synthra's graph tools (<code>graph_continue</code>, <code>graph_read</code>) instead, which return the answer without burning tokens on exploration. This is deterministic enforcement — not prose policy. Claude literally can't disobey.</p>
+            <p>The Moat card shows total blocks; the inline list below shows the most recent gate decisions (block vs allow) with the originating query.</p>
+            <p>Every decision is logged to <code>.synthra-graph/gate_log.jsonl</code> for the project.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How does Synthra build the codebase graph?</summary>
+          <div class="faq-body">
+            <p>When you run <code>syn .</code> in a project, Synthra walks the file tree (respecting <code>.gitignore</code> + <code>.synthraignore</code>) and parses each file with <strong>tree-sitter</strong> WebAssembly grammars. Currently 14 languages are supported:</p>
+            <p>TypeScript, JavaScript, JSX/TSX, Python, Svelte, Vue, Go, Rust, Java, Kotlin, PHP, Ruby, C/C++, C#, and Dart.</p>
+            <p>For each file we extract: function and class definitions, exports, imports, and test-to-source links. The output is a structured graph stored at <code>.synthra-graph/info_graph.json</code> with a symbol index at <code>.synthra-graph/symbol_index.json</code>.</p>
+            <p>The graph is what makes pre-injection and The Moat work — both query it before Claude ever has to Grep.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Where does Synthra store data on disk?</summary>
+          <div class="faq-body">
+            <p>Synthra uses two folders per project, intentionally separated:</p>
+            <table>
+              <tr><td><code>.synthra-graph/</code></td><td><strong>Gitignored</strong>. Heavy generated state — the graph, symbol index, token + gate logs, session info. Rebuilt by <code>syn scan</code>.</td></tr>
+              <tr><td><code>.synthra/</code></td><td><strong>Git-tracked.</strong> Decisions, context notes, branch-scoped memory — the part teammates inherit when they clone the repo.</td></tr>
+            </table>
+            <p>Plus one global file at <code>~/.synthra/projects.json</code> that tracks every project on this machine.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How does branch-aware memory work?</summary>
+          <div class="faq-body">
+            <p>Inside <code>.synthra/</code>, context is partitioned by git branch:</p>
+            <ul>
+              <li><code>.synthra/context-store.json</code> — decisions on the default branch</li>
+              <li><code>.synthra/CONTEXT.md</code> — narrative notes on the default branch</li>
+              <li><code>.synthra/branches/&lt;sanitized-name&gt;/</code> — overrides on feature branches</li>
+            </ul>
+            <p>When you switch branches, Synthra's git-watcher (using <code>fs.watch</code> on <code>.git/HEAD</code>) detects the change and reloads the right context. Decisions scoped to a feature branch don't leak back to <code>main</code> until merge.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>How does Synthra actually reduce my Claude bill?</summary>
+          <div class="faq-body">
+            <p>Three mechanisms, in order of impact:</p>
+            <ul>
+              <li><strong>Pre-injection</strong> — at session start, Synthra packs ~4K tokens of graph context (function signatures, top inline bodies, file relationships) into Claude's prompt. Claude doesn't have to Grep / Read to discover what's in the codebase — it already knows.</li>
+              <li><strong>The Moat</strong> — the PreToolUse hook deterministically blocks exploratory Grep/Glob when the graph already has high-confidence context. Counts on the Moat card.</li>
+              <li><strong>Branch-aware memory</strong> — decisions and CONTEXT notes persist in <code>.synthra/</code>, so Claude doesn't have to be re-told what was decided last session.</li>
+            </ul>
+            <p>The dashboard shows real token counts from Claude's own logs so you can see the effect over time, not just take Synthra's word for it.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Why do long conversations get expensive?</summary>
+          <div class="faq-body">
+            <p>Each turn re-sends the entire conversation history as input. Even cached, the cumulative input grows roughly <strong>quadratically</strong>:</p>
+            <table>
+              <thead><tr><td><strong>Turns</strong></td><td><strong>Per-turn input</strong></td><td><strong>Cumulative input</strong></td></tr></thead>
+              <tr><td>10</td><td>~2K (mostly cached)</td><td>~110K</td></tr>
+              <tr><td>30</td><td>~2K</td><td>~930K</td></tr>
+              <tr><td>50</td><td>~2K</td><td>~2.55M</td></tr>
+            </table>
+            <p>Prompt caching helps a lot (cache reads are 10× cheaper than fresh input), but context still grows. This is why Synthra's pre-injection matters: starting with the answer already in context means you reach a useful state in fewer turns.</p>
+            <p><strong>Tip:</strong> Use <code>/compact</code> in Claude Code or start fresh sessions when a thread feels stale.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>Sources &amp; references</summary>
+          <div class="faq-body">
+            <p>Synthra is open source. Every number on this dashboard can be cross-checked:</p>
+            <ul class="link-list">
+              <li><a href="https://github.com/jefuriiij/synthra" target="_blank" rel="noopener noreferrer">github.com/jefuriiij/synthra</a> — source code, issues, roadmap</li>
+              <li><a href="https://www.npmjs.com/package/@jefuriiij/synthra" target="_blank" rel="noopener noreferrer">npm: @jefuriiij/synthra</a> — release history, install instructions</li>
+              <li><a href="https://www.anthropic.com/pricing" target="_blank" rel="noopener noreferrer">anthropic.com/pricing</a> — official rate table Synthra uses</li>
+              <li><a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" target="_blank" rel="noopener noreferrer">Anthropic docs · prompt caching</a> — explains cache read/write behavior</li>
+              <li><code>src/shared/pricing.ts</code> — the file in this repo holding the rate table</li>
+              <li><code>src/dashboard/delta.ts</code> — where dashboard aggregates are computed</li>
+              <li><code>src/server/routes/gate.ts</code> — the Moat implementation</li>
+            </ul>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Footer ============ -->
+  <footer class="foot">
+    <div>Synth<em>ra</em> · v0.1.2</div>
+    <div>Cost figures approximate · @jefuriiij</div>
   </footer>
 
   <script>
-    // Inline SVG icons. Each is a stroke-based icon, currentColor for the
-    // stroke, designed to inherit color from the parent's CSS.
-    const ICONS = {
-      dollar:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
-      chat:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-      arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
-      arrowUp:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
-      refresh:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
-      save:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
-      folder:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-      shield:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-      trending:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
-      ban:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
-    };
+    const $ = (sel) => document.querySelector(sel);
+    const SAVED_RATE_PER_M = 3.00; // USD per million tokens — conservative input rate
 
-    // Classify a model name into a family for color-coding.
+    // ----- model classification -----
     function modelFamily(model) {
       if (!model) return 'unknown';
       const m = model.toLowerCase();
@@ -113,232 +445,393 @@
       if (m.includes('haiku'))  return 'haiku';
       return 'unknown';
     }
-
     function modelLabel(model) {
-      if (!model || model === '<synthetic>') return model === '<synthetic>' ? 'synthetic' : 'unknown';
-      return model;
+      if (!model || model === '<synthetic>') return 'synthetic';
+      return model.replace(/^claude-/, '');
     }
 
-    const $ = (sel) => document.querySelector(sel);
-    const cardsEl = $("#cards");
-    const projectsEl = $("#projects");
-    const turnsBody = $("#turns tbody");
-    const gatesBody = $("#gates tbody");
-    const turnsEmpty = $("#turns-empty");
-    const gatesEmpty = $("#gates-empty");
-    const projectsEmpty = $("#projects-empty");
-    const statusEl = $("#status");
-    const dotEl = $("#dot");
-    const activeProjectEl = $("#active-project");
-
+    // ----- formatting -----
     function fmt(n) {
-      if (typeof n !== "number" || !Number.isFinite(n)) return "0";
-      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-      if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+      if (typeof n !== 'number' || !Number.isFinite(n)) return '0';
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + '<em>M</em>';
+      if (n >= 1_000)     return (n / 1_000).toFixed(1)    + '<em>k</em>';
       return n.toLocaleString();
     }
-
-    function fmtFull(n) {
-      return (typeof n === "number" ? n : 0).toLocaleString();
+    function fmtPlain(n) {
+      if (typeof n !== 'number' || !Number.isFinite(n)) return '0';
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+      if (n >= 1_000)     return (n / 1_000).toFixed(1)    + 'k';
+      return n.toLocaleString();
     }
-
-    function fmtCost(usd) {
-      if (typeof usd !== "number") return "~$0.00";
-      if (usd >= 1) return "~$" + usd.toFixed(2);
-      if (usd >= 0.01) return "~$" + usd.toFixed(3);
-      return "~$" + usd.toFixed(4);
+    function fmtCostBig(usd) {
+      if (typeof usd !== 'number' || !Number.isFinite(usd)) usd = 0;
+      let s;
+      if (usd >= 1)      s = usd.toFixed(2);
+      else if (usd >= 0.01) s = usd.toFixed(3);
+      else                  s = usd.toFixed(4);
+      const dot = s.indexOf('.');
+      if (dot === -1) return '$' + s;
+      return '$' + s.slice(0, dot) + '.<em>' + s.slice(dot + 1) + '</em>';
     }
-
+    function fmtCostFlat(usd) {
+      if (typeof usd !== 'number' || !Number.isFinite(usd)) usd = 0;
+      if (usd >= 1) return '$' + usd.toFixed(2);
+      if (usd >= 0.01) return '$' + usd.toFixed(3);
+      return '$' + usd.toFixed(4);
+    }
     function fmtTs(iso) {
       try {
         const d = new Date(iso);
         const today = new Date();
         const isToday = d.toDateString() === today.toDateString();
-        if (isToday) return d.toLocaleTimeString();
-        return d.toLocaleString();
-      } catch {
-        return iso;
-      }
+        if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      } catch { return iso; }
     }
 
-    // Definitions for the global-totals cards. Each: label, value-source key,
-    // icon, optional class (accent | money), tooltip text.
-    function cardConfigs(g) {
-      return [
-        {
-          label: "Total cost",
-          value: fmtCost(g.estimated_cost_usd),
-          icon: ICONS.dollar,
-          cls: "money",
-          tooltip: "Approximate USD cost across all projects. Computed from per-model pricing (Opus, Sonnet, Haiku) applied to each turn's input/output/cache. Tilde everywhere — real cost depends on Anthropic's current rates.",
-        },
-        {
-          label: "Turns",
-          value: fmt(g.total_turns),
-          icon: ICONS.chat,
-          tooltip: "Total number of back-and-forth exchanges with Claude across all projects. One turn = you send a message, Claude responds.",
-        },
-        {
-          label: "Input",
-          value: fmt(g.total_input_tokens),
-          icon: ICONS.arrowDown,
-          tooltip: "New (uncached) tokens sent to Claude across all turns. Usually small — most of the conversation comes from cache.",
-        },
-        {
-          label: "Output",
-          value: fmt(g.total_output_tokens),
-          icon: ICONS.arrowUp,
-          tooltip: "Tokens Claude generated in responses. The most expensive line item per turn (~5× input rate on Opus).",
-        },
-        {
-          label: "Cache read",
-          value: fmt(g.total_cache_read),
-          icon: ICONS.refresh,
-          tooltip: "Tokens read from Claude's prompt cache — conversation history, system prompt, Synthra's pack. Cheap: ~10% of the input rate. The bulk of every long session.",
-        },
-        {
-          label: "Cache write",
-          value: fmt(g.total_cache_create),
-          icon: ICONS.save,
-          tooltip: "Tokens newly added to the prompt cache so future turns can read them cheaply. Premium-priced (~125% of input) but pays back over the rest of the session.",
-        },
-        {
-          label: "Projects",
-          value: fmt(g.project_count),
-          icon: ICONS.folder,
-          tooltip: "Projects that have ever run `syn .` on this machine. Tracked in ~/.synthra/projects.json.",
-        },
-        {
-          label: "Blocked Grep / Glob",
-          value: fmt(g.blocked_count),
-          icon: ICONS.shield,
-          cls: "accent",
-          tooltip: "PreToolUse hook intercepts: Synthra blocked these Grep/Glob calls because the graph already had high-confidence context for the query. Claude pivots to graph_continue or graph_read instead.",
-        },
-        {
-          label: "Tokens saved",
-          value: fmt(g.estimated_tokens_saved),
-          icon: ICONS.trending,
-          cls: "accent",
-          tooltip: "Estimated tokens avoided by blocking exploratory Grep/Glob calls. Calculated as blocks × 500 — conservative; under-counts the cache thrash you also avoid.",
-        },
-      ];
+    let lastData = null;
+
+    // ----- date in hero -----
+    function setHeroDate() {
+      const now = new Date();
+      $('#hero-day').textContent = now.getDate();
+      $('#hero-weekday').textContent = now.toLocaleDateString([], { weekday: 'short' });
+      $('#hero-month').textContent = now.toLocaleDateString([], { month: 'long' });
     }
 
-    function renderCards(g) {
-      cardsEl.innerHTML = "";
-      for (const c of cardConfigs(g)) {
-        const el = document.createElement("div");
-        el.className = "card" + (c.cls ? " " + c.cls : "");
-        el.innerHTML =
-          '<div class="card-head">' +
-            '<div class="card-label has-tooltip" data-tooltip="' + c.tooltip.replace(/"/g, '&quot;') + '">' +
-              c.label +
-              ' <span class="help-icon">i</span>' +
-            '</div>' +
-            '<span class="card-icon">' + c.icon + '</span>' +
-          '</div>' +
-          '<div class="card-value">' + c.value + '</div>';
-        cardsEl.appendChild(el);
-      }
+    // ----- renderers -----
+    function renderSession(turns) {
+      const agg = turns.reduce((a, t) => {
+        a.turns += 1;
+        a.input += t.input || 0;
+        a.output += t.output || 0;
+        a.cacheR += t.cache_read || 0;
+        a.cacheW += t.cache_create || 0;
+        return a;
+      }, { turns: 0, input: 0, output: 0, cacheR: 0, cacheW: 0 });
+
+      $('#m-turns').innerHTML   = fmt(agg.turns);
+      $('#m-input').innerHTML   = fmt(agg.input);
+      $('#m-output').innerHTML  = fmt(agg.output);
+      $('#m-cache-r').innerHTML = fmt(agg.cacheR);
+      $('#m-cache-w').innerHTML = fmt(agg.cacheW);
     }
 
-    function renderProjects(projects, globalCost) {
-      projectsEl.innerHTML = "";
-      if (!projects.length) {
-        projectsEmpty.classList.remove("hidden");
-        return;
-      }
-      projectsEmpty.classList.add("hidden");
-      const maxTokens = Math.max(1, ...projects.map((p) => p.total_input_tokens + p.total_output_tokens));
-      for (const p of projects) {
-        const total = p.total_input_tokens + p.total_output_tokens;
-        const pct = Math.round((total / maxTokens) * 100);
-        const sharePct = globalCost > 0 ? ((p.estimated_cost_usd / globalCost) * 100).toFixed(1) : "0.0";
-        const row = document.createElement("div");
-        row.className = "project-row";
-        row.innerHTML =
-          '<div class="project-name">' +
-            '<strong>' + ICONS.folder + p.name + '</strong>' +
-            '<code class="project-path">' + p.path + '</code>' +
-          '</div>' +
-          '<div class="project-stats">' +
-            '<div class="stat"><span class="stat-value cost">' + fmtCost(p.estimated_cost_usd) + '</span><span class="stat-label">cost (' + sharePct + '%)</span></div>' +
-            '<div class="stat"><span class="stat-value">' + fmt(total) + '</span><span class="stat-label">tokens</span></div>' +
-            '<div class="stat"><span class="stat-value">' + fmt(p.total_turns) + '</span><span class="stat-label">turns</span></div>' +
-            '<div class="stat"><span class="stat-value">' + fmt(p.blocked_count) + '</span><span class="stat-label">blocks</span></div>' +
-          '</div>' +
-          '<div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
-        projectsEl.appendChild(row);
-      }
+    function renderSavings(g) {
+      const tokensSaved = g.estimated_tokens_saved || 0;
+      const blocks = g.blocked_count || 0;
+      const savedUsd = tokensSaved * SAVED_RATE_PER_M / 1_000_000;
+      const actualUsd = g.estimated_cost_usd || 0;
+      const baselineUsd = actualUsd + savedUsd;
+      const savedPct = baselineUsd > 0 ? (savedUsd / baselineUsd) * 100 : 0;
+      const actualPct = baselineUsd > 0 ? (actualUsd / baselineUsd) * 100 : 100;
+
+      $('#savings-money').textContent = fmtCostFlat(savedUsd);
+      $('#savings-pct').textContent   = savedPct.toFixed(1) + '% off';
+      $('#savings-tokens').textContent = fmtPlain(tokensSaved);
+      $('#savings-actual-bar').style.width = actualPct.toFixed(2) + '%';
+      $('#savings-saved-bar').style.width  = savedPct.toFixed(2)  + '%';
+      $('#savings-actual-amt').textContent   = fmtCostFlat(actualUsd);
+      $('#savings-baseline-amt').textContent = fmtCostFlat(baselineUsd);
+
+      // Audit row — live formula
+      $('#audit-blocks').textContent = blocks.toLocaleString();
+      $('#audit-result').textContent = fmtCostFlat(savedUsd);
+    }
+
+    function renderCostHero(g) {
+      $('#big-cost').innerHTML = fmtCostBig(g.estimated_cost_usd);
+      const totalTokens = (g.total_input_tokens || 0) + (g.total_output_tokens || 0);
+      $('#cs-tokens').textContent = fmtPlain(totalTokens);
+      const avg = g.total_turns > 0 ? g.estimated_cost_usd / g.total_turns : 0;
+      $('#cs-avg').textContent = fmtCostFlat(avg);
+    }
+
+    function renderMoat(g) {
+      $('#blocks').textContent = fmtPlain(g.blocked_count);
     }
 
     function renderTurns(turns) {
-      turnsBody.innerHTML = "";
+      const tbody = $('#turns-body');
+      const empty = $('#turns-empty');
+      tbody.innerHTML = '';
       if (!turns.length) {
-        turnsEmpty.classList.remove("hidden");
+        empty.classList.remove('hidden');
+        $('#turns-count').textContent = '0 shown';
         return;
       }
-      turnsEmpty.classList.add("hidden");
+      empty.classList.add('hidden');
+      $('#turns-count').textContent = turns.length + ' shown';
+      const frag = document.createDocumentFragment();
       for (const t of turns) {
         const family = modelFamily(t.model);
-        const tr = document.createElement("tr");
+        const tr = document.createElement('tr');
         tr.innerHTML =
-          "<td>" + fmtTs(t.ts) + "</td>" +
-          "<td><code>" + t.project_name + "</code></td>" +
-          '<td><span class="model-pill ' + family + '">' + modelLabel(t.model) + "</span></td>" +
-          '<td class="num">' + fmtFull(t.input) + "</td>" +
-          '<td class="num">' + fmtFull(t.output) + "</td>" +
-          '<td class="num">' + fmt(t.cache_read) + " / " + fmt(t.cache_create) + "</td>" +
-          '<td class="num cost">' + fmtCost(t.cost_usd) + "</td>";
-        turnsBody.appendChild(tr);
+          '<td class="ts">' + fmtTs(t.ts || t.written_at) + '</td>' +
+          '<td class="proj">' + (t.project_name || '—') + '</td>' +
+          '<td><span class="model-pill ' + family + '"><span class="sq"></span>' + modelLabel(t.model) + '</span></td>' +
+          '<td class="num">' + fmtPlain(t.input || 0) + '</td>' +
+          '<td class="num">' + fmtPlain(t.output || 0) + '</td>' +
+          '<td class="num">' + fmtPlain(t.cache_read || 0) + ' / ' + fmtPlain(t.cache_create || 0) + '</td>' +
+          '<td class="num cost">' + fmtCostFlat(t.cost_usd || 0) + '</td>';
+        frag.appendChild(tr);
       }
+      tbody.appendChild(frag);
     }
 
-    function renderGates(gates) {
-      gatesBody.innerHTML = "";
+    function renderGateMini(gates) {
+      const el = $('#gate-mini');
+      el.innerHTML = '';
       if (!gates.length) {
-        gatesEmpty.classList.remove("hidden");
+        el.innerHTML = '<div class="empty">No gate decisions yet.</div>';
         return;
       }
-      gatesEmpty.classList.add("hidden");
-      for (const g of gates) {
-        const tr = document.createElement("tr");
-        const isBlock = g.decision === "block";
-        const cls = isBlock ? "decision-block" : "decision-allow";
-        const label = isBlock
-          ? '<span class="' + cls + '">' + ICONS.ban + ' BLOCK</span>'
-          : '<span class="' + cls + '">ALLOW</span>';
-        tr.innerHTML =
-          "<td>" + fmtTs(g.ts) + "</td>" +
-          "<td><code>" + g.project_name + "</code></td>" +
-          "<td><code>" + g.tool + "</code></td>" +
-          "<td>" + label + "</td>" +
-          "<td><code>" + (g.query || "") + "</code></td>";
-        gatesBody.appendChild(tr);
+      const frag = document.createDocumentFragment();
+      for (const g of gates.slice(0, 12)) {
+        const row = document.createElement('div');
+        row.className = 'gate-row';
+        const cls = g.decision === 'block' ? 'block' : 'allow';
+        row.innerHTML =
+          '<span class="g-ts">' + fmtTs(g.ts) + '</span>' +
+          '<span class="g-decision ' + cls + '">' + (g.decision || '—').toUpperCase() + '</span>' +
+          '<span class="g-q">' + (g.query || g.tool || '—') + '</span>';
+        frag.appendChild(row);
       }
+      el.appendChild(frag);
     }
 
+    function renderProjectLegend(projects) {
+      const el = $('#proj-filter');
+      const incoming = projects.map((p) => p.name).join('|');
+      if (el.dataset.signature === incoming) return;
+      el.dataset.signature = incoming;
+      el.innerHTML = '';
+      if (!projects.length) {
+        el.innerHTML = '<div class="empty">No projects yet.</div>';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const p of projects) {
+        const row = document.createElement('button');
+        row.className = 'check check-clickable';
+        row.type = 'button';
+        row.innerHTML =
+          '<span class="dot-sq" style="background: var(--sky); opacity:.55"></span>' +
+          '<span class="pf-name" title="' + p.path + '">' + p.name + '</span>' +
+          '<span class="pf-arrow">›</span>';
+        row.addEventListener('click', () => openProjectDialog(p.name));
+        frag.appendChild(row);
+      }
+      el.appendChild(frag);
+    }
+
+    // ----- Project dialog -----
+    function lastActiveFor(name) {
+      const turns = lastData?.recent_turns || [];
+      for (const t of turns) {
+        if (t.project_name === name) {
+          const ts = t.ts || t.written_at;
+          if (!ts) return '—';
+          try {
+            return new Date(ts).toLocaleString([], {
+              year: 'numeric', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit',
+            });
+          } catch { return ts; }
+        }
+      }
+      return '—';
+    }
+
+    function openProjectDialog(name) {
+      const p = (lastData?.projects || []).find((x) => x.name === name);
+      if (!p) return;
+      $('#d-name').textContent = p.name;
+      $('#d-path').textContent = p.path || '';
+      $('#d-cost').textContent    = fmtCostFlat(p.estimated_cost_usd);
+      $('#d-turns').textContent   = fmtPlain(p.total_turns);
+      $('#d-input').textContent   = fmtPlain(p.total_input_tokens);
+      $('#d-output').textContent  = fmtPlain(p.total_output_tokens);
+      $('#d-cache-r').textContent = fmtPlain(p.total_cache_read);
+      $('#d-cache-w').textContent = fmtPlain(p.total_cache_create);
+      $('#d-blocks').textContent  = fmtPlain(p.blocked_count);
+      $('#d-last').textContent    = lastActiveFor(p.name);
+      $('#dialog-backdrop').classList.remove('hidden');
+    }
+
+    function closeProjectDialog() {
+      $('#dialog-backdrop').classList.add('hidden');
+    }
+
+    $('#dialog-close').addEventListener('click', closeProjectDialog);
+    $('#dialog-backdrop').addEventListener('click', (e) => {
+      if (e.target.id === 'dialog-backdrop') closeProjectDialog();
+    });
+
+    // ----- FAQ dialog -----
+    const faqBackdrop = $('#faq-backdrop');
+    function openFaq()  { faqBackdrop.classList.remove('hidden'); }
+    function closeFaq() { faqBackdrop.classList.add('hidden'); }
+    $('#faq-btn').addEventListener('click', openFaq);
+    $('#faq-close').addEventListener('click', closeFaq);
+    faqBackdrop.addEventListener('click', (e) => {
+      if (e.target.id === 'faq-backdrop') closeFaq();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeProjectDialog(); closeFaq(); }
+    });
+
+    // Reflect the actual port the dashboard is served on
+    const portEl = $('#port-num');
+    if (portEl && window.location.port) portEl.textContent = window.location.port;
+
+    // ----- Donut chart (model usage by turn count) -----
+    function renderDonut(turns) {
+      const counts = { opus: 0, sonnet: 0, haiku: 0, unknown: 0 };
+      for (const t of turns) counts[modelFamily(t.model)] += 1;
+      const total = counts.opus + counts.sonnet + counts.haiku + counts.unknown;
+
+      const segs = [
+        { fam: 'opus',    label: 'Opus',    n: counts.opus,    color: 'var(--c-opus)' },
+        { fam: 'sonnet',  label: 'Sonnet',  n: counts.sonnet,  color: 'var(--c-sonnet)' },
+        { fam: 'haiku',   label: 'Haiku',   n: counts.haiku,   color: 'var(--c-haiku)' },
+        { fam: 'unknown', label: 'Other',   n: counts.unknown, color: 'var(--c-unknown)' },
+      ].filter((s) => s.n > 0);
+
+      const svg = $('#donut-svg');
+      svg.querySelectorAll('.donut-seg').forEach((el) => el.remove());
+
+      const C = 2 * Math.PI * 52; // ≈ 326.7
+      let offset = 0;
+      const ns = 'http://www.w3.org/2000/svg';
+      if (total === 0) {
+        // pleasant empty state — leave just the track
+      } else {
+        for (const s of segs) {
+          const arc = (s.n / total) * C;
+          const c = document.createElementNS(ns, 'circle');
+          c.setAttribute('cx', '70');
+          c.setAttribute('cy', '70');
+          c.setAttribute('r',  '52');
+          c.setAttribute('fill', 'none');
+          c.setAttribute('stroke', s.color);
+          c.setAttribute('stroke-width', '14');
+          c.setAttribute('stroke-dasharray', arc + ' ' + C);
+          c.setAttribute('stroke-dashoffset', String(-offset));
+          c.setAttribute('transform', 'rotate(-90 70 70)');
+          c.setAttribute('stroke-linecap', segs.length === 1 ? 'round' : 'butt');
+          c.classList.add('donut-seg');
+          svg.appendChild(c);
+          offset += arc;
+        }
+      }
+
+      $('#donut-total').textContent = total;
+
+      const legend = $('#donut-legend');
+      legend.innerHTML = '';
+      const lf = document.createDocumentFragment();
+      const display = segs.length ? segs : [
+        { fam: 'opus', label: 'Opus', n: 0, color: 'var(--c-opus)' },
+        { fam: 'sonnet', label: 'Sonnet', n: 0, color: 'var(--c-sonnet)' },
+        { fam: 'haiku', label: 'Haiku', n: 0, color: 'var(--c-haiku)' },
+      ];
+      for (const s of display) {
+        const pct = total > 0 ? Math.round((s.n / total) * 100) : 0;
+        const row = document.createElement('div');
+        row.className = 'dl-row';
+        row.innerHTML =
+          '<span class="dl-dot" style="background:' + s.color + '"></span>' +
+          '<span class="dl-name">' + s.label + '</span>' +
+          '<span class="dl-pct">' + pct + '%</span>';
+        lf.appendChild(row);
+      }
+      legend.appendChild(lf);
+    }
+
+    // ----- master render -----
+    function applyData(data) {
+      const turns = data.recent_turns || [];
+      const gates = data.recent_gates || [];
+
+      renderSession(turns);
+      renderSavings(data.global);
+      renderCostHero(data.global);
+      renderMoat(data.global);
+      renderTurns(turns);
+      renderGateMini(gates);
+      renderDonut(turns);
+    }
+
+    // ----- polling -----
     async function tick() {
       try {
-        const res = await fetch("/data");
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        const res = await fetch('/data');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        activeProjectEl.textContent = data.active.project_root;
-        renderCards(data.global);
-        renderProjects(data.projects, data.global.estimated_cost_usd);
-        renderTurns(data.recent_turns);
-        renderGates(data.recent_gates);
-        statusEl.textContent = "live · " + new Date().toLocaleTimeString();
-        dotEl.classList.add("live");
-        dotEl.classList.remove("dead");
+        lastData = data;
+        $('#active-project').textContent = data.active?.project_root || '—';
+        renderProjectLegend(data.projects || []);
+        applyData(data);
+        $('#status').textContent = 'live · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        $('#dot').classList.add('live'); $('#dot').classList.remove('dead');
       } catch (e) {
-        statusEl.textContent = "disconnected · " + e.message;
-        dotEl.classList.add("dead");
-        dotEl.classList.remove("live");
+        $('#status').textContent = 'offline';
+        $('#dot').classList.add('dead'); $('#dot').classList.remove('live');
       }
     }
 
+    // ----- Viewport-clamped tooltip -----
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'global-tooltip';
+    document.body.appendChild(tooltipEl);
+    let activeTooltipTarget = null;
+
+    function positionTooltip(target) {
+      const rect = target.getBoundingClientRect();
+      const ttRect = tooltipEl.getBoundingClientRect();
+      const margin = 12;
+      let top = rect.top - ttRect.height - 10;
+      let left = rect.left + rect.width / 2 - ttRect.width / 2;
+      if (left < margin) left = margin;
+      if (left + ttRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - ttRect.width - margin;
+      }
+      if (top < margin) {
+        top = rect.bottom + 10;
+      }
+      if (top + ttRect.height > window.innerHeight - margin) {
+        top = window.innerHeight - ttRect.height - margin;
+      }
+      tooltipEl.style.top  = top  + 'px';
+      tooltipEl.style.left = left + 'px';
+    }
+
+    function showTooltip(target) {
+      const text = target.getAttribute('data-tooltip');
+      if (!text) return;
+      tooltipEl.textContent = text;
+      tooltipEl.classList.add('on');
+      positionTooltip(target);
+    }
+
+    function hideTooltip() {
+      tooltipEl.classList.remove('on');
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const t = (e.target instanceof Element) ? e.target.closest('.has-tooltip') : null;
+      if (t !== activeTooltipTarget) {
+        activeTooltipTarget = t;
+        if (t) showTooltip(t);
+        else hideTooltip();
+      }
+    });
+    document.addEventListener('scroll', hideTooltip, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTooltip(); });
+
+    setHeroDate();
     tick();
     setInterval(tick, 2000);
   </script>
