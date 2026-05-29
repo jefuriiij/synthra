@@ -1,10 +1,17 @@
-// Daily version-check ping against the npm registry. Runs fire-and-forget at
-// startup so we never block the syn flow. Cached at ~/.synthra/version-check.json
-// for 24h. Honors SYN_NO_UPDATE_CHECK=1 to opt out.
+// Daily version-check ping against the npm registry. Cached at
+// ~/.synthra/version-check.json for 24h. Honors SYN_NO_UPDATE_CHECK=1 to opt out.
+//
+// Two surfaces:
+//   - logUpdateHintIfNeeded(): silent log only (used by non-interactive paths)
+//   - promptForUpdateOrLog(): interactive prompt that offers to npm install and
+//     exit with re-run instructions on success.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
+
+import spawn from "cross-spawn";
 
 import { log } from "../shared/logger.js";
 
@@ -127,6 +134,73 @@ export async function logUpdateHintIfNeeded(): Promise<void> {
         `Synthra ${r.latest} is available (you have ${r.current}) — run: npm install -g @jefuriiij/synthra@latest`,
       );
     }
+  } catch {
+    // silent
+  }
+}
+
+/**
+ * Ask a yes/no question on stdin/stdout. Returns true only on explicit "y" /
+ * "yes". Empty input or anything else returns false (safer default for an
+ * unattended-update prompt).
+ */
+async function promptYesNo(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+/** Run npm install -g for Synthra. Inherits stdio so the user sees progress. */
+function runNpmUpdate(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn("npm", ["install", "-g", PKG_NAME + "@latest"], {
+      stdio: "inherit",
+    });
+    proc.on("error", () => resolve(false));
+    proc.on("exit", (code) => resolve(code === 0));
+  });
+}
+
+/**
+ * Interactive update flow. Checks for a new version; if one exists AND we're
+ * running on a TTY, prompts the user [y/N]. On 'y', runs npm install and
+ * exits with re-run instructions (the currently-running Node process is the
+ * old version — can't hot-swap our own code mid-run). On 'n' or non-TTY, logs
+ * the hint and returns so the caller can continue. Never throws.
+ */
+export async function promptForUpdateOrLog(): Promise<void> {
+  try {
+    const r = await checkForUpdate();
+    if (!r.hasUpdate || !r.latest) return;
+
+    // Non-interactive (CI, piped stdin) — preserve the old fire-and-forget hint.
+    if (!process.stdin.isTTY) {
+      log.info(
+        `Synthra ${r.latest} is available (you have ${r.current}) — run: npm install -g @jefuriiij/synthra@latest`,
+      );
+      return;
+    }
+
+    log.info(`Synthra ${r.latest} is available (you have ${r.current}).`);
+    const yes = await promptYesNo("[syn] Update now? [y/N]: ");
+    if (!yes) {
+      log.info("Skipping update — continuing with current version.");
+      return;
+    }
+
+    log.info(`Running: npm install -g ${PKG_NAME}@latest`);
+    const ok = await runNpmUpdate();
+    if (!ok) {
+      log.warn("npm install failed — continuing with current version.");
+      return;
+    }
+    log.info(`✓ Updated to ${r.latest}. Please re-run: syn .`);
+    process.exit(0);
   } catch {
     // silent
   }
