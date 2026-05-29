@@ -1,7 +1,7 @@
 // Python parser using tree-sitter-python WASM.
 // Extracts: function/class definitions, methods, and import statements.
 
-import type { Node } from "web-tree-sitter";
+import { Query, type Node } from "web-tree-sitter";
 import { createParser, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
 
@@ -27,7 +27,7 @@ export async function parsePython(f: WalkedFile, source: string): Promise<Parsed
     const tree = parser.parse(source);
     if (!tree) return { file: f, source, symbols, imports, calls: [] };
 
-    const query = language.query(QUERY);
+    const query = new Query(language, QUERY);
     const matches = query.matches(tree.rootNode);
 
     for (const match of matches) {

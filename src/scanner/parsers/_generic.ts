@@ -8,7 +8,7 @@
 //   - optional `importCapture` for collecting import edges
 // Everything else (parser init, error handling, dedupe) lives here.
 
-import type { Node } from "web-tree-sitter";
+import { Query, type Node } from "web-tree-sitter";
 
 import type { SymbolKind } from "../../graph/types.js";
 import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
@@ -55,7 +55,7 @@ export async function runGenericParser(
     const tree = parser.parse(source);
     if (!tree) return { file: f, source, symbols, imports, calls: [] };
 
-    const query = language.query(config.query);
+    const query = new Query(language, config.query);
     const matches = query.matches(tree.rootNode);
 
     for (const match of matches) {

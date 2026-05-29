@@ -2,7 +2,7 @@
 // Extracts: function/class/interface/type/enum declarations, exported consts,
 // arrow functions assigned to const, and import sources.
 
-import type { Node } from "web-tree-sitter";
+import { Query, type Node } from "web-tree-sitter";
 import type { SymbolKind } from "../../graph/types.js";
 import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
@@ -86,7 +86,7 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
     const tree = parser.parse(source);
     if (!tree) return { file: f, source, symbols, imports, calls: [] };
 
-    const query = language.query(queryFor(grammar));
+    const query = new Query(language, queryFor(grammar));
     const matches = query.matches(tree.rootNode);
 
     for (const match of matches) {

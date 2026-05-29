@@ -7,6 +7,19 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.12] — 2026-05-29
+
+### Fixed
+
+- **`Language.query is deprecated` spam at scan time.** Every parsed file
+  printed the warning — 57 prints on a Flutter codebase, one per parsed
+  file. Switched all four parsers (TypeScript, JavaScript, Python, Dart,
+  plus the generic helper) from the deprecated `language.query(QUERY)`
+  to `new Query(language, QUERY)`. No behavior change, just clean
+  terminal output.
+
+---
+
 ## [0.1.11] — 2026-05-29
 
 ### Fixed
