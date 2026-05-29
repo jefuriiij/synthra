@@ -317,7 +317,7 @@ The acceptance test for "Synthra works": run `syn .` in a real repo (`windsor-st
 ## Out of scope for v0.1 (deferred)
 
 - IDE companion extension (VS Code / Antigravity / Cursor) — designed for, not built yet
-- Diff-tracked incremental graph updates (M1 does full re-parse; fine for repos under ~500 files)
+- Diff-tracked incremental graph updates + lazy on-disk graph (v0.1 does a full re-parse each run and holds the whole graph, file contents included, in memory — tested fine to a few hundred files at sub-second scans, comfortable into the low thousands; very large monorepos need this)
 - Embedding-based semantic retrieval (keyword scoring is enough to start)
 - Codex CLI / Cursor / Gemini support (same MCP, different launcher — fast follow-on)
 - Self-update mechanism (manually `npm i -g synthra@latest` for now)

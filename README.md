@@ -189,6 +189,17 @@ If you upgrade via `npm install -g @jefuriiij/synthra@latest` directly (outside 
 
 ---
 
+## Platform support
+
+| Platform | Status |
+|---|---|
+| **Windows** | ✅ Tested. PowerShell hook scripts; primary development target. |
+| **macOS / Linux** | ⚠️ Best-effort. Bash hook scripts ship and the installer selects them automatically, but the full `syn .` flow hasn't been verified on POSIX yet. The Stop hook (token logging) needs `jq` on PATH or it silently no-ops. |
+
+The platform-agnostic parts — `syn scan`, `syn serve`, `syn dashboard`, the MCP server, and the dashboard — are pure Node and run anywhere Node 18+ does. The hook integration is what's Windows-verified; POSIX is wired but untested. If you run it on macOS/Linux, [open an issue](https://github.com/jefuriiij/synthra/issues) with what you find.
+
+---
+
 ## Development
 
 ```bash
