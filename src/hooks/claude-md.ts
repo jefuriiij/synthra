@@ -5,7 +5,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 
-export const POLICY_VERSION = 2;
+export const POLICY_VERSION = 3;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -93,14 +93,20 @@ export function policyBlock(): string {
     "### Session-end resume note",
     "",
     "When the user signals they're done (e.g. \"bye\", \"wrap up\", \"done\"),",
-    "proactively update `.synthra/CONTEXT.md` with:",
+    "persist the resume state by calling `context_remember` once per bullet.",
+    "Synthra re-renders `.synthra/CONTEXT.md` from those entries at session",
+    "end — do **NOT** write to `CONTEXT.md` directly, it is a derived view",
+    "and direct edits are overwritten by the Stop hook.",
     "",
-    "- **Current Task**: one sentence on what was being worked on",
-    "- **Key Decisions**: bullet list, max 3 items",
-    "- **Next Steps**: bullet list, max 3 items",
+    "Use these `kind` values:",
     "",
-    "Keep `CONTEXT.md` under 20 lines total. Don't summarise the conversation",
-    "— write only what's needed to resume next session.",
+    "- **`kind: \"task\"`** — what is being worked on right now (1 entry)",
+    "- **`kind: \"decision\"`** — non-obvious choices made this session (max 3)",
+    "- **`kind: \"next\"`** — concrete next steps (max 3)",
+    "",
+    "Tag entries with the relevant area (`tags: [\"auth\"]`) and the files",
+    "they touch (`files: [\"src/auth.ts\"]`) so later `context_recall` queries",
+    "can filter. Keep each `text` to 1–2 sentences.",
     "",
     "_This block is managed by Synthra. Edits inside the BEGIN/END markers",
     "are overwritten on every `syn .` run._",

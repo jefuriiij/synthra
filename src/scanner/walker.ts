@@ -38,6 +38,28 @@ const DEFAULT_IGNORE = [
   ".cache/",
   ".vscode/",
   ".idea/",
+  ".vs/",
+  // Flutter / Dart build caches — IDE-rehydrated, contain third-party
+  // type stubs (typescript.d.ts, babylon.js etc.) that contaminate the graph.
+  ".dart_tool/",
+  ".flutter-plugins",
+  ".flutter-plugins-dependencies",
+  // Android / Java / Kotlin / Rust
+  ".gradle/",
+  "target/",
+  // iOS / Xcode
+  "Pods/",
+  "DerivedData/",
+  // Python
+  "__pycache__/",
+  ".venv/",
+  "venv/",
+  ".tox/",
+  ".pytest_cache/",
+  ".mypy_cache/",
+  ".ruff_cache/",
+  // .NET
+  "obj/",
 ];
 
 const BINARY_EXTS = new Set([
