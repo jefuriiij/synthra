@@ -8,6 +8,11 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
+// Tsup inlines this import at build time so `c.html` can echo whatever
+// version is running. Replaces the v__SYN_VERSION__ placeholder in the
+// dashboard footer on every GET /.
+import pkgJson from "../../package.json" with { type: "json" };
+
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
@@ -17,6 +22,7 @@ import indexHtml from "./public/index.html";
 import styleCss from "./public/style.css";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
+const VERSION = (pkgJson as { version: string }).version;
 
 export interface DashboardServerHandle {
   port: number;
@@ -36,7 +42,7 @@ export async function startDashboard(
   }
   const app = new Hono();
 
-  app.get("/", (c) => c.html(indexHtml));
+  app.get("/", (c) => c.html(indexHtml.replaceAll("__SYN_VERSION__", VERSION)));
 
   app.get("/style.css", (c) => {
     c.header("Content-Type", "text/css; charset=utf-8");

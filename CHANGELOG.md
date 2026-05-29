@@ -7,6 +7,18 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.13] — 2026-05-29
+
+### Fixed
+
+- **Dashboard footer version is now dynamic.** Was hardcoded to `v0.1.8`
+  in the HTML and never updated. The dashboard server now injects the
+  running binary's version (from `package.json`) into the footer on every
+  `GET /` via a `__SYN_VERSION__` placeholder. Re-run `syn .` after an
+  update and the dashboard reflects the new version automatically.
+
+---
+
 ## [0.1.12] — 2026-05-29
 
 ### Fixed
