@@ -31,5 +31,9 @@ export async function writeSymbolIndex(path: string, index: SymbolIndex): Promis
 }
 
 export async function readSymbolIndex(path: string): Promise<SymbolIndex> {
-  return readJson<SymbolIndex>(path);
+  // Re-home onto a null prototype so name lookups (e.g. index["toString"])
+  // never resolve to an inherited Object.prototype member. Mirrors
+  // buildSymbolIndex, which builds the index the same way.
+  const parsed = await readJson<SymbolIndex>(path);
+  return Object.assign(Object.create(null), parsed);
 }

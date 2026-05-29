@@ -179,7 +179,10 @@ export async function buildGraph(root: string, parsed: ParsedFile[]): Promise<Gr
 }
 
 export function buildSymbolIndex(graph: GraphSchema): SymbolIndex {
-  const out: SymbolIndex = {};
+  // Null-prototype map: symbol names like "toString" or "constructor" (common
+  // in Dart, where every class overrides toString) would otherwise resolve to
+  // an inherited Object.prototype member and crash on the .push below.
+  const out: SymbolIndex = Object.create(null);
   for (const node of graph.nodes) {
     if (node.kind !== "symbol") continue;
     const list = out[node.name] ?? (out[node.name] = []);
