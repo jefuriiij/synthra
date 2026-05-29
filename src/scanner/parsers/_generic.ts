@@ -8,13 +8,11 @@
 //   - optional `importCapture` for collecting import edges
 // Everything else (parser init, error handling, dedupe) lives here.
 
-import type Parser from "web-tree-sitter";
+import type { Node } from "web-tree-sitter";
 
 import type { SymbolKind } from "../../graph/types.js";
 import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
-
-type Node = Parser.SyntaxNode;
 
 export interface DeclCapture {
   /** Capture name for the declaration node, e.g. "function". */

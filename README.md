@@ -177,13 +177,15 @@ Claude Code honors the block and pivots to the MCP tool. The structured pack is 
 
 ## Self-update
 
-Daily fire-and-forget version check against the npm registry. When a newer version is available:
+Every `syn .` checks the npm registry for a newer version (no cache — always fresh; 2s hard timeout; silent fallthrough on network failure). When you're on latest, the check stays silent and `syn .` proceeds. When you're outdated:
 
 - **Interactive shell** (TTY) → you see `[syn] Synthra X.Y.Z is available (you have A.B.C). Update now? [y/N]:` *before* the scan starts. Type `y` to install; press Enter (or anything else) to skip and continue with the current version.
-- **Non-interactive** (CI, piped stdin) → silent one-line log line, no prompt. Pure fire-and-forget.
+- **Non-interactive** (CI, piped stdin) → silent one-line hint, no prompt.
 - **Disabled entirely** → set `SYN_NO_UPDATE_CHECK=1`.
 
-On `y`, Synthra spawns `npm install -g @jefuriiij/synthra@latest` with stdio inherited (you see npm's progress), then exits with re-run instructions — the running Node process is still the old version and can't hot-swap its own code mid-run. Cached at `~/.synthra/version-check.json` for 24h so you're never nagged on rapid `syn .` runs.
+On `y`, Synthra spawns `npm install -g @jefuriiij/synthra@latest` with stdio inherited (you see npm's progress), then **prints the new version's `CHANGELOG.md` section** (so you know what you just got), then exits with re-run instructions — the running Node process is still the old version and can't hot-swap its own code mid-run.
+
+If you upgrade via `npm install -g @jefuriiij/synthra@latest` directly (outside Synthra's prompt), the next `syn .` notices and prints the changelog anyway. It tracks the last-seen version at `~/.synthra/last-seen-version.json`.
 
 ---
 

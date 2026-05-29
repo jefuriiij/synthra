@@ -1,11 +1,9 @@
 // Python parser using tree-sitter-python WASM.
 // Extracts: function/class definitions, methods, and import statements.
 
-import type Parser from "web-tree-sitter";
+import type { Node } from "web-tree-sitter";
 import { createParser, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
-
-type Node = Parser.SyntaxNode;
 
 const QUERY = `
 (function_definition name: (identifier) @function.name) @function

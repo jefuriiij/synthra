@@ -2,12 +2,10 @@
 // Extracts: function/class/interface/type/enum declarations, exported consts,
 // arrow functions assigned to const, and import sources.
 
-import type Parser from "web-tree-sitter";
+import type { Node } from "web-tree-sitter";
 import type { SymbolKind } from "../../graph/types.js";
 import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
-
-type Node = Parser.SyntaxNode;
 
 // TS / TSX query — uses the type-identifier node type for class names, includes
 // interface / type-alias / enum declarations that don't exist in plain JS.

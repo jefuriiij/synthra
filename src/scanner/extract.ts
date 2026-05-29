@@ -12,7 +12,7 @@ import { fileHash } from "./hash.js";
 import { extractKeywords } from "./keywords.js";
 import type { ParsedFile, ParsedSymbol } from "./parser.js";
 
-const RESOLVE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".svelte", ".vue"];
+const RESOLVE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".svelte", ".vue", ".dart"];
 const INDEX_FILES = ["index.ts", "index.tsx", "index.js", "index.jsx", "__init__.py"];
 
 function fileId(relPath: string): string {

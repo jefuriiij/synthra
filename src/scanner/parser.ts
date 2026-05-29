@@ -4,7 +4,7 @@
 
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import Parser from "web-tree-sitter";
+import { Language, Parser } from "web-tree-sitter";
 
 import type { SymbolKind } from "../graph/types.js";
 import { parseC } from "./parsers/c.js";
@@ -75,7 +75,7 @@ const GRAMMAR_FILES: Record<GrammarName, string> = {
 };
 
 let parserInit: Promise<void> | null = null;
-const languageCache = new Map<GrammarName, Parser.Language>();
+const languageCache = new Map<GrammarName, Language>();
 
 async function ensureParserInit(): Promise<void> {
   if (!parserInit) {
@@ -84,19 +84,19 @@ async function ensureParserInit(): Promise<void> {
   return parserInit;
 }
 
-export async function loadGrammar(name: GrammarName): Promise<Parser.Language> {
+export async function loadGrammar(name: GrammarName): Promise<Language> {
   await ensureParserInit();
   const cached = languageCache.get(name);
   if (cached) return cached;
   const wasmPath = require.resolve(GRAMMAR_FILES[name]);
-  const lang = await Parser.Language.load(wasmPath);
+  const lang = await Language.load(wasmPath);
   languageCache.set(name, lang);
   return lang;
 }
 
 export interface LoadedParser {
   parser: Parser;
-  language: Parser.Language;
+  language: Language;
 }
 
 export async function createParser(name: GrammarName): Promise<LoadedParser> {

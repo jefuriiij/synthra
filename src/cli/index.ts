@@ -29,7 +29,7 @@ import { recordProject } from "../shared/project-registry.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
-import { promptForUpdateOrLog } from "./self-update.js";
+import { promptForUpdateOrLog, runStartupChangelogCheck } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
 import { registerMcp, spawnClaude, unregisterMcp } from "./start-claude.js";
 
@@ -88,10 +88,15 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   const paths = resolvePaths(projectRoot);
   const cfg = loadConfig();
 
-  // Interactive update check. If a newer version is on npm AND we're on a TTY,
-  // prompts the user [y/N]. On 'y', runs npm install -g and exits with re-run
-  // instructions. On 'n' or non-interactive, logs the hint and continues.
-  // Cached at ~/.synthra/version-check.json for 24h; SYN_NO_UPDATE_CHECK=1 opts out.
+  // If the running binary is newer than last-seen (e.g. user upgraded via
+  // `npm install -g …@latest` directly), print the changelog for what they
+  // just got. Silent if already on latest-seen or on fresh install.
+  await runStartupChangelogCheck();
+
+  // Always-fresh registry check (no cache). If a newer version is on npm AND
+  // we're on a TTY, prompts [y/N]. On 'y', runs npm install, prints the new
+  // version's changelog, and exits with re-run instructions. On 'n' / no
+  // update / non-TTY, continues silently. SYN_NO_UPDATE_CHECK=1 opts out.
   await promptForUpdateOrLog();
 
   // 1. bootstrap + scan + record in the global registry so the dashboard

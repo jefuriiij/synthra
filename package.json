@@ -1,6 +1,6 @@
 {
   "name": "@jefuriiij/synthra",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publishConfig": {
     "access": "public"
   },
@@ -21,6 +21,7 @@
     "dist",
     "bin",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "ROADMAP.md"
   ],
@@ -53,7 +54,7 @@
     "ignore": "^7.0.0",
     "sade": "^1.8.1",
     "tree-sitter-wasms": "^0.1.12",
-    "web-tree-sitter": "~0.22.6"
+    "web-tree-sitter": "^0.25.10"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
