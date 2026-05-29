@@ -1968,3 +1968,46 @@ button.check {
 /* Column headers signal they are hover-explainable */
 .turns-table thead th.has-tooltip { cursor: help; }
 .turns-table thead th.has-tooltip:hover { color: var(--text-dim); }
+
+/* ---- Recent-turns pager ---- */
+.turns-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 8px 2px 0;
+  margin-top: 6px;
+  border-top: 1px solid var(--rule-2);
+}
+.turns-pager.hidden { display: none; }
+.turns-pager button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: rgba(4, 8, 26, .55);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, color 150ms, transform 150ms;
+}
+.turns-pager button:hover:not(:disabled) {
+  background: rgba(155, 194, 239, .10);
+  border-color: var(--rule-hover);
+  color: var(--mist);
+  transform: translateY(-1px);
+}
+.turns-pager button:disabled {
+  opacity: .35;
+  cursor: default;
+}
+#turns-page-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  min-width: 84px;
+  text-align: center;
+}

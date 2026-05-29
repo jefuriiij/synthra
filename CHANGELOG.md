@@ -7,6 +7,23 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.15] — 2026-05-29
+
+### Changed
+
+- **Recent turns are paginated.** The dashboard now carries up to 500 turns
+  (was 25) and shows them 25 per page with Prev/Next controls — so you can
+  browse history instead of only seeing the last 25. Configurable via
+  `SYN_DASHBOARD_RECENT_N` (default 500).
+- **Model-usage donut is now all-time, not last-25.** It was tallying models
+  from the capped recent-turns window, so a run of >25 same-model turns showed
+  that model at 100% and hid the rest. It now sums the uncapped per-project
+  model counts, so it always reflects your true all-time split.
+- **Dashboard poll slowed 2s → 10s.** Lighter on resources and steadier to
+  read; pagination stays live (the current page re-renders each poll).
+
+---
+
 ## [0.1.14] — 2026-05-29
 
 ### Changed

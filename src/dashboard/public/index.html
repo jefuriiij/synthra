@@ -148,6 +148,11 @@
           </table>
           <p class="empty hidden" id="turns-empty">No turns logged yet. Run <code>syn .</code> in any project and chat with Claude.</p>
         </div>
+        <div class="turns-pager hidden" id="turns-pager">
+          <button type="button" id="turns-prev" aria-label="Previous page">‹ Prev</button>
+          <span class="mono" id="turns-page-label">page 1 of 1</span>
+          <button type="button" id="turns-next" aria-label="Next page">Next ›</button>
+        </div>
       </div>
 
     </div>
@@ -472,6 +477,8 @@
     }
 
     let lastData = null;
+    let turnsPage = 1;
+    const TURNS_PER_PAGE = 25;
 
     // ----- date in hero -----
     function setHeroDate() {
@@ -536,16 +543,28 @@
     function renderTurns(turns) {
       const tbody = $('#turns-body');
       const empty = $('#turns-empty');
+      const pager = $('#turns-pager');
       tbody.innerHTML = '';
       if (!turns.length) {
         empty.classList.remove('hidden');
+        pager.classList.add('hidden');
         $('#turns-count').textContent = '0 shown';
         return;
       }
       empty.classList.add('hidden');
-      $('#turns-count').textContent = turns.length + ' shown';
+
+      const totalPages = Math.max(1, Math.ceil(turns.length / TURNS_PER_PAGE));
+      // Clamp in case the list shrank (dedup / data churn) since last render.
+      if (turnsPage > totalPages) turnsPage = totalPages;
+      if (turnsPage < 1) turnsPage = 1;
+      const start = (turnsPage - 1) * TURNS_PER_PAGE;
+      const pageItems = turns.slice(start, start + TURNS_PER_PAGE);
+
+      $('#turns-count').textContent =
+        'showing ' + (start + 1) + '–' + (start + pageItems.length) + ' of ' + turns.length;
+
       const frag = document.createDocumentFragment();
-      for (const t of turns) {
+      for (const t of pageItems) {
         const family = modelFamily(t.model);
         const tr = document.createElement('tr');
         tr.innerHTML =
@@ -559,6 +578,20 @@
         frag.appendChild(tr);
       }
       tbody.appendChild(frag);
+
+      if (totalPages <= 1) {
+        pager.classList.add('hidden');
+      } else {
+        pager.classList.remove('hidden');
+        $('#turns-page-label').textContent = 'page ' + turnsPage + ' of ' + totalPages;
+        $('#turns-prev').disabled = turnsPage <= 1;
+        $('#turns-next').disabled = turnsPage >= totalPages;
+      }
+    }
+
+    function gotoTurnsPage(delta) {
+      turnsPage += delta;
+      renderTurns((lastData && lastData.recent_turns) || []);
     }
 
     function renderGateMini(gates) {
@@ -689,14 +722,19 @@
       if (e.key === 'Escape') { closeProjectDialog(); closeFaq(); }
     });
 
+    $('#turns-prev').addEventListener('click', () => gotoTurnsPage(-1));
+    $('#turns-next').addEventListener('click', () => gotoTurnsPage(1));
+
     // Reflect the actual port the dashboard is served on
     const portEl = $('#port-num');
     if (portEl && window.location.port) portEl.textContent = window.location.port;
 
-    // ----- Donut chart (model usage by turn count) -----
-    function renderDonut(turns) {
+    // ----- Donut chart (all-time model usage by turn count) -----
+    // Takes a { model-string -> count } map summed across ALL projects, so it
+    // reflects true all-time usage — independent of the recent-turns cap.
+    function renderDonut(modelCounts) {
       const counts = { opus: 0, sonnet: 0, haiku: 0, unknown: 0 };
-      for (const t of turns) counts[modelFamily(t.model)] += 1;
+      for (const [model, n] of Object.entries(modelCounts || {})) counts[modelFamily(model)] += n;
       const total = counts.opus + counts.sonnet + counts.haiku + counts.unknown;
 
       const segs = [
@@ -769,7 +807,14 @@
       renderMoat(data.global);
       renderTurns(turns);
       renderGateMini(gates);
-      renderDonut(turns);
+
+      // Donut: sum per-project model counts (uncapped, full history) so it
+      // shows true all-time usage rather than just the recent-turns window.
+      const modelCounts = {};
+      for (const p of (data.projects || []))
+        for (const [m, n] of Object.entries(p.models || {}))
+          modelCounts[m] = (modelCounts[m] || 0) + n;
+      renderDonut(modelCounts);
     }
 
     // ----- polling -----
@@ -841,7 +886,7 @@
 
     setHeroDate();
     tick();
-    setInterval(tick, 2000);
+    setInterval(tick, 10000);
   </script>
 </body>
 </html>

@@ -23,6 +23,10 @@ import styleCss from "./public/style.css";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
 const VERSION = (pkgJson as { version: string }).version;
+// How many recent turns/gates the /data payload carries. The dashboard
+// paginates turns client-side (25/page); the donut uses the uncapped
+// per-project model aggregate, so it isn't bounded by this.
+const RECENT_N = Number(process.env.SYN_DASHBOARD_RECENT_N) || 500;
 
 export interface DashboardServerHandle {
   port: number;
@@ -53,7 +57,7 @@ export async function startDashboard(
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.get("/data", async (c) => {
-    const data = await computeDashboardData(paths);
+    const data = await computeDashboardData(paths, RECENT_N);
     return c.json(data);
   });
 

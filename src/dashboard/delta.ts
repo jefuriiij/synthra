@@ -233,7 +233,7 @@ function dedupeTokens(entries: TokenLogEntry[]): TokenLogEntry[] {
 
 export async function computeDashboardData(
   activePaths: SynthraPaths,
-  recentN = 25,
+  recentN = 500,
 ): Promise<DashboardData> {
   const registered = await listProjects();
 
