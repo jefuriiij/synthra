@@ -17,6 +17,11 @@
       <div class="brand-mark"></div>
       <div class="brand-name">Synth<em>ra</em></div>
       <div class="brand-eyebrow">Dashboard</div>
+      <div class="nav-date">
+        <span class="nd-weekday" id="hero-weekday">—</span>
+        <span class="nd-day" id="hero-day">—</span>
+        <span class="nd-month" id="hero-month">—</span>
+      </div>
     </div>
     <div class="top-right">
       <span class="status-pill">
@@ -25,52 +30,20 @@
       </span>
     </div>
     <div class="topnav-right">
+      <div class="nav-active has-tooltip" data-tooltip="The project directory Synthra is currently watching — the most recent `syn .` session on this machine.">
+        <span class="na-label">Active</span>
+        <span class="na-value" id="active-project" title="—">—</span>
+      </div>
       <span class="port-badge">port <span class="mono" id="port-num">8901</span></span>
       <button class="faq-btn has-tooltip" id="faq-btn" data-tooltip="Open the FAQ — explains where every number on this dashboard comes from, how cost is calculated, and what the savings floor actually measures." aria-label="Open FAQ">?</button>
     </div>
   </header>
-
-  <!-- ============ Hero strip ============ -->
-  <section class="hero-strip">
-    <div class="date-block">
-      <div class="d-day" id="hero-day">—</div>
-      <div class="d-rest">
-        <div id="hero-weekday">—</div>
-        <div class="d-mute" id="hero-month">—</div>
-      </div>
-    </div>
-
-    <div class="hero-spacer"></div>
-
-    <div class="active-block">
-      <div class="ab-label">Active project</div>
-      <div class="ab-value" id="active-project">—</div>
-    </div>
-
-  </section>
 
   <!-- ============ Main 3-column grid ============ -->
   <main class="grid-main">
 
     <!-- ===== Left ===== -->
     <aside class="col-left">
-      <div class="panel">
-        <div class="p-head">Legend</div>
-
-        <div class="p-section">
-          <div class="ps-head">Model family</div>
-          <div class="check"><span class="dot-sq opus"></span><span>Opus</span></div>
-          <div class="check"><span class="dot-sq sonnet"></span><span>Sonnet</span></div>
-          <div class="check"><span class="dot-sq haiku"></span><span>Haiku</span></div>
-          <div class="check"><span class="dot-sq unknown"></span><span>Other</span></div>
-        </div>
-
-        <div class="p-section">
-          <div class="ps-head">Projects</div>
-          <div class="proj-filter" id="proj-filter"></div>
-        </div>
-      </div>
-
       <div class="card donut-card has-tooltip" data-tooltip="Which Claude models you've been calling, weighted by turn count. Opus = slow and expensive; Sonnet = workhorse; Haiku = cheap and fast. Helps you see where your budget is actually going.">
         <div class="card-head">
           <div class="card-eyebrow">Model usage</div>
@@ -86,6 +59,15 @@
           </div>
         </div>
         <div class="donut-legend" id="donut-legend"></div>
+      </div>
+
+      <!-- Projects — colored bar chart by turns -->
+      <div class="card projects-card has-tooltip" data-tooltip="Every project Synthra has tracked on this machine, ranked by how many turns ran there. Each project carries its own color. Click any row to open its full cost &amp; token breakdown.">
+        <div class="card-head">
+          <div class="card-eyebrow">Projects</div>
+          <div class="card-meta">by turns</div>
+        </div>
+        <div class="proj-chart" id="proj-chart"></div>
       </div>
     </aside>
 
@@ -153,13 +135,13 @@
           <table class="turns-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Project</th>
-                <th>Model</th>
-                <th class="num">In</th>
-                <th class="num">Out</th>
-                <th class="num">Cache R/W</th>
-                <th class="num">Cost</th>
+                <th class="has-tooltip" data-tooltip="When this turn happened, in your local time. Turns from today show as a time; older turns show the date.">Time</th>
+                <th class="has-tooltip" data-tooltip="Which project directory the turn ran in. Color-matched to the Projects chart on the left.">Project</th>
+                <th class="has-tooltip" data-tooltip="The Claude model used for this turn — Opus, Sonnet, or Haiku — shown in the color-coded pill.">Model</th>
+                <th class="num has-tooltip" data-tooltip="↓ Input — raw, uncached tokens sent to Claude this turn. Usually tiny (a few hundred) because conversation history is served from the prompt cache, not re-sent fresh.">In</th>
+                <th class="num has-tooltip" data-tooltip="↑ Output — tokens Claude generated in its response. The most expensive line item per turn (~5× the input rate on Opus). Big numbers usually mean long code edits.">Out</th>
+                <th class="num has-tooltip" data-tooltip="Cache Read / Cache Write. R = tokens reused from earlier turns (cheap, ~10% of the input rate). W = tokens newly written to the cache so future turns can read them (premium, ~125% of the input rate).">Cache R/W</th>
+                <th class="num has-tooltip" data-tooltip="Estimated USD for this turn: input + output + cache read + cache write, each multiplied by the published Anthropic per-model rate.">Cost</th>
               </tr>
             </thead>
             <tbody id="turns-body"></tbody>
@@ -600,25 +582,48 @@
       el.appendChild(frag);
     }
 
-    function renderProjectLegend(projects) {
-      const el = $('#proj-filter');
-      const incoming = projects.map((p) => p.name).join('|');
-      if (el.dataset.signature === incoming) return;
-      el.dataset.signature = incoming;
+    // ----- Project colors (stable per name) -----
+    const PROJECT_COLORS = [
+      'oklch(78% 0.14 220)', // cyan
+      'oklch(75% 0.14 155)', // green
+      'oklch(78% 0.13 75)',  // amber
+      'oklch(72% 0.14 285)', // violet
+      'oklch(72% 0.14 20)',  // rose
+      'oklch(74% 0.13 195)', // teal
+      'oklch(80% 0.12 250)', // periwinkle
+      'oklch(76% 0.13 330)', // magenta
+    ];
+    function projColor(name) {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+      return PROJECT_COLORS[h % PROJECT_COLORS.length];
+    }
+
+    function renderProjects(projects) {
+      const el = $('#proj-chart');
       el.innerHTML = '';
       if (!projects.length) {
         el.innerHTML = '<div class="empty">No projects yet.</div>';
         return;
       }
+      const ranked = [...projects].sort((a, b) => (b.total_turns || 0) - (a.total_turns || 0));
+      const max = Math.max(1, ...ranked.map((p) => p.total_turns || 0));
       const frag = document.createDocumentFragment();
-      for (const p of projects) {
+      for (const p of ranked) {
+        const turns = p.total_turns || 0;
+        const pct = Math.max(4, Math.round((turns / max) * 100));
         const row = document.createElement('button');
-        row.className = 'check check-clickable';
+        row.className = 'proj-row';
         row.type = 'button';
+        row.style.setProperty('--pc', projColor(p.name));
         row.innerHTML =
-          '<span class="dot-sq" style="background: var(--sky); opacity:.55"></span>' +
-          '<span class="pf-name" title="' + p.path + '">' + p.name + '</span>' +
-          '<span class="pf-arrow">›</span>';
+          '<span class="pr-top">' +
+            '<span class="pr-dot"></span>' +
+            '<span class="pr-name" title="' + (p.path || p.name) + '">' + p.name + '</span>' +
+            '<span class="pr-turns">' + fmtPlain(turns) + '</span>' +
+            '<span class="pr-arrow">›</span>' +
+          '</span>' +
+          '<span class="pr-bar"><span class="pr-fill" style="width:' + pct + '%"></span></span>';
         row.addEventListener('click', () => openProjectDialog(p.name));
         frag.appendChild(row);
       }
@@ -647,6 +652,8 @@
       const p = (lastData?.projects || []).find((x) => x.name === name);
       if (!p) return;
       $('#d-name').textContent = p.name;
+      $('#d-name').style.setProperty('--pc', projColor(p.name));
+      $('#d-name').classList.add('has-accent');
       $('#d-path').textContent = p.path || '';
       $('#d-cost').textContent    = fmtCostFlat(p.estimated_cost_usd);
       $('#d-turns').textContent   = fmtPlain(p.total_turns);
@@ -744,6 +751,7 @@
         row.innerHTML =
           '<span class="dl-dot" style="background:' + s.color + '"></span>' +
           '<span class="dl-name">' + s.label + '</span>' +
+          '<span class="dl-count">' + s.n + '</span>' +
           '<span class="dl-pct">' + pct + '%</span>';
         lf.appendChild(row);
       }
@@ -771,8 +779,8 @@
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         lastData = data;
-        $('#active-project').textContent = data.active?.project_root || '—';
-        renderProjectLegend(data.projects || []);
+        { const ap = data.active?.project_root || '—'; const el = $('#active-project'); el.textContent = ap; el.title = ap; }
+        renderProjects(data.projects || []);
         applyData(data);
         $('#status').textContent = 'live · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         $('#dot').classList.add('live'); $('#dot').classList.remove('dead');

@@ -7,6 +7,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.14] — 2026-05-29
+
+### Changed
+
+- **Dashboard visual refresh.** No API surface change — all visual / UX.
+  - Removed the hero strip and the standalone Legend card. Date + active
+    project now live as compact chips inside the top nav (active-project
+    path uses RTL truncation so the folder name stays visible).
+  - New **Projects bar chart** in the left column — colored bars ranked
+    by turn count. Stable per-name OKLCH palette (8 colors, hash-keyed)
+    so a project keeps the same color across sessions. Click any row to
+    open its full breakdown.
+  - **Donut legend** gains a turn-count column alongside the percentage.
+  - **Savings card** elevated: radial green backdrop, money figure 40px,
+    soft glow — makes the "what Synthra saved you" number the visual
+    anchor of the dashboard.
+  - **Recent turns column headers** are now hover-explainable.
+  - Active-project chip tightens + month name hides under 1100px width.
+
+---
+
 ## [0.1.13] — 2026-05-29
 
 ### Fixed

@@ -81,7 +81,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
   position: relative;
 }
 
@@ -1216,20 +1216,20 @@ button.check {
 
 /* Scrollbar styling */
 .turns-scroll::-webkit-scrollbar,
-.proj-filter::-webkit-scrollbar,
+.proj-chart::-webkit-scrollbar,
 .gate-mini::-webkit-scrollbar {
   width: 6px;
 }
 
 .turns-scroll::-webkit-scrollbar-thumb,
-.proj-filter::-webkit-scrollbar-thumb,
+.proj-chart::-webkit-scrollbar-thumb,
 .gate-mini::-webkit-scrollbar-thumb {
   background: var(--rule);
   border-radius: 999px;
 }
 
 .turns-scroll::-webkit-scrollbar-track,
-.proj-filter::-webkit-scrollbar-track,
+.proj-chart::-webkit-scrollbar-track,
 .gate-mini::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -1738,3 +1738,233 @@ button.check {
   color: var(--text-dim);
   letter-spacing: 0;
 }
+
+/* ============================================================
+   v0.3 visual refresh
+   - merged model-family legend into donut (count column)
+   - Projects -> colored bar chart
+   - elevated Savings card
+   ============================================================ */
+
+/* Left column sizing: donut natural height, projects fills + scrolls */
+.donut-card { flex: 0 0 auto; }
+
+/* Donut legend now carries a count column */
+.dl-row {
+  grid-template-columns: auto 1fr auto auto;
+  gap: 8px;
+  padding: 1px 0;
+}
+.dl-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.dl-pct {
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Projects bar chart ---- */
+.projects-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+}
+.proj-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding-right: 2px;
+}
+.proj-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border-radius: 9px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.proj-row:hover { background: rgba(155, 194, 239, .055); }
+.pr-top {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 9px;
+}
+.pr-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--pc, var(--sky));
+  box-shadow: 0 0 9px -1px var(--pc, var(--sky));
+  flex-shrink: 0;
+}
+.pr-name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+  transition: color 150ms ease;
+}
+.proj-row:hover .pr-name { color: var(--mist); }
+.pr-turns {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mist);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.pr-arrow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-mute);
+  transition: color 150ms ease, transform 150ms ease;
+}
+.proj-row:hover .pr-arrow {
+  color: var(--pc, var(--sky));
+  transform: translateX(2px);
+}
+.pr-bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.pr-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    color-mix(in oklch, var(--pc, var(--sky)) 45%, transparent) 0%,
+    var(--pc, var(--sky)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+  transition: width 640ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Elevated Savings card (priority focus) ---- */
+.card.savings {
+  background:
+    radial-gradient(120% 140% at 10% -10%, rgba(123, 255, 199, .14) 0%, rgba(4, 8, 26, .08) 44%),
+    linear-gradient(180deg, rgba(123, 255, 199, .05) 0%, rgba(4, 8, 26, .20) 52%),
+    var(--surface-1);
+  border-color: rgba(123, 255, 199, .24);
+  box-shadow:
+    inset 0 1px 0 rgba(123, 255, 199, .08),
+    0 20px 46px -30px rgba(123, 255, 199, .55);
+}
+.card.savings:hover {
+  border-color: rgba(123, 255, 199, .38);
+}
+.savings-money {
+  font-size: 40px;
+  text-shadow: 0 0 26px rgba(123, 255, 199, .22);
+}
+.savings-bar { height: 9px; }
+.savings-saved {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 0 12px -2px var(--signal-green);
+}
+
+/* Project dialog: name gets a project-colored accent dot */
+.dialog-name.has-accent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dialog-name.has-accent::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--pc, var(--sky));
+  box-shadow: 0 0 12px -1px var(--pc, var(--sky));
+  flex-shrink: 0;
+}
+
+
+/* ============================================================
+   v0.3.1 — date + active project folded into the top nav
+   ============================================================ */
+
+/* Let the right cluster shrink so the active path can ellipsize */
+.topnav-right { min-width: 0; }
+
+/* Compact date beside the brand */
+.nav-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.nav-date .nd-day { color: var(--mist); font-weight: 500; }
+.nav-date .nd-weekday { color: var(--text-dim); }
+.nav-date .nd-month { color: var(--text-mute); }
+
+/* Active project, compact, tail-truncated */
+.nav-active {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  max-width: 300px;
+  padding-right: 12px;
+  margin-right: 2px;
+  border-right: 1px solid var(--rule);
+  cursor: help;
+}
+.na-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  flex-shrink: 0;
+}
+.na-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mist);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* keep the project folder (tail) visible, ellipsize the drive prefix */
+  direction: rtl;
+  text-align: left;
+}
+
+/* Tighten nav on narrow widths */
+@media (max-width: 1100px) {
+  .nav-active { max-width: 200px; }
+  .nav-date .nd-month { display: none; }
+}
+
+
+/* Column headers signal they are hover-explainable */
+.turns-table thead th.has-tooltip { cursor: help; }
+.turns-table thead th.has-tooltip:hover { color: var(--text-dim); }
