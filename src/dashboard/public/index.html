@@ -602,7 +602,7 @@
         return;
       }
       const frag = document.createDocumentFragment();
-      for (const g of gates.slice(0, 12)) {
+      for (const g of gates.slice(0, 50)) {
         const row = document.createElement('div');
         row.className = 'gate-row';
         const cls = g.decision === 'block' ? 'block' : 'allow';

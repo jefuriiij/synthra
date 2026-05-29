@@ -7,6 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.16] — 2026-05-29
+
+### Changed
+
+- **Moat card shows 50 recent gate decisions** (was 12). The inline list
+  already scrolls within the card, and the `/data` payload already carries
+  up to 500 gates, so this just renders more of them. The headline block
+  count was always all-time/uncapped — unchanged.
+
+---
+
 ## [0.1.15] — 2026-05-29
 
 ### Changed
