@@ -60,8 +60,12 @@ export async function scanProject(projectRootRaw: string, opts: ScanOptions = {}
     if (boot.graphCreated) log.info("  created .synthra-graph/");
     if (boot.contextCreated) log.info("  created .synthra/");
     if (boot.gitignoreUpdated) log.info("  updated .gitignore");
-    if (boot.claudeMdCreated) log.info("  created CLAUDE.md");
-    else if (boot.claudeMdUpdated) log.info("  updated CLAUDE.md");
+    if (boot.claudeMdCreated) {
+      log.info("  created CLAUDE.md — onboarding skeleton for the agent");
+      log.info("    ↳ fill in Build / Conventions / Decisions (or run /init in Claude to auto-draft)");
+    } else if (boot.claudeMdUpdated) {
+      log.info("  updated CLAUDE.md");
+    }
   }
 
   const walked: WalkedFile[] = [];

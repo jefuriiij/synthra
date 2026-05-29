@@ -4,6 +4,7 @@
 // current-version block is appended at the end.
 
 import { readFile, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 
 export const POLICY_VERSION = 3;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
@@ -115,7 +116,45 @@ export function policyBlock(): string {
   ].join("\n");
 }
 
-export async function patchClaudeMd(path: string): Promise<PatchResult> {
+// A lean, agent-facing onboarding skeleton written ONLY when a project has no
+// CLAUDE.md yet. It captures the durable "why/how" the graph can't infer
+// (build/test, conventions, decisions, gotchas). It lives OUTSIDE the
+// synthra-policy markers, so later `syn .` runs — which strip and re-add the
+// policy block — never touch what the user fills in here.
+export function onboardingSkeleton(projectName: string): string {
+  return [
+    `# ${projectName}`,
+    "",
+    "> Onboarding notes for AI coding agents. Synthra's graph already knows the",
+    "> code's *structure* (files, symbols, imports) — this file is for what the",
+    "> graph can't infer: how to run the project, its conventions, and the",
+    "> decisions behind them. Keep it lean and current; delete prompts you don't need.",
+    "",
+    "## Build & test",
+    "",
+    "- TODO: install deps / build",
+    "- TODO: run tests / lint / typecheck",
+    "- TODO: run the app locally",
+    "",
+    "## Conventions",
+    "",
+    "- TODO: code style, naming, file layout the agent should follow",
+    "",
+    "## Key decisions",
+    "",
+    "- TODO: non-obvious choices and *why* (\"we use X not Y because …\")",
+    "",
+    "## Gotchas",
+    "",
+    "- TODO: traps, footguns, \"don't touch X without Y\"",
+    "",
+    "_Tip: run `/init` in Claude Code to auto-draft the sections above, then trim",
+    "to the durable bits. Synthra manages its own block below — leave it._",
+    "",
+  ].join("\n");
+}
+
+export async function patchClaudeMd(path: string, projectName?: string): Promise<PatchResult> {
   let existing: string | null;
   try {
     existing = await readFile(path, "utf8");
@@ -126,7 +165,10 @@ export async function patchClaudeMd(path: string): Promise<PatchResult> {
   const block = policyBlock();
 
   if (existing === null) {
-    await writeFile(path, block + "\n", "utf8");
+    // First creation: scaffold the onboarding skeleton (user-owned, written
+    // once) followed by Synthra's managed policy block.
+    const name = projectName || basename(dirname(path)) || "this project";
+    await writeFile(path, onboardingSkeleton(name) + "\n" + block + "\n", "utf8");
     return { created: true, updated: false, skipped: false };
   }
 

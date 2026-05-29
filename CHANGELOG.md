@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.17] — 2026-05-29
+
+### Added
+
+- **`syn .` scaffolds an agent-onboarding CLAUDE.md on brand-new projects.**
+  When a project has no CLAUDE.md, Synthra now writes a lean skeleton —
+  `Build & test`, `Conventions`, `Key decisions`, `Gotchas` (with TODO
+  prompts) — *above* its managed policy block, instead of a bare policy
+  block. This is the durable "why/how" layer the graph can't infer; the
+  graph still owns "what/where." Fill it in, or run `/init` to auto-draft.
+  The skeleton is written **once** and lives outside the
+  `<!-- synthra-policy -->` markers, so re-running `syn .` (which
+  refreshes the policy block) never clobbers what you've written.
+  Projects that already have a CLAUDE.md are untouched — no skeleton is
+  injected.
+
+---
+
 ## [0.1.16] — 2026-05-29
 
 ### Changed

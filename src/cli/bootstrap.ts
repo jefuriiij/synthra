@@ -2,6 +2,7 @@
 // patches CLAUDE.md with the versioned policy block.
 
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename } from "node:path";
 
 import { patchClaudeMd } from "../hooks/claude-md.js";
 import type { SynthraPaths } from "../shared/paths.js";
@@ -74,7 +75,7 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
   const gitignoreUpdated = await patchGitignore(paths.gitignore);
 
   const claudeMdExistedBefore = await exists(paths.claudeMd);
-  const patch = await patchClaudeMd(paths.claudeMd);
+  const patch = await patchClaudeMd(paths.claudeMd, basename(paths.projectRoot));
 
   return {
     graphCreated,
