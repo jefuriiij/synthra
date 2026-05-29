@@ -9,7 +9,9 @@ import type { WalkedFile } from "../walker.js";
 
 type Node = Parser.SyntaxNode;
 
-const QUERY = `
+// TS / TSX query — uses the type-identifier node type for class names, includes
+// interface / type-alias / enum declarations that don't exist in plain JS.
+const TS_QUERY = `
 (function_declaration name: (identifier) @function.name) @function
 (class_declaration name: (type_identifier) @class.name) @class
 (interface_declaration name: (type_identifier) @interface.name) @interface
@@ -20,10 +22,27 @@ const QUERY = `
 (import_statement source: (string) @import)
 `;
 
+// JS query — class names are plain identifiers (JS grammar has no
+// type_identifier node). No interface / type_alias / enum since JS lacks them.
+// Adds a call_expression capture for CommonJS require('x'); filtered in the
+// matching loop by checking the function identifier text equals "require".
+const JS_QUERY = `
+(function_declaration name: (identifier) @function.name) @function
+(class_declaration name: (identifier) @class.name) @class
+(method_definition name: (property_identifier) @method.name) @method
+(lexical_declaration (variable_declarator name: (identifier) @const-fn.name value: [(arrow_function) (function_expression)])) @const-fn
+(import_statement source: (string) @import)
+(call_expression function: (identifier) @_require_fn arguments: (arguments . (string) @require_source))
+`;
+
 function grammarFor(ext: string): GrammarName {
   if (ext === ".tsx" || ext === ".jsx") return "tsx";
   if (ext === ".js" || ext === ".cjs" || ext === ".mjs") return "javascript";
   return "typescript";
+}
+
+function queryFor(grammar: GrammarName): string {
+  return grammar === "javascript" ? JS_QUERY : TS_QUERY;
 }
 
 function unquote(s: string): string {
@@ -69,7 +88,7 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
     const tree = parser.parse(source);
     if (!tree) return { file: f, source, symbols, imports, calls: [] };
 
-    const query = language.query(QUERY);
+    const query = language.query(queryFor(grammar));
     const matches = query.matches(tree.rootNode);
 
     for (const match of matches) {
@@ -88,7 +107,17 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
         continue;
       }
       const importNode = byName.get("import");
-      if (importNode) imports.push(unquote(importNode.text));
+      if (importNode) {
+        imports.push(unquote(importNode.text));
+        continue;
+      }
+      // CommonJS require('x') — only captured by JS_QUERY. The identifier
+      // must literally be "require" (not setTimeout, console, etc).
+      const requireFn = byName.get("_require_fn");
+      const requireSource = byName.get("require_source");
+      if (requireFn && requireSource && requireFn.text === "require") {
+        imports.push(unquote(requireSource.text));
+      }
     }
 
     const seen = new Set<string>();
