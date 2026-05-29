@@ -180,9 +180,9 @@ async function loadProjectFiles(
  * Collapse duplicate token-log entries from co-installed AI tools.
  *
  * Synthra is friendly with other tools that share the .synthra-graph/
- * token_log.jsonl shape (GrapeRoot writes to it too). Both Stop hooks
- * fire on the same turn and emit nearly-identical entries within ~10ms,
- * which double-counts every metric in the dashboard.
+ * token_log.jsonl shape — if a second tool's Stop hook also writes to
+ * it, both fire on the same turn and emit nearly-identical entries
+ * within ~10ms, double-counting every metric in the dashboard.
  *
  * Strategy: group by (project, usage counts, second-rounded timestamp);
  * inside a group, keep the entry with the most credible model field —

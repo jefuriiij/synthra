@@ -1,7 +1,7 @@
 // Standalone dashboard server. Default port 8901 (override via
 // SYN_DASHBOARD_PORT); falls back through a small range 8901–8910 if the
-// preferred port is busy (so we can coexist with other dashboards like
-// GrapeRoot's on the same machine).
+// preferred port is busy (so we can coexist with other co-installed
+// AI-context tools that also expose a dashboard).
 // Reads .synthra-graph/token_log.jsonl + .synthra-graph/gate_log.jsonl for the
 // given project and renders a live SPA backed by GET /data polled every 2s.
 
