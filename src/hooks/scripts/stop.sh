@@ -8,15 +8,19 @@ set +e
 INPUT=$(cat 2>/dev/null)
 if [ -z "$INPUT" ]; then exit 0; fi
 
-TRANSCRIPT=$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p')
+# jq is required for the parsing below — bail early (silent no-op) if it's absent.
+if ! command -v jq >/dev/null 2>&1; then exit 0; fi
+
+# Extract transcript_path with jq, not sed. A greedy sed capture (\(.*\)") grabs the
+# trailing JSON fields after transcript_path and yields a path that doesn't exist, so
+# the -f check below always failed and totals were never POSTed to /log. (issue #1)
+TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then exit 0; fi
 
 PORT_FILE="$PWD/.synthra-graph/mcp_port"
 if [ ! -f "$PORT_FILE" ]; then exit 0; fi
 PORT=$(cat "$PORT_FILE" 2>/dev/null | tr -d '[:space:]')
 if [ -z "$PORT" ]; then exit 0; fi
-
-if ! command -v jq >/dev/null 2>&1; then exit 0; fi
 
 OFFSET_FILE="${TRANSCRIPT}.stopoffset"
 START_OFFSET=0

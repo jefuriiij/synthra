@@ -7,6 +7,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.18] — 2026-06-01
+
+### Fixed
+
+- **Stop hook on Linux/macOS no longer posts zero tokens to the dashboard.** The bash
+  `stop.sh` hook extracted `transcript_path` from the Claude Code Stop payload using a
+  greedy `sed` capture (`\(.*\)"`). Because the real payload has additional fields after
+  `transcript_path`, the capture grabbed those trailing fields and produced a
+  non-existent path string. The `-f` file check therefore always failed, totals were
+  never POSTed to `/log`, and the dashboard stayed stuck at 0 on every turn (GitHub
+  issue #1). Fixed by parsing with `jq -r '.transcript_path // empty'` and moving the
+  `command -v jq` guard above the parse so the hook exits cleanly when `jq` is absent.
+- **SessionStart/PreCompact primer hook (`prime.sh`) hardened the same way.** The
+  `/prime` response is `{"primer":"…","port":…}`, so the old greedy capture accidentally
+  injected trailing `","port":…` junk into the primer string. Because primer text can
+  contain inner quotes, a negated-class fix (`[^"]*`) would have truncated it at the
+  first quote — `jq -r '.primer // empty'` is the correct parse. Switched `printf '%b'`
+  to `printf '%s'` since `jq -r` already decodes JSON escapes.
+- Both fixes are **bash-only**. The Windows PowerShell hooks (`stop.ps1`, `prime.ps1`)
+  use `ConvertFrom-Json` and were already correct.
+
+---
+
 ## [0.1.17] — 2026-05-29
 
 ### Added
