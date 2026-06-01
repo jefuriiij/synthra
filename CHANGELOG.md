@@ -7,6 +7,23 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.19] — 2026-06-01
+
+### Changed
+
+- **Policy block v4: targeted Read-before-Edit for graph-discovered files.**
+  Claude Code's `Edit` tool requires a file to have been opened with its own
+  `Read` tool; a `graph_read` slice does not satisfy that gate. Previously,
+  editing a file known only through `graph_read` would fail with *"File has
+  not been read yet"* and force a whole-file `Read` — eroding token savings on
+  edit-heavy sessions. The v4 policy now instructs: take the line range already
+  reported in the `graph_read` header (e.g. `…::handler (L120-168)`), do a
+  targeted `Read` with matching `offset`/`limit`, then `Edit`. This satisfies
+  the gate while keeping the read small. Existing v3 blocks auto-upgrade on the
+  next `syn .` run.
+
+---
+
 ## [0.1.18] — 2026-06-01
 
 ### Fixed

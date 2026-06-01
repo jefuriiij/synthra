@@ -6,7 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 3;
+export const POLICY_VERSION = 4;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -83,6 +83,17 @@ export function policyBlock(): string {
     "  reads should be rare — only when you genuinely need the full file.",
     "- If `graph_continue`'s `Files` list contains a `::` entry, pass it",
     "  verbatim to `graph_read`.",
+    "",
+    "### Editing a file",
+    "",
+    "Claude Code's `Edit` tool (and `Write` when overwriting) only accepts a",
+    "file that was opened with the **`Read` tool** — a `graph_read` slice does",
+    "not count, and editing such a file fails with *\"File has not been read",
+    "yet.\"* So before editing a file you only know through `graph_read`: take",
+    "the line range from its header (e.g. `…::handler (L120-168)`), `Read` that",
+    "file with a matching `offset`/`limit`, then `Edit`. That satisfies the",
+    "gate while keeping the read small — don't whole-file `Read` unless the",
+    "edit spans most of the file.",
     "",
     "### Don'ts",
     "",

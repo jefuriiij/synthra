@@ -20,10 +20,10 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(content).toContain("# my-proj");
     expect(content).toContain("## Build & test");
     expect(content).toContain("## Key decisions");
-    expect(content).toContain("synthra-policy v3 BEGIN");
+    expect(content).toContain("synthra-policy v4 BEGIN");
     // Skeleton must come BEFORE the policy block.
     expect(content.indexOf("## Build & test")).toBeLessThan(
-      content.indexOf("synthra-policy v3 BEGIN"),
+      content.indexOf("synthra-policy v4 BEGIN"),
     );
   });
 
@@ -37,7 +37,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
     const content = await readFile(path, "utf8");
     expect(content).toContain("# Existing user doc");
     expect(content).not.toContain("## Build & test"); // no skeleton injected
-    expect(content).toContain("synthra-policy v3 BEGIN"); // policy still appended
+    expect(content).toContain("synthra-policy v4 BEGIN"); // policy still appended
   });
 
   it("preserves the user's filled-in onboarding content across re-runs", async () => {
