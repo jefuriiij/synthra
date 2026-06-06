@@ -2,7 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 
-import { buildSymbolIndex } from "../src/scanner/extract.js";
+import { buildGraph, buildSymbolIndex } from "../src/scanner/extract.js";
+import { SCHEMA_VERSION } from "../src/graph/types.js";
 import type { GraphSchema, SymbolNode } from "../src/graph/types.js";
 
 function symbol(name: string, line: number): SymbolNode {
@@ -51,5 +52,12 @@ describe("buildSymbolIndex", () => {
     for (const [i, name] of reserved.entries()) {
       expect(index[name]).toEqual([{ file: "lib/model.dart", line: i + 1, kind: "method" }]);
     }
+  });
+});
+
+describe("buildGraph schema_version (#8)", () => {
+  it("stamps the current SCHEMA_VERSION on the graph", async () => {
+    const graph = await buildGraph(".", []);
+    expect(graph.schema_version).toBe(SCHEMA_VERSION);
   });
 });

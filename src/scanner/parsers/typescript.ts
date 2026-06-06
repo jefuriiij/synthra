@@ -17,6 +17,7 @@ const TS_QUERY = `
 (enum_declaration name: (identifier) @enum.name) @enum
 (method_definition name: (property_identifier) @method.name) @method
 (lexical_declaration (variable_declarator name: (identifier) @const-fn.name value: [(arrow_function) (function_expression)])) @const-fn
+(assignment_expression left: (member_expression property: (property_identifier) @member-fn.name) right: [(arrow_function) (function_expression)]) @member-fn
 (import_statement source: (string) @import)
 `;
 
@@ -29,6 +30,7 @@ const JS_QUERY = `
 (class_declaration name: (identifier) @class.name) @class
 (method_definition name: (property_identifier) @method.name) @method
 (lexical_declaration (variable_declarator name: (identifier) @const-fn.name value: [(arrow_function) (function_expression)])) @const-fn
+(assignment_expression left: (member_expression property: (property_identifier) @member-fn.name) right: [(arrow_function) (function_expression)]) @member-fn
 (import_statement source: (string) @import)
 (call_expression function: (identifier) @_require_fn arguments: (arguments . (string) @require_source))
 `;
@@ -72,7 +74,8 @@ function shapeFromCaptures(captures: Map<string, Node>): DeclShape | null {
     findDecl("type", "type") ??
     findDecl("enum", "enum") ??
     findDecl("method", "method") ??
-    findDecl("const-fn", "function")
+    findDecl("const-fn", "function") ??
+    findDecl("member-fn", "function")
   );
 }
 

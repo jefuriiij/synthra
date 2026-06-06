@@ -163,6 +163,14 @@ function summarize(p: ProjectFiles): ProjectStats {
   };
 }
 
+// Dedupe is ON by default; set SYN_DASHBOARD_DEDUPE=0 (or "off"/"false") to see
+// every raw token-log entry — including duplicates a co-installed AI tool's Stop
+// hook may write to the same token_log.jsonl. (#7)
+function dedupeEnabled(): boolean {
+  const v = process.env.SYN_DASHBOARD_DEDUPE;
+  return v !== "0" && v !== "off" && v !== "false";
+}
+
 async function loadProjectFiles(
   path: string,
   name: string,
@@ -173,7 +181,8 @@ async function loadProjectFiles(
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
   ]);
-  return { path, name, last_seen: lastSeen, tokens: dedupeTokens(rawTokens), gates };
+  const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
+  return { path, name, last_seen: lastSeen, tokens, gates };
 }
 
 /**

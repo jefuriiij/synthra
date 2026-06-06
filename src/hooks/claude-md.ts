@@ -6,7 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 4;
+export const POLICY_VERSION = 5;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -83,6 +83,10 @@ export function policyBlock(): string {
     "  reads should be rare — only when you genuinely need the full file.",
     "- If `graph_continue`'s `Files` list contains a `::` entry, pass it",
     "  verbatim to `graph_read`.",
+    "- **Large file?** Don't read it in successive line-range chunks — call",
+    "  `graph_continue` or `graph_read(\"file::symbol\")` to pull the one symbol",
+    "  you need. Chunked whole-file Reads are exactly the cost `graph_read`",
+    "  exists to avoid.",
     "",
     "### Editing a file",
     "",

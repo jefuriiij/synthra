@@ -7,6 +7,52 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.23] — 2026-06-06
+
+### Added
+
+- **Dashboard token-log dedupe can now be disabled via `SYN_DASHBOARD_DEDUPE=0`.**
+  By default, `delta.ts` deduplicates `token_log.jsonl` entries that share the
+  same project, usage totals, and second-rounded timestamp — collapsing the
+  duplicate writes that a co-installed AI tool's Stop hook may produce. Set
+  `SYN_DASHBOARD_DEDUPE=0` (also accepts `off` or `false`) to see every raw
+  entry. Useful when debugging multi-tool coexistence or auditing raw log data.
+
+- **Graph schema-migration check on load.** A new `SCHEMA_VERSION` constant is
+  exported from `src/graph/types.ts` and stamped into `info_graph.json` by
+  `buildGraph`. On server start, `http.ts` compares the stored graph's
+  `schema_version` to the current constant; if they differ it triggers an
+  automatic one-time rescan instead of serving an incompatible graph. No
+  behavior change today — all graphs are v1 and schema_version matches — but
+  this is the forward-safety mechanism for future schema bumps so existing
+  graphs are never silently misread.
+
+### Fixed
+
+- **JS/TS parser now captures member-assigned functions** (`exports.handler = fn`,
+  `module.exports.route = () => {}`, `this.x = () => {}`). Previously these
+  CommonJS/member-export patterns were invisible to the query, so modules that
+  exclusively use this style extracted zero symbols and degraded to whole-file
+  reads via `graph_read`. A member-assignment capture has been added to both
+  `JS_QUERY` and `TS_QUERY` in `src/scanner/parsers/typescript.ts`. Note: a
+  pure-wiring `server.js` whose only structure is anonymous inline-callback
+  arguments (e.g. `io.use(...)` / `socket.on(event, fn)`) is genuinely
+  symbol-less — that is correct, and the gate's symbol-hit guard already
+  prevents blocking such files.
+
+### Changed
+
+- **Policy block v4 → v5.** Adds a "large file — pull the symbol, don't
+  chunk" nudge to address recurring dogfood friction: on large files Claude
+  was reading successive line-range chunks instead of fetching the specific
+  symbol via `graph_read("file::symbol")`. The v5 block now explicitly
+  instructs: when a file is large, use `graph_read("file/path.ts::SymbolName")`
+  to pull the symbol directly rather than reading successive line-range chunks.
+  `POLICY_VERSION` bumped `4 → 5`; existing v4 blocks auto-upgrade on the
+  next `syn .` run.
+
+---
+
 ## [0.1.22] — 2026-06-06
 
 ### Fixed

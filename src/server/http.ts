@@ -11,6 +11,7 @@ import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js
 import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
 import { scanProject } from "../cli/scan-command.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
+import { SCHEMA_VERSION } from "../graph/types.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
@@ -36,10 +37,23 @@ export interface StartOptions {
 
 async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
   try {
-    const [graph, symbolIndex] = await Promise.all([
+    let [graph, symbolIndex] = await Promise.all([
       readGraph(paths.infoGraph),
       readSymbolIndex(paths.symbolIndex),
     ]);
+    // Schema-migration check (#8): a graph written by an older Synthra may have
+    // an incompatible on-disk shape. On a version mismatch, auto-rescan once and
+    // reload, rather than serving a stale/incompatible graph.
+    if (graph.schema_version !== SCHEMA_VERSION) {
+      log.info(
+        `graph schema v${graph.schema_version} ≠ current v${SCHEMA_VERSION} — rescanning…`,
+      );
+      await scanProject(paths.projectRoot, { silent: true });
+      [graph, symbolIndex] = await Promise.all([
+        readGraph(paths.infoGraph),
+        readSymbolIndex(paths.symbolIndex),
+      ]);
+    }
     const activity = new ActivityStore(paths.activityLog);
     return { paths, graph, symbolIndex, activity };
   } catch (err) {

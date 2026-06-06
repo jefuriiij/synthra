@@ -45,6 +45,10 @@ export interface Edge {
   kind: EdgeKind;
 }
 
+// Bump when the on-disk info_graph.json shape changes incompatibly. The server
+// auto-rescans on load when a stored graph's schema_version differs (#8).
+export const SCHEMA_VERSION = 1;
+
 export interface GraphSchema {
   root: string;
   node_count: number;

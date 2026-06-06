@@ -8,6 +8,7 @@
 import { dirname, join, posix } from "node:path";
 
 import type { Edge, FileNode, GraphSchema, SymbolIndex, SymbolNode } from "../graph/types.js";
+import { SCHEMA_VERSION } from "../graph/types.js";
 import { fileHash } from "./hash.js";
 import { extractKeywords } from "./keywords.js";
 import type { ParsedFile, ParsedSymbol } from "./parser.js";
@@ -174,7 +175,7 @@ export async function buildGraph(root: string, parsed: ParsedFile[]): Promise<Gr
     nodes,
     edges,
     generated_at: new Date().toISOString(),
-    schema_version: 1,
+    schema_version: SCHEMA_VERSION,
   };
 }
 
