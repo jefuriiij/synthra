@@ -7,6 +7,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.21] — 2026-06-06
+
+### Added
+
+- **HubL (HubSpot CMS) symbol extraction for `.html` and `.hubl` files.**
+  Previously `.html` files were content-indexed only — keyword search and
+  whole-file reads, no symbol-level granularity. On HubSpot projects this
+  meant the graph contributed nothing: zero `graph_continue`/`graph_read`
+  calls resolved to symbol slices all session. Now `.html` and `.hubl` files
+  run through a new **regex-based** parser (`parsers/hubl.ts`; there is no
+  tree-sitter grammar for HubL):
+  - `{% macro name(args) %}` → extracted as a `function` symbol
+  - `{% block name %}` → extracted as a `component` symbol
+  - `{% include / extends / import / from "path" %}` → import edges (relative
+    paths resolve to local templates; `.html`/`.hubl` added to the resolver's
+    extension list)
+
+  Plain HTML with no HubL tags is unaffected — the parser yields zero symbols
+  and zero imports, identical to before. No API, protocol, or policy-block
+  change. Roadmap item #12.
+
+---
+
 ## [0.1.20] — 2026-06-06
 
 ### Fixed

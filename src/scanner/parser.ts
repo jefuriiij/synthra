@@ -12,6 +12,7 @@ import { parseCpp } from "./parsers/cpp.js";
 import { parseCSharp } from "./parsers/csharp.js";
 import { parseDart } from "./parsers/dart.js";
 import { parseGo } from "./parsers/go.js";
+import { parseHubL } from "./parsers/hubl.js";
 import { parseJava } from "./parsers/java.js";
 import { parseKotlin } from "./parsers/kotlin.js";
 import { parsePhp } from "./parsers/php.js";
@@ -135,6 +136,9 @@ export async function parseFile(f: WalkedFile): Promise<ParsedFile> {
       return parseSvelte(f, source);
     case ".vue":
       return parseVue(f, source);
+    case ".html":
+    case ".hubl":
+      return parseHubL(f, source);
     case ".go":
       return parseGo(f, source);
     case ".rs":
