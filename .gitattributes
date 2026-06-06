@@ -1,0 +1,13 @@
+# Normalize line endings to LF on checkout across all platforms. Keeps Biome's
+# formatter consistent on Windows/macOS/Linux (Git-for-Windows autocrlf would
+# otherwise check out CRLF and fail `biome check`), and guarantees the POSIX
+# bash hooks (*.sh) are never written with CRLF, which would break them.
+* text=auto eol=lf
+
+# Binary assets — never normalize.
+*.wasm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
