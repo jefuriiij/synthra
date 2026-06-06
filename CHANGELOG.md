@@ -7,6 +7,41 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.22] — 2026-06-06
+
+### Fixed
+
+- **`graph_read` now resolves shortened file paths (path-suffix fallback).** Previously
+  `graph_read` performed an exact `path === target` match only. Passing a shortened path
+  like `appsettings.json` returned "file not found" even when
+  `connectwarev2/.../appsettings.json` was indexed. A new `resolveFileTarget` helper (now
+  exported) tries an exact match first; on a miss it looks for a unique path-suffix match
+  and serves that file; if multiple files share the suffix it reports them as ambiguous with
+  candidate paths rather than guessing. Symbol lookups use the resolved path. No API or
+  protocol change. Roadmap item #11.
+
+- **Gate content-keyword relaxation now intersects file contents, not just file paths.**
+  The Moat's recent-activity relaxation previously matched query tokens against the paths of
+  recently-touched files only. A query like `Grep "login"` would not relax on a recent save
+  of `auth.ts` unless the word "login" appeared in the path. Now the relaxation also checks
+  the recently-touched file's graph-node keywords (its indexed content), so a recent save
+  relaxes a Grep whenever the file *contains* the queried term — not just when the path
+  matches it. Completes roadmap item #3.
+
+### Changed
+
+- **Dashboard Projects card shows a first-run hint in the empty state.** When no projects
+  have run `syn .` yet, the Projects card now displays "No projects yet — run `syn .` in a
+  project to start" instead of a blank card. The Recent-turns card already carried this
+  hint; Projects now matches it. Roadmap item #10.
+
+- **`bin` path normalization (chore).** Ran `npm pkg fix` to normalize `bin` entries from
+  `./bin/syn` to `bin/syn`. Silences the cosmetic publish warnings
+  (`"bin[syn]" script name was cleaned`). `syn` and `synthra` still resolve to the same
+  entry point. Roadmap item #4.
+
+---
+
 ## [0.1.21] — 2026-06-06
 
 ### Added

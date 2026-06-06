@@ -9,7 +9,7 @@
 // Spec: https://modelcontextprotocol.io/specification
 
 import { retrieve } from "../graph/retrieve.js";
-import type { FileNode, SymbolNode } from "../graph/types.js";
+import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
@@ -365,6 +365,28 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
   return textContent(`${header}\n${packed.text}`);
 }
 
+// Resolve a graph_read target's file part to a FileNode. Exact path wins; on a
+// miss, fall back to a unique path-suffix match so a shortened target like
+// "appsettings.json" finds "api/.../appsettings.json". Only serves the fallback
+// when EXACTLY one file matches — multiple matches are reported as ambiguous
+// rather than guessing. (#11)
+export type FileTargetResult =
+  | { node: FileNode }
+  | { ambiguous: string[] }
+  | { none: true };
+
+export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTargetResult {
+  const files = graph.nodes.filter((n): n is FileNode => n.kind === "file");
+  const exact = files.find((n) => n.path === filePath);
+  if (exact) return { node: exact };
+
+  const suffix = "/" + filePath;
+  const matches = files.filter((n) => n.path.endsWith(suffix));
+  if (matches.length === 1) return { node: matches[0]! };
+  if (matches.length > 1) return { ambiguous: matches.map((n) => n.path) };
+  return { none: true };
+}
+
 function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const target = typeof args?.target === "string" ? args.target : "";
   if (!target) return errorContent("graph_read: 'target' (string) is required");
@@ -372,10 +394,18 @@ function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext
   const [rawFile, symbolName] = target.includes("::") ? target.split("::", 2) : [target, undefined];
   const filePath = (rawFile ?? "").trim();
 
-  const fileNode = ctx.graph.nodes.find(
-    (n): n is FileNode => n.kind === "file" && n.path === filePath,
-  );
-  if (!fileNode) return errorContent(`graph_read: file not found in graph: ${filePath}`);
+  const resolved = resolveFileTarget(ctx.graph, filePath);
+  if ("ambiguous" in resolved) {
+    const shown = resolved.ambiguous.slice(0, 5).join(", ");
+    const more = resolved.ambiguous.length > 5 ? ", …" : "";
+    return errorContent(
+      `graph_read: '${filePath}' matches multiple files (${shown}${more}). Pass a longer path.`,
+    );
+  }
+  if ("none" in resolved) {
+    return errorContent(`graph_read: file not found in graph: ${filePath}`);
+  }
+  const fileNode = resolved.node;
 
   if (!symbolName) {
     return textContent(`# ${fileNode.path}\n\n${fileNode.content}`);
@@ -383,10 +413,10 @@ function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext
 
   const cleanSym = symbolName.trim();
   const symbol = ctx.graph.nodes.find(
-    (n): n is SymbolNode => n.kind === "symbol" && n.file === filePath && n.name === cleanSym,
+    (n): n is SymbolNode => n.kind === "symbol" && n.file === fileNode.path && n.name === cleanSym,
   );
   if (!symbol) {
-    return errorContent(`graph_read: symbol '${cleanSym}' not found in ${filePath}`);
+    return errorContent(`graph_read: symbol '${cleanSym}' not found in ${fileNode.path}`);
   }
 
   const lines = fileNode.content.split(/\r?\n/);

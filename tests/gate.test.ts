@@ -105,6 +105,13 @@ const GRAPH = buildGraph([
     symbols: ["login"],
   },
   {
+    // keyword "login" but NO "login" in the path → exercises content-keyword
+    // recency relaxation (#3): a recent touch here relaxes a `login` block.
+    path: "src/lib/session.ts",
+    keywords: ["login", "auth", "session"],
+    symbols: ["createSession"],
+  },
+  {
     // path/keyword match but NO symbol the query names → exercises Guard 2.
     path: "src/routes/app/runs/[id]/+page.svelte",
     keywords: ["app", "runs", "id", "run", "detail", "page"],
@@ -182,7 +189,20 @@ describe("gate — existing behavior preserved", () => {
   });
 
   it("allows that same symbol query when the human just touched a matching file", async () => {
-    // recent-activity overlap relaxes even a real symbol block.
+    // recent-activity overlap relaxes even a real symbol block (path match).
     expect(await grep("login", ["src/lib/login.ts"])).toBe("allow");
+  });
+});
+
+describe("gate — #3 content-keyword recency relaxation", () => {
+  it("relaxes a symbol block when a recently-touched file's CONTENT matches (path doesn't)", async () => {
+    // "login" is an exact symbol (would block). src/lib/session.ts has no
+    // "login" in its path — only in its keywords. Pre-#3 this stayed blocked.
+    expect(await grep("login", ["src/lib/session.ts"])).toBe("allow");
+  });
+
+  it("still blocks when the recently-touched file shares no path- or content-token", async () => {
+    // socket.ts shares nothing with "login" (path or keywords) → no relax.
+    expect(await grep("login", ["src/lib/socket.ts"])).toBe("block");
   });
 });

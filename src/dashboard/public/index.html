@@ -636,7 +636,7 @@
       const el = $('#proj-chart');
       el.innerHTML = '';
       if (!projects.length) {
-        el.innerHTML = '<div class="empty">No projects yet.</div>';
+        el.innerHTML = '<div class="empty">No projects yet — run <code>syn .</code> in a project to start.</div>';
         return;
       }
       const ranked = [...projects].sort((a, b) => (b.total_turns || 0) - (a.total_turns || 0));

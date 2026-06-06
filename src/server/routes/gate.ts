@@ -13,6 +13,7 @@ import { dirname } from "node:path";
 
 import { retrieve } from "../../graph/retrieve.js";
 import { tokenizeQuery } from "../../graph/rank.js";
+import type { GraphSchema } from "../../graph/types.js";
 import type { ServerContext } from "../context.js";
 
 export interface GateRequest {
@@ -62,19 +63,43 @@ function looksLikeNonSymbolQuery(pattern: string): boolean {
   return false;
 }
 
+// A recently-touched file "matches" the query if a query token appears in its
+// PATH or in its graph-node KEYWORDS (file contents). The content-keyword check
+// (#3) means a recent save of e.g. auth.ts relaxes `Grep "login"` when auth.ts
+// contains login — not only when the path itself contains the token.
 function recentlyTouchedMatchesQuery(
   recentPaths: string[],
   queryTokens: Set<string>,
+  graph: GraphSchema,
 ): string[] {
+  if (recentPaths.length === 0) return [];
+
+  // Pull keywords for the recently-touched files in a single graph pass.
+  const recent = new Set(recentPaths);
+  const keywordsByPath = new Map<string, string[]>();
+  for (const n of graph.nodes) {
+    if (n.kind === "file" && recent.has(n.path)) keywordsByPath.set(n.path, n.keywords);
+  }
+
   const matches: string[] = [];
   for (const path of recentPaths) {
     const lower = path.toLowerCase();
+    let matched = false;
     for (const t of queryTokens) {
       if (lower.includes(t)) {
-        matches.push(path);
+        matched = true;
         break;
       }
     }
+    if (!matched) {
+      for (const kw of keywordsByPath.get(path) ?? []) {
+        if (queryTokens.has(kw)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) matches.push(path);
   }
   return matches;
 }
@@ -149,7 +174,7 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   // be stale and they probably want a fresh search.
   const qTokens = new Set(tokenizeQuery(query));
   const recentPaths = ctx.activity.recentFilePaths(RECENT_ACTIVITY_WINDOW_MS);
-  const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens);
+  const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens, ctx.graph);
 
   if (overlap.length > 0) {
     const res: GateResponse = {

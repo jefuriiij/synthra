@@ -37,3 +37,5 @@ Thumbs.db
 
 # Self-generated state when running Synthra on its own repo during development
 .synthra-graph/
+# Claude Code per-project agent memory / local settings — dev-only, never shipped
+.claude/
