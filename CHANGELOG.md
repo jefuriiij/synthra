@@ -7,6 +7,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.25] — 2026-06-06
+
+### Fixed
+
+- **PreToolUse (Moat) bash hook now parses the gate response with `jq`, not a
+  greedy `sed` capture (issue #13).** `src/hooks/scripts/pre-tool-use.sh`
+  extracted the block `reason` via `sed -n 's/.*"reason"…\(.*\)".*/\1/p'`. The
+  greedy `\(.*\)"` capture over-ran into the trailing JSON fields, and because a
+  block `reason` legitimately contains double quotes (it quotes the searched
+  query, e.g. `"login"`), the captured text broke the deny JSON when embedded
+  raw in the output heredoc — so on a real block Claude Code received malformed
+  `hookSpecificOutput` and the deny was silently dropped. The hook now reads
+  `.decision` / `.reason` with `jq -r '… // empty'` and re-emits the deny object
+  with `jq -nc --arg` (correct escaping), behind a `command -v jq` guard that
+  silently no-ops when `jq` is absent — mirroring the Stop/Prime hooks fixed in
+  #1. Gate/Moat decision logic is unchanged. This completes the `jq` migration
+  across all three bash hooks (the last v0.2 item). Verified end-to-end under
+  bash on Linux: SessionStart primer injection, Grep/Glob Moat blocks with
+  well-formed escaped deny JSON, and Stop-hook token totals reaching the
+  dashboard.
+
+---
+
 ## [0.1.24] — 2026-06-06
 
 ### Added
