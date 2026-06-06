@@ -7,6 +7,45 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.2.0] — 2026-06-06
+
+### Added
+
+- **Cross-session "second brain" — a resume digest at session start.** Synthra
+  now captures a snapshot at session end (open next-steps/decisions, files
+  touched, and commits since your last session) and, on the next session, leads
+  the SessionStart primer with a budget-bounded **"Since you were last here"**
+  digest. A fresh session arrives already oriented instead of re-paying tokens
+  to rediscover recent work. The snapshot lives in `.synthra-graph/`
+  (machine-local) and falls back to the normal primer when there's nothing to
+  show.
+- **Usage learning — retrieval that gets smarter the more you use it.** Files
+  you actually open (`graph_read`) or edit (`graph_register_edit`) accrue a
+  time-decayed weight (7-day half-life), and retrieval gives genuinely "hot"
+  files a small, capped re-rank boost. It's anchored to files that already match
+  your query and capped below the existing seed boost, so it sharpens ranking
+  without ever overriding relevance. Purely local, per-developer; degrades to
+  the exact prior ranking when there's no usage history. Tunable via
+  `SYN_LEARN_HALFLIFE_DAYS` and `SYN_LEARN_BOOST_CAP`.
+- **CLAUDE.md policy v6** — teaches the assistant to trust the resume digest and
+  pull concrete next steps via `context_recall({kind:"next"})` instead of
+  re-exploring the codebase.
+
+### Fixed
+
+- **`pre-compact.sh` now parses the primer with `jq`, not a greedy `sed`
+  capture** — completing the `jq` migration across all four bash hooks (matches
+  the Stop/Prime/PreToolUse fixes). The multi-line resume digest contains quotes
+  and newlines the old `sed` capture would have mangled.
+
+### Internal
+
+- **CI (GitHub Actions), Biome (lint + format), and coverage** added. CI runs on
+  an ubuntu + windows matrix, so cross-platform hook regressions are caught
+  automatically. `.gitattributes` enforces LF line endings on every platform.
+
+---
+
 ## [0.1.25] — 2026-06-06
 
 ### Fixed
