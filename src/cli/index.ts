@@ -28,6 +28,7 @@ import { resolvePaths } from "../shared/paths.js";
 import { recordProject } from "../shared/project-registry.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
+import { doctorCommand } from "./doctor-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
 import { promptForUpdateOrLog, runStartupChangelogCheck } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
@@ -186,6 +187,12 @@ export function buildProgram() {
     .command("dashboard [path]", "Run the token dashboard server (localhost:8901).")
     .action(async (path: string | undefined) => {
       await dashboardCommand(path ?? ".");
+    });
+
+  prog
+    .command("doctor [path]", "Diagnose this project's Synthra setup + environment.")
+    .action(async (path: string | undefined) => {
+      await doctorCommand(path ?? ".");
     });
 
   return prog;

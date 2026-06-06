@@ -7,6 +7,36 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.24] — 2026-06-06
+
+### Added
+
+- **`syn doctor [path]` — setup and environment health check (issue #9).** New
+  read-only CLI subcommand that runs a one-shot checklist and exits. Checks: Node
+  version, `jq` availability (bash Stop/Prime hooks silently no-op without it),
+  `claude` CLI on PATH, graph freshness (symbol count, schema version, scan age),
+  `.mcp.json` project-scope registration (required for Synthra tools to appear in
+  the Claude Code IDE), CLAUDE.md policy-block version, and hook installation
+  status. Warnings surface with the exact `syn .` command needed to resolve them.
+  The command mutates nothing — safe to run at any time.
+
+- **Graph-tool usage metric on the dashboard (issue #2).** The MCP server now
+  appends a record to `.synthra-graph/tool_log.jsonl` on every Synthra tool call
+  (`graph_continue`, `graph_read`, `graph_register_edit`, etc.). `delta.ts`
+  aggregates per-tool call counts into `ProjectStats.tool_calls` (per-project) and
+  `global.tool_calls` (cross-project totals). The dashboard shows a new "Graph
+  tools used" card in the right column with per-tool counts. This is a positive
+  signal complementing the Moat's blocked-Grep count: it captures Synthra pivots
+  that happen before a Grep fires, which the block counter misses entirely.
+
+- **Session-aware routing — `graph_continue` seeds retrieval with the session's
+  touched files (issue #14).** Files the human recently saved (last 15 min) and
+  files the AI registered via `graph_register_edit` now get a ranking boost in
+  `graph_continue` results, so the returned context tracks what you're actually
+  working on. Mirrors the `/pack` route, which already seeded retrieval this way.
+
+---
+
 ## [0.1.23] — 2026-06-06
 
 ### Added

@@ -178,6 +178,16 @@
         </div>
       </div>
 
+      <!-- Graph tool usage -->
+      <div class="card tools-card has-tooltip" data-tooltip="How often Claude actually used Synthra's graph tools (graph_continue / graph_read / …) across all projects. A positive usage signal — unlike the Moat's block count, it captures every time Claude reached for the graph instead of running a Grep.">
+        <div class="card-head">
+          <div class="card-eyebrow">Graph tools <em>used</em></div>
+          <div class="card-meta">all projects</div>
+        </div>
+        <div class="moat-value"><span id="tool-total">0</span> <em>calls</em></div>
+        <div class="cost-sub" id="tool-breakdown"></div>
+      </div>
+
       <!-- The Moat -->
       <div class="card moat has-tooltip" data-tooltip="Synthra's PreToolUse hook intercepts. Each block = Synthra recognized the graph already had high-confidence context for the query, so it stopped Claude from running an exploratory Grep or Glob. The list below shows the latest decisions across all projects.">
         <div class="card-head">
@@ -540,6 +550,25 @@
       $('#blocks').textContent = fmtPlain(g.blocked_count);
     }
 
+    function renderToolUsage(g) {
+      $('#tool-total').innerHTML = fmt(g.total_tool_calls || 0);
+      const el = $('#tool-breakdown');
+      el.innerHTML = '';
+      const entries = Object.entries(g.tool_calls || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (!entries.length) {
+        el.innerHTML = '<div class="empty">No graph-tool calls yet.</div>';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const [tool, n] of entries) {
+        const row = document.createElement('div');
+        row.className = 'cs-row';
+        row.innerHTML = '<span class="cs-k">' + tool + '</span><span class="cs-v">' + fmtPlain(n) + '</span>';
+        frag.appendChild(row);
+      }
+      el.appendChild(frag);
+    }
+
     function renderTurns(turns) {
       const tbody = $('#turns-body');
       const empty = $('#turns-empty');
@@ -805,6 +834,7 @@
       renderSavings(data.global);
       renderCostHero(data.global);
       renderMoat(data.global);
+      renderToolUsage(data.global);
       renderTurns(turns);
       renderGateMini(gates);
 

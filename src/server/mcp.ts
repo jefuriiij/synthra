@@ -8,6 +8,9 @@
 //
 // Spec: https://modelcontextprotocol.io/specification
 
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
@@ -353,7 +356,13 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
   const query = typeof args?.query === "string" ? args.query : "";
   if (!query) return errorContent("graph_continue: 'query' (string) is required");
 
-  const retrieval = await retrieve(ctx.graph, query);
+  // Session-aware routing (#14): seed retrieval with files the session has
+  // touched — the human's recent saves + edits the AI registered via
+  // graph_register_edit — so the ranker boosts them. Mirrors the /pack route.
+  const retrieval = await retrieve(ctx.graph, query, {
+    recentlyEditedPaths: ctx.activity.recentFilePaths(15 * 60 * 1000),
+    sessionKnownPaths: getRegisteredEdits(),
+  });
   const packed = await pack(retrieval.files, { query, graph: ctx.graph });
 
   const header =
@@ -524,6 +533,22 @@ async function contextRecall(args: Record<string, unknown> | undefined, ctx: Ser
   return textContent(lines.join("\n"));
 }
 
+// Best-effort per-call log of Synthra MCP tool usage — powers the dashboard's
+// graph-tool-usage metric (#2). A positive signal (how often the graph was
+// actually used) vs the blocked-Grep proxy, which misses well-behaved pivots.
+async function logToolCall(ctx: ServerContext, tool: string): Promise<void> {
+  try {
+    await mkdir(dirname(ctx.paths.toolLog), { recursive: true });
+    await appendFile(
+      ctx.paths.toolLog,
+      JSON.stringify({ ts: new Date().toISOString(), tool }) + "\n",
+      "utf8",
+    );
+  } catch {
+    // Logging is best-effort; never fail a tool call over it.
+  }
+}
+
 export async function handleMcpRequest(
   body: unknown,
   ctx: ServerContext,
@@ -565,6 +590,7 @@ export async function handleMcpRequest(
         const args = (params.arguments && typeof params.arguments === "object"
           ? (params.arguments as Record<string, unknown>)
           : {});
+        void logToolCall(ctx, toolName);
         const result = await callTool(toolName, args, ctx);
         return ok(id, result);
       }

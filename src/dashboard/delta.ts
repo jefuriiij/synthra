@@ -33,6 +33,22 @@ export interface GateLogEntry {
   reason?: string;
 }
 
+export interface ToolLogEntry {
+  ts?: string;
+  /** Synthra MCP tool name, e.g. "graph_continue", "graph_read". */
+  tool: string;
+}
+
+/** Count Synthra MCP tool calls by tool name. (#2) */
+export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of entries) {
+    if (!e.tool) continue;
+    out[e.tool] = (out[e.tool] ?? 0) + 1;
+  }
+  return out;
+}
+
 export interface ProjectStats {
   path: string;
   name: string;
@@ -46,6 +62,8 @@ export interface ProjectStats {
   blocked_count: number;
   estimated_tokens_saved: number;
   estimated_cost_usd: number;
+  total_tool_calls: number;
+  tool_calls: Record<string, number>;
   models: Record<string, number>;
 }
 
@@ -88,6 +106,8 @@ export interface DashboardData {
     estimated_tokens_saved: number;
     saved_percent: number;
     estimated_cost_usd: number;
+    total_tool_calls: number;
+    tool_calls: Record<string, number>;
   };
   projects: ProjectStats[];
   recent_turns: RecentTurn[];
@@ -124,6 +144,7 @@ interface ProjectFiles {
   last_seen: string | null;
   tokens: TokenLogEntry[];
   gates: GateLogEntry[];
+  tools: ToolLogEntry[];
 }
 
 function summarize(p: ProjectFiles): ProjectStats {
@@ -159,6 +180,8 @@ function summarize(p: ProjectFiles): ProjectStats {
     blocked_count: blocked,
     estimated_tokens_saved: saved,
     estimated_cost_usd: Math.round(costUsd * 100) / 100,
+    total_tool_calls: p.tools.length,
+    tool_calls: countToolCalls(p.tools),
     models,
   };
 }
@@ -177,12 +200,13 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates] = await Promise.all([
+  const [rawTokens, gates, tools] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
+    readJsonl<ToolLogEntry>(paths.toolLog),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
-  return { path, name, last_seen: lastSeen, tokens, gates };
+  return { path, name, last_seen: lastSeen, tokens, gates, tools };
 }
 
 /**
@@ -272,6 +296,7 @@ export async function computeDashboardData(
       last_seen: null,
       tokens: [],
       gates: [],
+      tools: [],
     };
   const activeStats = summarize(activeFiles);
 
@@ -283,7 +308,9 @@ export async function computeDashboardData(
     g_gate = 0,
     g_block = 0,
     g_cost = 0,
-    g_turns = 0;
+    g_turns = 0,
+    g_tools = 0;
+  const g_tool_calls: Record<string, number> = {};
   for (const s of projects) {
     g_turns += s.total_turns;
     g_in += s.total_input_tokens;
@@ -293,6 +320,8 @@ export async function computeDashboardData(
     g_gate += s.total_gate_calls;
     g_block += s.blocked_count;
     g_cost += s.estimated_cost_usd;
+    g_tools += s.total_tool_calls;
+    for (const [k, v] of Object.entries(s.tool_calls)) g_tool_calls[k] = (g_tool_calls[k] ?? 0) + v;
   }
   const g_saved = g_block * AVG_TOKENS_PER_BLOCKED_GREP;
   const g_used = g_in + g_out + g_cc;
@@ -349,6 +378,8 @@ export async function computeDashboardData(
       estimated_tokens_saved: g_saved,
       saved_percent: Math.round(g_saved_pct * 10) / 10,
       estimated_cost_usd: Math.round(g_cost * 100) / 100,
+      total_tool_calls: g_tools,
+      tool_calls: g_tool_calls,
     },
     projects,
     recent_turns: allTurns.slice(0, recentN),
