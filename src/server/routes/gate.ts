@@ -41,6 +41,27 @@ function extractQuery(toolName: string, input: Record<string, unknown>): string 
   return null;
 }
 
+// Heuristic: does this Grep pattern target markup / CSS / attributes / literals
+// rather than a code symbol? The graph only indexes symbols, so blocking these
+// and redirecting to graph_read just forces a fallback Read. Conservative — only
+// fires on syntax that never appears in a bare identifier search.
+function looksLikeNonSymbolQuery(pattern: string): boolean {
+  // HTML / JSX tag: "<div", "</", "<svg"
+  if (/<\/?[a-zA-Z]/.test(pattern)) return true;
+  // Hyphenated attribute assignment: "data-tour=", "aria-label=" ('-' is not a
+  // valid identifier char, so this is markup, not a symbol).
+  if (/[a-zA-Z][\w-]*-[\w-]*\s*=/.test(pattern)) return true;
+  // CSS rule / object brace: ".content{", "{ color"
+  if (/\{/.test(pattern)) return true;
+  // Escaped-dot class / member selector: "\.filter-bar", "\.gs"
+  if (/\\\.[a-zA-Z]/.test(pattern)) return true;
+  // CSS property value or units: ": 100%", "12px", "1.5rem", "50%"
+  if (/:\s*\d/.test(pattern) || /\d(?:px|rem|em|vh|vw)\b/.test(pattern) || /\d%/.test(pattern)) {
+    return true;
+  }
+  return false;
+}
+
 function recentlyTouchedMatchesQuery(
   recentPaths: string[],
   queryTokens: Set<string>,
@@ -97,6 +118,17 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
+  // Guard 1 — the query targets markup/CSS/attributes/literals, which the graph
+  // does not index. Blocking would only force a fallback, so let Grep through.
+  if (req.tool_name === "Grep" && looksLikeNonSymbolQuery(query)) {
+    const res: GateResponse = {
+      decision: "allow",
+      reason: `"${query}" targets markup/CSS/attributes, not code symbols — letting Grep through (the graph indexes symbols).`,
+    };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
+  }
+
   const retrieval = await retrieve(ctx.graph, query);
   // "low" = no real matches → let Grep through; Synthra has nothing useful.
   // "medium" + "high" = Synthra has structured context for this query →
@@ -125,6 +157,20 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
       reason:
         `confidence=${retrieval.confidence} but human just touched ${overlap.slice(0, 3).join(", ")} — ` +
         `static context may be stale, letting ${req.tool_name} through.`,
+    };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
+  }
+
+  // Guard 2 — the graph matched files only by keyword/path, not by a symbol the
+  // query names, so graph_read can't return a real slice. A block would just
+  // force a fallback Read; let the search through instead.
+  if (!retrieval.symbolMatched) {
+    const res: GateResponse = {
+      decision: "allow",
+      reason:
+        `confidence=${retrieval.confidence} but only keyword/path matched (no symbol the query names) — ` +
+        `graph_read can't slice it, letting ${req.tool_name} through.`,
     };
     await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
     return res;

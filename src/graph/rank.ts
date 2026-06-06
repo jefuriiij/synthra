@@ -18,6 +18,11 @@ export interface ScoredFile {
   file: FileNode;
   score: number;
   reasons: string[];
+  /** Total symbol-match weight (exact name = 3, partial substring = 1). */
+  symHits: number;
+  /** Count of symbols whose name a query token matched *exactly*. The gate
+   *  uses this — a partial substring match is too noisy ("id" ⊂ "width"). */
+  exactSym: number;
 }
 
 const STOPWORDS = new Set([
@@ -97,10 +102,12 @@ export function scoreFiles(inputs: RankInputs): ScoredFile[] {
     // Symbol-name overlap (higher signal than file-level keywords)
     const symbols = symbolsByFile.get(file.path) ?? [];
     let symHits = 0;
+    let exactSym = 0;
     for (const sym of symbols) {
       const name = sym.name.toLowerCase();
       if (qTokens.has(name)) {
         symHits += 3;
+        exactSym += 1;
       } else {
         // partial match: any query token is a substring of, or contained by, the symbol name
         for (const t of qTokens) {
@@ -130,7 +137,7 @@ export function scoreFiles(inputs: RankInputs): ScoredFile[] {
       reasons.push("seed");
     }
 
-    scored.push({ file, score, reasons });
+    scored.push({ file, score, reasons, symHits, exactSym });
   }
 
   // Second pass: 1-hop import-graph boost from any file already scored > 0

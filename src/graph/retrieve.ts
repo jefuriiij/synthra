@@ -8,6 +8,10 @@ export interface RetrievalResult {
   files: FileNode[];
   confidence: "high" | "medium" | "low";
   reason: string;
+  /** True if any returned file has a symbol whose name a query token matched
+   *  exactly — i.e. graph_read can serve a real `file::symbol` slice for this
+   *  query. When false, a Grep/Glob block would only force a fallback Read. */
+  symbolMatched: boolean;
 }
 
 export interface RetrieveOptions {
@@ -33,6 +37,7 @@ export async function retrieve(
       files: [],
       confidence: "low",
       reason: qTokens.length === 0 ? "empty query" : "empty graph",
+      symbolMatched: false,
     };
   }
 
@@ -51,10 +56,13 @@ export async function retrieve(
       files: [],
       confidence: "low",
       reason: `no matches for ${JSON.stringify(qTokens)}`,
+      symbolMatched: false,
     };
   }
 
-  const top = positive.slice(0, topK).map((s) => s.file);
+  const topScored = positive.slice(0, topK);
+  const top = topScored.map((s) => s.file);
+  const symbolMatched = topScored.some((s) => s.exactSym > 0);
   const topScore = positive[0]?.score ?? 0;
   const secondScore = positive[1]?.score ?? 0;
 
@@ -76,5 +84,6 @@ export async function retrieve(
     files: top,
     confidence,
     reason: `top: ${reasons}`,
+    symbolMatched,
   };
 }

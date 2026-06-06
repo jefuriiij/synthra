@@ -7,6 +7,34 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.1.20] — 2026-06-06
+
+### Fixed
+
+- **Gate (Moat) no longer blocks Grep/Glob queries the graph cannot answer with a symbol.**
+  Previously, the PreToolUse gate blocked whenever retrieval confidence was `medium` or `high`,
+  but confidence is driven by keyword and path hits too — not only by symbol matches. This meant
+  literal/attribute/CSS-selector patterns (`data-tour=`, `class=`, `: 100%`, `.filter-bar`,
+  `<div>`) and path-only Globs were blocked and redirected to `graph_read`, which has no symbol
+  slice to return for those queries, so Claude fell back to Grep or a whole-file Read anyway —
+  a wasted round-trip. Found across multiple dogfood sessions including well-indexed Svelte
+  repos. Two new guards close the gap:
+  - **Query-shape pre-filter** — Grep patterns that target markup, CSS, attributes, or string
+    literals are allowed through up front, before the retrieval step runs.
+  - **Symbol-hit requirement** — the gate now only blocks when retrieval matched a symbol whose
+    name the query mentions exactly. `RetrievalResult` gained a `symbolMatched` flag; the scorer
+    exposes `exactSym`.
+
+  Net effect: genuine symbol lookups still block (verified: `fetchWith429Retry`,
+  `MAX_ROWS_PER_TABLE`, `verifyPin`, `SOCKET_AUTH_SECRET`, `seedCredentials`); queries that
+  could never have been answered by the graph now allow through without the wasted redirect.
+  No API, protocol, or policy-block change — purely server-side gate behavior.
+
+- **Gate and rank test coverage added** (`tests/gate.test.ts`, `tests/rank.test.ts`).
+  Chips at the v0.2 backlog item to fill vitest tests beyond `it.todo` placeholders.
+
+---
+
 ## [0.1.19] — 2026-06-01
 
 ### Changed
