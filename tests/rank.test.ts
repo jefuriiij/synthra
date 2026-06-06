@@ -180,3 +180,31 @@ describe("scoreFiles — usage-learning boost", () => {
     expect(top.reasons.some((r) => r.startsWith("used"))).toBe(false);
   });
 });
+
+describe("scoreFiles — IDF keyword weighting", () => {
+  it("ranks a match on a rarer query term above a match on a common one", () => {
+    // "common" appears in 4 of 5 files; "rare" in 1. Two files each match only
+    // one of the two query terms — the rare-term file should rank higher.
+    const c1 = mkFileNode("src/c1.ts", ["common"]);
+    const c2 = mkFileNode("src/c2.ts", ["common"]);
+    const c3 = mkFileNode("src/c3.ts", ["common"]);
+    const commonMatch = mkFileNode("src/cm.ts", ["common"]);
+    const rareMatch = mkFileNode("src/r.ts", ["rare"]);
+    const candidates = [c1, c2, c3, commonMatch, rareMatch];
+    const graph = mkGraph(candidates);
+
+    const scored = scoreFiles({ candidates, query: "rare common", graph });
+    const r = scored.find((s) => s.file.path === "src/r.ts");
+    const cm = scored.find((s) => s.file.path === "src/cm.ts");
+    expect((r?.score ?? 0) > (cm?.score ?? 0)).toBe(true);
+  });
+
+  it("preserves the legacy magnitude for a typical single-term match (no calibration shift)", () => {
+    const a = mkFileNode("src/a.ts", ["auth"]);
+    const b = mkFileNode("src/b.ts", ["other"]);
+    const graph = mkGraph([a, b]);
+    const [top] = scoreFiles({ candidates: [a, b], query: "auth", graph });
+    expect(top.file.path).toBe("src/a.ts");
+    expect(top.score).toBe(2); // refIdf == idf(auth) → weight exactly KW_BASE_WEIGHT
+  });
+});

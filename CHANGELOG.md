@@ -7,6 +7,22 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.2.1] — 2026-06-06
+
+### Changed
+
+- **Keyword retrieval is now IDF-weighted (BM25's term-rarity component).** A
+  query token that's rare across the repo counts for more than a common one, so
+  on a multi-term query the files matching the *specific* terms rank above those
+  matching generic ones — instead of every keyword match counting the same. The
+  weighting is normalized to the query's mean IDF, so a typical match scores the
+  same as before: overall ranking magnitude — and the confidence / Moat gating
+  that depends on it — is unchanged. Purely an in-repo ranking refinement, no API
+  or data-model change. (TF-saturation / length-norm parts of full BM25 don't
+  apply to the deduped top-N keyword representation.)
+
+---
+
 ## [0.2.0] — 2026-06-06
 
 ### Added

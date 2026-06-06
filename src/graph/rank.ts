@@ -18,6 +18,12 @@ export interface RankInputs {
   usageScores?: ReadonlyMap<string, number>;
 }
 
+// Base weight for a keyword match. The IDF reweighting is normalized to the
+// query's mean IDF, so a "typical"-rarity match contributes exactly this — which
+// preserves today's score magnitude (and the confidence/Moat calibration that
+// depends on it) while letting rarer terms score above and common terms below.
+const KW_BASE_WEIGHT = 2;
+
 // Max additive usage boost. Strictly below the +5 seed boost so a maxed-out
 // usage signal can reorder within a relevance band but never leapfrog a freshly
 // seeded file or two exact symbol matches (+6). Env-overridable for tuning.
@@ -134,17 +140,53 @@ export function scoreFiles(inputs: RankInputs): ScoredFile[] {
   const seeds = new Set<string>(inputs.sessionKnownPaths ?? []);
   for (const p of inputs.recentlyEditedPaths ?? []) seeds.add(p);
 
+  // IDF weighting for keyword matches — the part of BM25 that fits our deduped
+  // top-N keyword representation (TF saturation / length-norm collapse here). A
+  // query token that's rare across the repo counts for more than a common one.
+  // Document frequency is computed over the candidate corpus for the query's
+  // tokens only; `refIdf` (the query's mean IDF) normalizes the weighting so a
+  // typical match still scores KW_BASE_WEIGHT — preserving the overall magnitude
+  // and the confidence/Moat calibration, while reordering within the band.
+  const corpusSize = inputs.candidates.length;
+  const queryDf = new Map<string, number>();
+  for (const f of inputs.candidates) {
+    for (const kw of f.keywords) {
+      if (qTokens.has(kw)) queryDf.set(kw, (queryDf.get(kw) ?? 0) + 1);
+    }
+  }
+  const idf = (token: string): number => {
+    const n = queryDf.get(token) ?? 0;
+    if (n <= 0) return 0;
+    return Math.log(1 + (corpusSize - n + 0.5) / (n + 0.5));
+  };
+  let idfSum = 0;
+  let idfCount = 0;
+  for (const t of qTokens) {
+    const v = idf(t);
+    if (v > 0) {
+      idfSum += v;
+      idfCount += 1;
+    }
+  }
+  const refIdf = idfCount > 0 ? idfSum / idfCount : 1;
+
   // First pass: keyword + symbol score
   const scored: ScoredFile[] = [];
   for (const file of inputs.candidates) {
     const reasons: string[] = [];
     let score = 0;
 
-    // Keyword overlap
+    // Keyword overlap, IDF-weighted so a match on a rare query term outranks a
+    // match on a common one (normalized to refIdf → magnitude-preserving).
     let kwHits = 0;
-    for (const kw of file.keywords) if (qTokens.has(kw)) kwHits += 1;
+    let kwScore = 0;
+    for (const kw of file.keywords) {
+      if (!qTokens.has(kw)) continue;
+      kwHits += 1;
+      kwScore += KW_BASE_WEIGHT * (idf(kw) / refIdf);
+    }
     if (kwHits) {
-      score += kwHits * 2;
+      score += kwScore;
       reasons.push(`kw=${kwHits}`);
     }
 
