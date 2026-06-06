@@ -41,7 +41,10 @@ describe("runDoctorChecks", () => {
     };
     await writeFile(join(dir, ".synthra-graph", "info_graph.json"), JSON.stringify(graph));
     await writeFile(join(dir, ".mcp.json"), "{}");
-    await writeFile(join(dir, "CLAUDE.md"), `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->\nx\n`);
+    await writeFile(
+      join(dir, "CLAUDE.md"),
+      `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->\nx\n`,
+    );
     await writeFile(
       join(dir, ".claude", "settings.local.json"),
       JSON.stringify({ hooks: { Stop: [{ hooks: [{ meta: "synthra-hook=true" }] }] } }),

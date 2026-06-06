@@ -50,7 +50,9 @@ async function getCurrentVersion(): Promise<string> {
   if (currentVersionCache) return currentVersionCache;
   try {
     // Tsup inlines this import at build time.
-    const pkg = (await import("../../package.json", { with: { type: "json" } })) as { default: { version: string } } | { version: string };
+    const pkg = (await import("../../package.json", { with: { type: "json" } })) as
+      | { default: { version: string } }
+      | { version: string };
     const version = "default" in pkg ? pkg.default.version : pkg.version;
     currentVersionCache = version;
     return version;

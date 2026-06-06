@@ -129,10 +129,7 @@ function ctx(recentPaths: string[] = []): ServerContext {
 }
 
 async function grep(pattern: string, recentPaths: string[] = []): Promise<string> {
-  const res = await handleGate(
-    { tool_name: "Grep", tool_input: { pattern } },
-    ctx(recentPaths),
-  );
+  const res = await handleGate({ tool_name: "Grep", tool_input: { pattern } }, ctx(recentPaths));
   return res.decision;
 }
 
@@ -177,10 +174,7 @@ describe("gate — should BLOCK (query names a real symbol)", () => {
 
 describe("gate — existing behavior preserved", () => {
   it("allows non-blockable tools", async () => {
-    const res = await handleGate(
-      { tool_name: "Read", tool_input: { file_path: "x.ts" } },
-      ctx(),
-    );
+    const res = await handleGate({ tool_name: "Read", tool_input: { file_path: "x.ts" } }, ctx());
     expect(res.decision).toBe("allow");
   });
 

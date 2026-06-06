@@ -3,6 +3,7 @@
 // Defensive defaults skip VCS, build, and dependency directories even if absent
 // from .gitignore.
 
+import type { Dirent } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
@@ -63,12 +64,40 @@ const DEFAULT_IGNORE = [
 ];
 
 const BINARY_EXTS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp",
-  ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
-  ".mp3", ".mp4", ".mov", ".avi", ".webm", ".wav", ".ogg",
-  ".ttf", ".otf", ".woff", ".woff2", ".eot",
-  ".exe", ".dll", ".so", ".dylib", ".bin", ".wasm",
-  ".lock", ".lockb",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".ico",
+  ".bmp",
+  ".pdf",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".7z",
+  ".rar",
+  ".mp3",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".webm",
+  ".wav",
+  ".ogg",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+  ".eot",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".wasm",
+  ".lock",
+  ".lockb",
 ]);
 
 async function readIgnoreFile(path: string): Promise<string[]> {
@@ -96,15 +125,12 @@ function toPosix(p: string): string {
   return sep === "/" ? p : p.split(sep).join("/");
 }
 
-export async function* walk(
-  root: string,
-  options: WalkOptions = {},
-): AsyncGenerator<WalkedFile> {
+export async function* walk(root: string, options: WalkOptions = {}): AsyncGenerator<WalkedFile> {
   const maxFileSize = options.maxFileSize ?? 2_000_000;
   const ig = await buildMatcher(root, options.extraIgnore ?? []);
 
   async function* recurse(dir: string): AsyncGenerator<WalkedFile> {
-    let entries;
+    let entries: Dirent[];
     try {
       entries = await readdir(dir, { withFileTypes: true });
     } catch {

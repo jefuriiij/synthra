@@ -11,10 +11,10 @@ const REGISTRY_PATH = join(REGISTRY_DIR, "projects.json");
 const SCHEMA_VERSION = 1;
 
 export interface ProjectRegistryEntry {
-  path: string;          // absolute project root
-  name: string;          // basename for display
-  first_seen: string;    // ISO timestamp
-  last_seen: string;     // ISO timestamp
+  path: string; // absolute project root
+  name: string; // basename for display
+  first_seen: string; // ISO timestamp
+  last_seen: string; // ISO timestamp
 }
 
 interface Registry {

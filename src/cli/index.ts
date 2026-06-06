@@ -51,7 +51,9 @@ interface BannerInfo {
 
 function printReadyBanner(info: BannerInfo): void {
   log.info("");
-  log.info(`  ✅  scanned   ${info.scan.parsed} files · ${info.scan.symbolCount} symbols · ${info.scan.edgeCount} edges`);
+  log.info(
+    `  ✅  scanned   ${info.scan.parsed} files · ${info.scan.symbolCount} symbols · ${info.scan.edgeCount} edges`,
+  );
   if (info.mcpRegistered) {
     log.info(`  🧠  MCP       ${info.mcpUrl}   →  registered as 'synthra'`);
   } else {
@@ -64,7 +66,9 @@ function printReadyBanner(info: BannerInfo): void {
   }
   log.info(`  🪝  Hooks     installed in .claude/settings.local.json`);
   log.info("");
-  log.info(`  🤖  Ready — open the Claude Code IDE extension (or run \`claude\` in another terminal).`);
+  log.info(
+    `  🤖  Ready — open the Claude Code IDE extension (or run \`claude\` in another terminal).`,
+  );
   log.info(`      Synthra's tools and gate will be active for that session.`);
   log.info("");
   log.info(`  Press Ctrl+C here when you're done.`);
@@ -142,29 +146,29 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   } finally {
     await unregisterMcp(cfg.claudeBin, projectRoot).catch(() => undefined);
     if (dashboardHandle) {
-      await dashboardHandle.stop().catch((err) =>
-        log.warn(`dashboard stop error: ${(err as Error).message}`),
-      );
+      await dashboardHandle
+        .stop()
+        .catch((err) => log.warn(`dashboard stop error: ${(err as Error).message}`));
     }
-    await mcpHandle.stop().catch((err) =>
-      log.warn(`MCP server stop error: ${(err as Error).message}`),
-    );
-    await cleanup(paths).catch((err) =>
-      log.warn(`cleanup error: ${(err as Error).message}`),
-    );
+    await mcpHandle
+      .stop()
+      .catch((err) => log.warn(`MCP server stop error: ${(err as Error).message}`));
+    await cleanup(paths).catch((err) => log.warn(`cleanup error: ${(err as Error).message}`));
   }
 }
 
 export function buildProgram() {
   const prog = sade("syn");
-  prog
-    .version(VERSION)
-    .describe("Local context engine for AI coding assistants.");
+  prog.version(VERSION).describe("Local context engine for AI coding assistants.");
 
   prog
-    .command(". [path]", "Scan + MCP + dashboard + hooks. Default flow — use with the Claude Code IDE extension.", {
-      default: true,
-    })
+    .command(
+      ". [path]",
+      "Scan + MCP + dashboard + hooks. Default flow — use with the Claude Code IDE extension.",
+      {
+        default: true,
+      },
+    )
     .option("--resume <id>", "Resume an existing Claude session (only with --launch-cli)")
     .option("--launch-cli", "Also spawn `claude` CLI in this terminal (legacy M3 behavior)", false)
     .action(async (path: string | undefined, opts: DefaultOpts) => {

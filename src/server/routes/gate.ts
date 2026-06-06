@@ -135,7 +135,9 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return { decision: "allow" };
   }
 
-  const input = (req.tool_input && typeof req.tool_input === "object" ? req.tool_input : {}) as Record<string, unknown>;
+  const input = (
+    req.tool_input && typeof req.tool_input === "object" ? req.tool_input : {}
+  ) as Record<string, unknown>;
   const query = extractQuery(req.tool_name, input);
   if (!query) {
     const res: GateResponse = { decision: "allow", reason: "no extractable query" };
@@ -201,7 +203,10 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
-  const top = retrieval.files.slice(0, 3).map((f) => f.path).join(", ");
+  const top = retrieval.files
+    .slice(0, 3)
+    .map((f) => f.path)
+    .join(", ");
   const res: GateResponse = {
     decision: "block",
     reason:

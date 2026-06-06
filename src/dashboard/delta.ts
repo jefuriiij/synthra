@@ -287,17 +287,21 @@ export async function computeDashboardData(
 
   const projects = loaded
     .map(summarize)
-    .sort((a, b) => b.total_input_tokens + b.total_output_tokens - (a.total_input_tokens + a.total_output_tokens));
+    .sort(
+      (a, b) =>
+        b.total_input_tokens +
+        b.total_output_tokens -
+        (a.total_input_tokens + a.total_output_tokens),
+    );
 
-  const activeFiles =
-    loaded.find((p) => p.path === activePath) ?? {
-      path: activePath,
-      name: activeName,
-      last_seen: null,
-      tokens: [],
-      gates: [],
-      tools: [],
-    };
+  const activeFiles = loaded.find((p) => p.path === activePath) ?? {
+    path: activePath,
+    name: activeName,
+    last_seen: null,
+    tokens: [],
+    gates: [],
+    tools: [],
+  };
   const activeStats = summarize(activeFiles);
 
   // Global aggregates

@@ -47,7 +47,11 @@ export async function parseVue(f: WalkedFile, source: string): Promise<ParsedFil
   }
 
   out.symbols.push({
-    name: f.relPath.split("/").pop()?.replace(/\.vue$/i, "") ?? f.relPath,
+    name:
+      f.relPath
+        .split("/")
+        .pop()
+        ?.replace(/\.vue$/i, "") ?? f.relPath,
     kind: "component",
     startLine: 1,
     endLine: source.split(/\r?\n/).length,

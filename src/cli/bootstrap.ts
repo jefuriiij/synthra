@@ -59,8 +59,7 @@ async function patchGitignore(path: string): Promise<boolean> {
   const missing = GITIGNORE_ENTRIES.filter((e) => !trimmed.has(e.entry));
   if (missing.length === 0) return false;
 
-  const block =
-    missing.map((m) => `# ${m.comment}\n${m.entry}`).join("\n") + "\n";
+  const block = missing.map((m) => `# ${m.comment}\n${m.entry}`).join("\n") + "\n";
   const appendix =
     (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
     (existing.length ? "\n" : "") +

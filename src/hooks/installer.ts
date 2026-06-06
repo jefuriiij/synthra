@@ -36,7 +36,13 @@ interface ScriptDef {
 
 const SCRIPTS: ScriptDef[] = [
   { event: "SessionStart", baseName: "synthra-prime", ps1: primePs1, sh: primeSh },
-  { event: "PreToolUse", matcher: "Grep|Glob", baseName: "synthra-pre-tool-use", ps1: preToolUsePs1, sh: preToolUseSh },
+  {
+    event: "PreToolUse",
+    matcher: "Grep|Glob",
+    baseName: "synthra-pre-tool-use",
+    ps1: preToolUsePs1,
+    sh: preToolUseSh,
+  },
   { event: "PreCompact", baseName: "synthra-pre-compact", ps1: preCompactPs1, sh: preCompactSh },
   { event: "Stop", baseName: "synthra-stop", ps1: stopPs1, sh: stopSh },
 ];

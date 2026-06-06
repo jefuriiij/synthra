@@ -28,7 +28,7 @@ const ICON: Record<CheckStatus, string> = { ok: "✅", warn: "⚠️", fail: "�
 
 function binWorks(bin: string, args: string[]): Promise<boolean> {
   return new Promise((res) => {
-    let proc;
+    let proc: ReturnType<typeof spawn>;
     try {
       proc = spawn(bin, args, { stdio: "ignore" });
     } catch {
@@ -61,7 +61,11 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
   checks.push(
     nodeMajor >= 18
       ? { status: "ok", label: "Node", detail: `v${process.versions.node}` }
-      : { status: "fail", label: "Node", detail: `v${process.versions.node} — Synthra needs Node >= 18` },
+      : {
+          status: "fail",
+          label: "Node",
+          detail: `v${process.versions.node} — Synthra needs Node >= 18`,
+        },
   );
 
   // jq — required by the bash hooks; on Windows the installer uses .ps1 instead.
@@ -70,7 +74,9 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
     checks.push({
       status: "ok",
       label: "jq",
-      detail: hasJq ? "present (not required — Windows uses .ps1 hooks)" : "not required on Windows (.ps1 hooks)",
+      detail: hasJq
+        ? "present (not required — Windows uses .ps1 hooks)"
+        : "not required on Windows (.ps1 hooks)",
     });
   } else {
     checks.push(
@@ -79,7 +85,8 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
         : {
             status: "warn",
             label: "jq",
-            detail: "missing — Stop/PreToolUse bash hooks silently no-op (no token logging or gating). Install jq (brew/apt).",
+            detail:
+              "missing — Stop/PreToolUse bash hooks silently no-op (no token logging or gating). Install jq (brew/apt).",
           },
     );
   }
@@ -98,14 +105,19 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
 
   // Graph
   if (!(await exists(paths.infoGraph))) {
-    checks.push({ status: "warn", label: "Graph", detail: "no info_graph.json — run `syn .` (or `syn scan`) here." });
+    checks.push({
+      status: "warn",
+      label: "Graph",
+      detail: "no info_graph.json — run `syn .` (or `syn scan`) here.",
+    });
   } else {
     try {
       const graph = JSON.parse(await readFile(paths.infoGraph, "utf8")) as GraphSchema;
       const parts = [`${graph.symbol_count} symbols`, `${graph.file_count} files`];
       let status: CheckStatus = "ok";
       const ageMs = Date.now() - Date.parse(graph.generated_at);
-      if (Number.isFinite(ageMs)) parts.push(`scanned ${Math.max(0, Math.round(ageMs / 60000))}m ago`);
+      if (Number.isFinite(ageMs))
+        parts.push(`scanned ${Math.max(0, Math.round(ageMs / 60000))}m ago`);
       if (graph.schema_version !== SCHEMA_VERSION) {
         status = "warn";
         parts.push(`schema v${graph.schema_version} ≠ v${SCHEMA_VERSION} (auto-rescans on serve)`);
@@ -116,14 +128,22 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
       }
       checks.push({ status, label: "Graph", detail: parts.join(" · ") });
     } catch {
-      checks.push({ status: "warn", label: "Graph", detail: "info_graph.json unreadable — re-run `syn scan`." });
+      checks.push({
+        status: "warn",
+        label: "Graph",
+        detail: "info_graph.json unreadable — re-run `syn scan`.",
+      });
     }
   }
 
   // MCP registration for the IDE (.mcp.json at the project root)
   checks.push(
     (await exists(join(projectRoot, ".mcp.json")))
-      ? { status: "ok", label: "MCP registration", detail: ".mcp.json present (IDE can see graph_* tools)" }
+      ? {
+          status: "ok",
+          label: "MCP registration",
+          detail: ".mcp.json present (IDE can see graph_* tools)",
+        }
       : {
           status: "warn",
           label: "MCP registration",
@@ -133,11 +153,19 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
 
   // CLAUDE.md policy block
   if (!(await exists(paths.claudeMd))) {
-    checks.push({ status: "warn", label: "CLAUDE.md policy", detail: "no CLAUDE.md — run `syn .` to scaffold + inject the policy block." });
+    checks.push({
+      status: "warn",
+      label: "CLAUDE.md policy",
+      detail: "no CLAUDE.md — run `syn .` to scaffold + inject the policy block.",
+    });
   } else {
     const md = await readFile(paths.claudeMd, "utf8");
     if (md.includes(`synthra-policy v${POLICY_VERSION} BEGIN`)) {
-      checks.push({ status: "ok", label: "CLAUDE.md policy", detail: `policy block v${POLICY_VERSION}` });
+      checks.push({
+        status: "ok",
+        label: "CLAUDE.md policy",
+        detail: `policy block v${POLICY_VERSION}`,
+      });
     } else {
       const m = md.match(/synthra-policy v(\d+) BEGIN/);
       checks.push({
@@ -152,13 +180,21 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
 
   // Hooks installed
   if (!(await exists(paths.claudeSettings))) {
-    checks.push({ status: "warn", label: "Hooks", detail: "no .claude/settings.local.json — run `syn .` to install hooks." });
+    checks.push({
+      status: "warn",
+      label: "Hooks",
+      detail: "no .claude/settings.local.json — run `syn .` to install hooks.",
+    });
   } else {
     const s = await readFile(paths.claudeSettings, "utf8");
     checks.push(
       s.includes("synthra-hook=true")
         ? { status: "ok", label: "Hooks", detail: "registered in .claude/settings.local.json" }
-        : { status: "warn", label: "Hooks", detail: "settings.local.json present but no Synthra hooks — run `syn .`." },
+        : {
+            status: "warn",
+            label: "Hooks",
+            detail: "settings.local.json present but no Synthra hooks — run `syn .`.",
+          },
     );
   }
 
@@ -178,6 +214,8 @@ export async function doctorCommand(rawPath: string): Promise<void> {
   const warn = checks.filter((c) => c.status === "warn").length;
   const fail = checks.filter((c) => c.status === "fail").length;
   log.info("");
-  log.info(fail === 0 && warn === 0 ? "  All checks passed." : `  ${fail} failed · ${warn} warning(s).`);
+  log.info(
+    fail === 0 && warn === 0 ? "  All checks passed." : `  ${fail} failed · ${warn} warning(s).`,
+  );
   log.info("");
 }

@@ -12,19 +12,33 @@ import { resolvePaths } from "../shared/paths.js";
 import { bootstrap } from "./bootstrap.js";
 
 const PARSABLE_EXTS = new Set([
-  ".ts", ".tsx", ".cts", ".mts",
-  ".js", ".jsx", ".cjs", ".mjs",
-  ".py", ".pyi",
+  ".ts",
+  ".tsx",
+  ".cts",
+  ".mts",
+  ".js",
+  ".jsx",
+  ".cjs",
+  ".mjs",
+  ".py",
+  ".pyi",
   ".svelte",
   ".vue",
   ".go",
   ".rs",
   ".java",
-  ".kt", ".kts",
+  ".kt",
+  ".kts",
   ".php",
   ".rb",
-  ".c", ".h",
-  ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
+  ".c",
+  ".h",
+  ".cpp",
+  ".cc",
+  ".cxx",
+  ".hpp",
+  ".hh",
+  ".hxx",
   ".dart",
   ".cs",
 ]);
@@ -47,7 +61,10 @@ export interface ScanOptions {
  * from anywhere (server, CLI, tests). `scanCommand` is just a logging wrapper
  * around this. Pass `silent: true` to skip the chatty progress output.
  */
-export async function scanProject(projectRootRaw: string, opts: ScanOptions = {}): Promise<ScanResult> {
+export async function scanProject(
+  projectRootRaw: string,
+  opts: ScanOptions = {},
+): Promise<ScanResult> {
   const projectRoot = resolve(projectRootRaw);
   const paths = resolvePaths(projectRoot);
   const start = Date.now();
@@ -62,7 +79,9 @@ export async function scanProject(projectRootRaw: string, opts: ScanOptions = {}
     if (boot.gitignoreUpdated) log.info("  updated .gitignore");
     if (boot.claudeMdCreated) {
       log.info("  created CLAUDE.md — onboarding skeleton for the agent");
-      log.info("    ↳ fill in Build / Conventions / Decisions (or run /init in Claude to auto-draft)");
+      log.info(
+        "    ↳ fill in Build / Conventions / Decisions (or run /init in Claude to auto-draft)",
+      );
     } else if (boot.claudeMdUpdated) {
       log.info("  updated CLAUDE.md");
     }

@@ -36,7 +36,7 @@ function graphOf(...nodes: SymbolNode[]): GraphSchema {
 describe("buildSymbolIndex", () => {
   it("indexes plain symbol names", () => {
     const index = buildSymbolIndex(graphOf(symbol("getUser", 10), symbol("getUser", 42)));
-    expect(index["getUser"]).toEqual([
+    expect(index.getUser).toEqual([
       { file: "lib/model.dart", line: 10, kind: "method" },
       { file: "lib/model.dart", line: 42, kind: "method" },
     ]);

@@ -49,7 +49,11 @@ export async function parseSvelte(f: WalkedFile, source: string): Promise<Parsed
 
   // The .svelte file itself is treated as a component.
   out.symbols.push({
-    name: f.relPath.split("/").pop()?.replace(/\.svelte$/i, "") ?? f.relPath,
+    name:
+      f.relPath
+        .split("/")
+        .pop()
+        ?.replace(/\.svelte$/i, "") ?? f.relPath,
     kind: "component",
     startLine: 1,
     endLine: source.split(/\r?\n/).length,

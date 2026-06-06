@@ -50,8 +50,8 @@ export function selectInlineBodies(
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       // Tie-break: smaller bodies first (so we fit more)
-      const aSpan = (a.sym.end_line - a.sym.start_line) || 1;
-      const bSpan = (b.sym.end_line - b.sym.start_line) || 1;
+      const aSpan = a.sym.end_line - a.sym.start_line || 1;
+      const bSpan = b.sym.end_line - b.sym.start_line || 1;
       return aSpan - bSpan;
     });
 

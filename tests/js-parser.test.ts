@@ -8,7 +8,12 @@ import { parseTypeScript } from "../src/scanner/parsers/typescript.js";
 import type { WalkedFile } from "../src/scanner/walker.js";
 
 function wf(relPath: string): WalkedFile {
-  return { absPath: "/proj/" + relPath, relPath, ext: relPath.slice(relPath.lastIndexOf(".")), size: 0 };
+  return {
+    absPath: "/proj/" + relPath,
+    relPath,
+    ext: relPath.slice(relPath.lastIndexOf(".")),
+    size: 0,
+  };
 }
 
 async function symbolNames(relPath: string, src: string): Promise<string[]> {
