@@ -57,7 +57,10 @@ function mkFileNode(path: string, keywords: string[]): FileNode {
   };
 }
 
-function mkGraph(files: FileNode[], importEdges: Array<{ from: string; to: string }> = []): GraphSchema {
+function mkGraph(
+  files: FileNode[],
+  importEdges: Array<{ from: string; to: string }> = [],
+): GraphSchema {
   return {
     root: ".",
     node_count: files.length,
@@ -65,7 +68,11 @@ function mkGraph(files: FileNode[], importEdges: Array<{ from: string; to: strin
     file_count: files.length,
     symbol_count: 0,
     nodes: files,
-    edges: importEdges.map((e) => ({ from: `file:${e.from}`, to: `file:${e.to}`, kind: "imports" as const })),
+    edges: importEdges.map((e) => ({
+      from: `file:${e.from}`,
+      to: `file:${e.to}`,
+      kind: "imports" as const,
+    })),
     generated_at: "1970-01-01T00:00:00.000Z",
     schema_version: 1,
   };
@@ -86,7 +93,6 @@ describe("scoreFiles — symbol-hit tracking", () => {
     expect(top.score).toBeGreaterThan(0); // keyword hit still scores
     expect(top.exactSym).toBe(0); // but it's not an exact symbol match
   });
-
 });
 
 describe("scoreFiles — session seeds (#14)", () => {
@@ -119,5 +125,58 @@ describe("scoreFiles — session seeds (#14)", () => {
     const depScored = scored.find((s) => s.file.path === "src/dep.ts");
     expect(depScored?.score).toBeGreaterThan(0);
     expect(depScored?.reasons).toContain("imp-adj");
+  });
+});
+
+describe("scoreFiles — usage-learning boost", () => {
+  it("ranks a higher-usage file above an equal-keyword peer (used reason)", () => {
+    const a = mkFileNode("src/a.ts", ["auth"]);
+    const b = mkFileNode("src/b.ts", ["auth"]);
+    const graph = mkGraph([a, b]);
+    const scored = scoreFiles({
+      candidates: [a, b],
+      query: "auth",
+      graph,
+      usageScores: new Map([["src/b.ts", 10]]),
+    });
+    expect(scored[0]?.file.path).toBe("src/b.ts");
+    expect(scored[0]?.reasons.some((r) => r.startsWith("used"))).toBe(true);
+  });
+
+  it("never promotes a score-0 (non-matching) file, even with huge usage", () => {
+    const a = mkFileNode("src/a.ts", ["auth"]); // matches the query
+    const z = mkFileNode("src/z.ts", ["zzz"]); // no match, no import edge
+    const graph = mkGraph([a, z]);
+    const scored = scoreFiles({
+      candidates: [a, z],
+      query: "auth",
+      graph,
+      usageScores: new Map([["src/z.ts", 999]]),
+    });
+    const z2 = scored.find((s) => s.file.path === "src/z.ts");
+    expect(z2?.score).toBe(0);
+    expect(z2?.reasons.some((r) => r.startsWith("used"))).toBe(false);
+  });
+
+  it("a maxed usage boost cannot outrank a freshly seeded file (+5)", () => {
+    const seeded = mkFileNode("src/seeded.ts", ["auth"]);
+    const hot = mkFileNode("src/hot.ts", ["auth"]);
+    const graph = mkGraph([seeded, hot]);
+    const scored = scoreFiles({
+      candidates: [seeded, hot],
+      query: "auth",
+      graph,
+      recentlyEditedPaths: ["src/seeded.ts"],
+      usageScores: new Map([["src/hot.ts", 1000]]),
+    });
+    expect(scored[0]?.file.path).toBe("src/seeded.ts");
+  });
+
+  it("omitting usageScores adds no boost (deterministic ranker unchanged)", () => {
+    const a = mkFileNode("src/a.ts", ["auth"]);
+    const graph = mkGraph([a]);
+    const [top] = scoreFiles({ candidates: [a], query: "auth", graph });
+    expect(top.score).toBe(2); // keyword +2 only
+    expect(top.reasons.some((r) => r.startsWith("used"))).toBe(false);
   });
 });

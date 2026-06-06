@@ -20,10 +20,10 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(content).toContain("# my-proj");
     expect(content).toContain("## Build & test");
     expect(content).toContain("## Key decisions");
-    expect(content).toContain("synthra-policy v5 BEGIN");
+    expect(content).toContain("synthra-policy v6 BEGIN");
     // Skeleton must come BEFORE the policy block.
     expect(content.indexOf("## Build & test")).toBeLessThan(
-      content.indexOf("synthra-policy v5 BEGIN"),
+      content.indexOf("synthra-policy v6 BEGIN"),
     );
   });
 
@@ -37,7 +37,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
     const content = await readFile(path, "utf8");
     expect(content).toContain("# Existing user doc");
     expect(content).not.toContain("## Build & test"); // no skeleton injected
-    expect(content).toContain("synthra-policy v5 BEGIN"); // policy still appended
+    expect(content).toContain("synthra-policy v6 BEGIN"); // policy still appended
   });
 
   it("preserves the user's filled-in onboarding content across re-runs", async () => {
@@ -56,5 +56,28 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(after).toContain("- npm install && npm run build"); // user content survives
     const blocks = after.match(/synthra-policy v\d+ BEGIN/g) ?? [];
     expect(blocks.length).toBe(1); // exactly one policy block, no duplication
+  });
+});
+
+describe("patchClaudeMd policy v6 (resume digest)", () => {
+  it("strips a prior v5 block and installs v6 with resume guidance", async () => {
+    const path = await tmpClaudeMd();
+    await writeFile(
+      path,
+      "# Doc\n\n<!-- synthra-policy v5 BEGIN -->\nold policy\n<!-- synthra-policy v5 END -->\n",
+      "utf8",
+    );
+
+    const res = await patchClaudeMd(path, "p");
+    expect(res.updated).toBe(true);
+
+    const content = await readFile(path, "utf8");
+    expect(content).toContain("synthra-policy v6 BEGIN");
+    expect(content).not.toContain("synthra-policy v5 BEGIN");
+    expect(content).toContain("### Resuming a session");
+    expect(content).toContain("Since you were last here");
+    // The user's prose is preserved; exactly one managed block remains.
+    expect(content).toContain("# Doc");
+    expect((content.match(/synthra-policy v\d+ BEGIN/g) ?? []).length).toBe(1);
   });
 });

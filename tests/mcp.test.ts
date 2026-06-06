@@ -1,9 +1,15 @@
-// graph_read target resolution (#11).
+// graph_read target resolution (#11) + per-file usage capture.
 
 import { describe, it, expect } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { resolveFileTarget } from "../src/server/mcp.js";
+import { ActivityStore } from "../src/activity/activity-log.js";
 import type { FileNode, GraphSchema } from "../src/graph/types.js";
+import type { ServerContext } from "../src/server/context.js";
+import { handleMcpRequest, resolveFileTarget } from "../src/server/mcp.js";
+import { resolvePaths } from "../src/shared/paths.js";
 
 function fileNode(path: string): FileNode {
   return {
@@ -69,5 +75,48 @@ describe("resolveFileTarget", () => {
 
   it("returns none when nothing matches", () => {
     expect("none" in resolveFileTarget(G, "nope.ts")).toBe(true);
+  });
+});
+
+async function ctxWith(graph: GraphSchema): Promise<ServerContext> {
+  const dir = await mkdtemp(join(tmpdir(), "syn-mcp-"));
+  const paths = resolvePaths(dir);
+  return { paths, graph, symbolIndex: {}, activity: new ActivityStore(paths.activityLog) };
+}
+
+describe("per-file usage capture", () => {
+  it("graph_read records a 'read' access in access_log.jsonl", async () => {
+    const ctx = await ctxWith(graphOf("src/a.ts", "src/b.ts"));
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "graph_read", arguments: { target: "src/a.ts" } },
+      },
+      ctx,
+    );
+    expect(res.error).toBeUndefined();
+
+    const rows = (await readFile(ctx.paths.accessLog, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { path: string; source: string });
+    expect(rows.some((r) => r.path === "src/a.ts" && r.source === "read")).toBe(true);
+  });
+
+  it("graph_read still succeeds for a missing file (no access logged, no throw)", async () => {
+    const ctx = await ctxWith(graphOf("src/a.ts"));
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "graph_read", arguments: { target: "ghost.ts" } },
+      },
+      ctx,
+    );
+    // Tool-level "not found" is returned as a result (isError), never a transport error.
+    expect(res.error).toBeUndefined();
   });
 });

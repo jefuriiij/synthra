@@ -13,6 +13,8 @@ import { dirname } from "node:path";
 
 import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
+import { appendAccess } from "../learn/store.js";
+import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
@@ -69,7 +71,10 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Natural-language description of what you're looking for." },
+        query: {
+          type: "string",
+          description: "Natural-language description of what you're looking for.",
+        },
       },
       required: ["query"],
     },
@@ -242,9 +247,7 @@ function blastRadius(args: Record<string, unknown> | undefined, ctx: ServerConte
   if (!targetRaw) return errorContent("blast_radius: 'target' (string) is required");
 
   const filePath = targetRaw.split("::", 1)[0]?.trim() ?? targetRaw;
-  const root = ctx.graph.nodes.find(
-    (n): n is FileNode => n.kind === "file" && n.path === filePath,
-  );
+  const root = ctx.graph.nodes.find((n): n is FileNode => n.kind === "file" && n.path === filePath);
   if (!root) return errorContent(`blast_radius: file not in graph: ${filePath}`);
 
   // Index reverse edges (to → [{from, kind}]) once per call.
@@ -302,8 +305,8 @@ const LIKELY_ENTRY_PATTERNS = [
   /(?:^|\/)index\.[a-z0-9_]+$/i,
   /(?:^|\/)app\.[a-z0-9_]+$/i,
   /(?:^|\/)entry\.[a-z0-9_]+$/i,
-  /(?:^|\/)cli[\/.]/i,
-  /(?:^|\/)bin[\/.]/i,
+  /(?:^|\/)cli[/.]/i,
+  /(?:^|\/)bin[/.]/i,
   /(?:^|\/)server\.[a-z0-9_]+$/i,
   /\.test\.[a-z0-9_]+$/i,
   /\.spec\.[a-z0-9_]+$/i,
@@ -362,8 +365,14 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
   const retrieval = await retrieve(ctx.graph, query, {
     recentlyEditedPaths: ctx.activity.recentFilePaths(15 * 60 * 1000),
     sessionKnownPaths: getRegisteredEdits(),
+    usageScores: ctx.learn?.effectiveScores(),
   });
   const packed = await pack(retrieval.files, { query, graph: ctx.graph });
+
+  // Log the query (no file, weight 0) as query→outcome fuel for a future
+  // mechanism — never count retrieval.files, which would feed ranking its own
+  // output and cause popularity runaway.
+  await logAccess(ctx, { ts: nowIso(), path: "", source: "continue", query });
 
   const header =
     `Confidence: ${retrieval.confidence}\n` +
@@ -379,10 +388,7 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
 // "appsettings.json" finds "api/.../appsettings.json". Only serves the fallback
 // when EXACTLY one file matches — multiple matches are reported as ambiguous
 // rather than guessing. (#11)
-export type FileTargetResult =
-  | { node: FileNode }
-  | { ambiguous: string[] }
-  | { none: true };
+export type FileTargetResult = { node: FileNode } | { ambiguous: string[] } | { none: true };
 
 export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTargetResult {
   const files = graph.nodes.filter((n): n is FileNode => n.kind === "file");
@@ -396,7 +402,7 @@ export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTar
   return { none: true };
 }
 
-function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const target = typeof args?.target === "string" ? args.target : "";
   if (!target) return errorContent("graph_read: 'target' (string) is required");
 
@@ -415,6 +421,10 @@ function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext
     return errorContent(`graph_read: file not found in graph: ${filePath}`);
   }
   const fileNode = resolved.node;
+
+  // The AI deliberately pulled this file — the strongest "this matters" signal
+  // short of an edit. Feed it to the learning layer.
+  await logAccess(ctx, { ts: nowIso(), path: fileNode.path, source: "read" });
 
   if (!symbolName) {
     return textContent(`# ${fileNode.path}\n\n${fileNode.content}`);
@@ -437,10 +447,26 @@ function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext
 
 const editedFiles = new Set<string>();
 
-function graphRegisterEdit(args: Record<string, unknown> | undefined, _ctx: ServerContext) {
-  const files = Array.isArray(args?.files) ? (args.files as unknown[]).filter((f) => typeof f === "string") : [];
-  for (const f of files) editedFiles.add(f as string);
-  return textContent(`Registered ${files.length} edited file(s). Total tracked this session: ${editedFiles.size}.`);
+async function graphRegisterEdit(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const files = Array.isArray(args?.files)
+    ? (args.files as unknown[]).filter((f) => typeof f === "string")
+    : [];
+  for (const f of files) {
+    const file = f as string;
+    editedFiles.add(file);
+    // An edit is the strongest relevance signal — record it (weight 2). Resolve
+    // to the canonical graph path so it keys to the same node the ranker scores;
+    // a new/renamed file simply logs its raw path and decays out if unmatched.
+    const resolved = resolveFileTarget(ctx.graph, file);
+    await logAccess(ctx, {
+      ts: nowIso(),
+      path: "node" in resolved ? resolved.node.path : file,
+      source: "register_edit",
+    });
+  }
+  return textContent(
+    `Registered ${files.length} edited file(s). Total tracked this session: ${editedFiles.size}.`,
+  );
 }
 
 export function getRegisteredEdits(): string[] {
@@ -493,9 +519,7 @@ function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerCo
   if (limit) events = events.slice(-limit);
 
   if (events.length === 0) {
-    return textContent(
-      `No human-activity events since ${new Date(sinceMs).toISOString()}.`,
-    );
+    return textContent(`No human-activity events since ${new Date(sinceMs).toISOString()}.`);
   }
 
   const lines = [`# Recent human activity (${events.length} events)`, ""];
@@ -511,11 +535,13 @@ function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerCo
 }
 
 async function contextRecall(args: Record<string, unknown> | undefined, ctx: ServerContext) {
-  const kind = typeof args?.kind === "string" && VALID_KINDS.has(args.kind as EntryKind)
-    ? (args.kind as EntryKind)
-    : undefined;
+  const kind =
+    typeof args?.kind === "string" && VALID_KINDS.has(args.kind as EntryKind)
+      ? (args.kind as EntryKind)
+      : undefined;
   const branch = typeof args?.branch === "string" ? args.branch : undefined;
-  const limit = typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : undefined;
+  const limit =
+    typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : undefined;
 
   const result = await recallEntries(ctx.paths, { kind, branch, limit });
 
@@ -547,6 +573,24 @@ async function logToolCall(ctx: ServerContext, tool: string): Promise<void> {
   } catch {
     // Logging is best-effort; never fail a tool call over it.
   }
+}
+
+// Best-effort per-file usage capture (learning layer). Routes through the learn
+// runtime when present (folds the decayed aggregate in memory + appends the raw
+// log); otherwise appends the raw log directly so a runtime-less context (tests,
+// CLI) still records signal. Never throws — callers await it but its own errors
+// are swallowed, so telemetry can never fail a tool call.
+async function logAccess(ctx: ServerContext, ev: AccessEvent): Promise<void> {
+  try {
+    if (ctx.learn) await ctx.learn.record(ev);
+    else await appendAccess(ctx.paths.accessLog, ev);
+  } catch {
+    // best-effort
+  }
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 export async function handleMcpRequest(
@@ -587,9 +631,10 @@ export async function handleMcpRequest(
         const params = req.params ?? {};
         const toolName = typeof params.name === "string" ? params.name : "";
         if (!toolName) return err(id, ERR.invalidParams, "'name' is required for tools/call.");
-        const args = (params.arguments && typeof params.arguments === "object"
-          ? (params.arguments as Record<string, unknown>)
-          : {});
+        const args =
+          params.arguments && typeof params.arguments === "object"
+            ? (params.arguments as Record<string, unknown>)
+            : {};
         void logToolCall(ctx, toolName);
         const result = await callTool(toolName, args, ctx);
         return ok(id, result);
@@ -609,5 +654,9 @@ export async function handleMcpRequest(
 // Exposed for code that wants to enumerate the tool catalogue without going
 // through JSON-RPC (e.g. CLI introspection in M3).
 export function listTools(): Array<{ name: string; description: string; inputSchema: unknown }> {
-  return TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+  return TOOLS.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
+  }));
 }

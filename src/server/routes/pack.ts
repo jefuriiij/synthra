@@ -24,7 +24,8 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
   }
 
   const recentlyEditedPaths = ctx.activity.recentFilePaths(15 * 60 * 1000);
-  const retrieval = await retrieve(ctx.graph, req.query, { recentlyEditedPaths });
+  const usageScores = ctx.learn?.effectiveScores();
+  const retrieval = await retrieve(ctx.graph, req.query, { recentlyEditedPaths, usageScores });
 
   // Surface per-file scoring rationale in the rendered pack.
   const allFiles = ctx.graph.nodes.filter((n) => n.kind === "file");
@@ -33,6 +34,7 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
     query: req.query,
     graph: ctx.graph,
     recentlyEditedPaths,
+    usageScores,
   });
   const reasons = new Map<string, string>();
   for (const s of scored) {

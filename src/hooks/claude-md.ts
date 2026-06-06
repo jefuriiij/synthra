@@ -6,12 +6,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 5;
+export const POLICY_VERSION = 6;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
 // Matches a synthra-policy block of any version, e.g. v1, v2 …
-const ANY_BLOCK_RE = /<!--\s*synthra-policy\s+v\d+\s+BEGIN\s*-->[\s\S]*?<!--\s*synthra-policy\s+v\d+\s+END\s*-->\s*/g;
+const ANY_BLOCK_RE =
+  /<!--\s*synthra-policy\s+v\d+\s+BEGIN\s*-->[\s\S]*?<!--\s*synthra-policy\s+v\d+\s+END\s*-->\s*/g;
 
 export interface PatchResult {
   created: boolean;
@@ -41,7 +42,7 @@ export function policyBlock(): string {
     "  of relevant `Files`, and signatures + top function bodies for those",
     "  files. Your default first move when you need project context.",
     "- **`graph_read(target)`** — fetch source. Prefer the",
-    "  `\"file/path.ts::SymbolName\"` form over a bare file path — reading one",
+    '  `"file/path.ts::SymbolName"` form over a bare file path — reading one',
     "  symbol is ~50 tokens, reading a whole file is thousands.",
     "- **`graph_register_edit(files)`** — after you edit files, call this so",
     "  subsequent turns weight your changes and avoid stale snapshots.",
@@ -62,7 +63,7 @@ export function policyBlock(): string {
     "  test, docs, cleanup, commit)",
     "- The task is pure text (commit message, explanation, summary)",
     "",
-    "If skipping, go directly to `graph_read(\"file.ts::symbol\")` on what",
+    'If skipping, go directly to `graph_read("file.ts::symbol")` on what',
     "you already know.",
     "",
     "### Confidence caps",
@@ -72,7 +73,7 @@ export function policyBlock(): string {
     "- **`Confidence: high`** → Stop. Do NOT Grep, Glob, or further explore",
     "  for this query. The graph already has it.",
     "- **`Confidence: medium`** → Read the listed `Files` directly via",
-    "  `graph_read(\"file::symbol\")` *before* trying Grep. The graph has",
+    '  `graph_read("file::symbol")` *before* trying Grep. The graph has',
     "  narrowed the search space — use it, don't bypass it.",
     "- **`Confidence: low`** → You may use Grep / Glob, but the PreToolUse",
     "  hook may still block redundant calls.",
@@ -84,7 +85,7 @@ export function policyBlock(): string {
     "- If `graph_continue`'s `Files` list contains a `::` entry, pass it",
     "  verbatim to `graph_read`.",
     "- **Large file?** Don't read it in successive line-range chunks — call",
-    "  `graph_continue` or `graph_read(\"file::symbol\")` to pull the one symbol",
+    '  `graph_continue` or `graph_read("file::symbol")` to pull the one symbol',
     "  you need. Chunked whole-file Reads are exactly the cost `graph_read`",
     "  exists to avoid.",
     "",
@@ -92,8 +93,8 @@ export function policyBlock(): string {
     "",
     "Claude Code's `Edit` tool (and `Write` when overwriting) only accepts a",
     "file that was opened with the **`Read` tool** — a `graph_read` slice does",
-    "not count, and editing such a file fails with *\"File has not been read",
-    "yet.\"* So before editing a file you only know through `graph_read`: take",
+    'not count, and editing such a file fails with *"File has not been read',
+    'yet."* So before editing a file you only know through `graph_read`: take',
     "the line range from its header (e.g. `…::handler (L120-168)`), `Read` that",
     "file with a matching `offset`/`limit`, then `Edit`. That satisfies the",
     "gate while keeping the read small — don't whole-file `Read` unless the",
@@ -106,9 +107,20 @@ export function policyBlock(): string {
     "- Don't call `graph_continue` more than once per turn.",
     "- Don't read whole files when a symbol-level read would suffice.",
     "",
+    "### Resuming a session",
+    "",
+    'At session start the primer may begin with a **"Since you were last here"**',
+    "digest — recent commits, files touched, open next-steps, and recent",
+    "decisions carried over from the previous session. **Trust it.** It is the",
+    "cheapest possible orientation: do NOT re-run `graph_continue` or Grep just",
+    'to rediscover "what were we doing / what changed" — that work is already',
+    'done. For the concrete next steps, `context_recall({kind:"next"})` returns',
+    "them verbatim. Only reach for fresh retrieval when the task moves beyond",
+    "what the digest covers.",
+    "",
     "### Session-end resume note",
     "",
-    "When the user signals they're done (e.g. \"bye\", \"wrap up\", \"done\"),",
+    'When the user signals they\'re done (e.g. "bye", "wrap up", "done"),',
     "persist the resume state by calling `context_remember` once per bullet.",
     "Synthra re-renders `.synthra/CONTEXT.md` from those entries at session",
     "end — do **NOT** write to `CONTEXT.md` directly, it is a derived view",
@@ -116,12 +128,12 @@ export function policyBlock(): string {
     "",
     "Use these `kind` values:",
     "",
-    "- **`kind: \"task\"`** — what is being worked on right now (1 entry)",
-    "- **`kind: \"decision\"`** — non-obvious choices made this session (max 3)",
-    "- **`kind: \"next\"`** — concrete next steps (max 3)",
+    '- **`kind: "task"`** — what is being worked on right now (1 entry)',
+    '- **`kind: "decision"`** — non-obvious choices made this session (max 3)',
+    '- **`kind: "next"`** — concrete next steps (max 3)',
     "",
-    "Tag entries with the relevant area (`tags: [\"auth\"]`) and the files",
-    "they touch (`files: [\"src/auth.ts\"]`) so later `context_recall` queries",
+    'Tag entries with the relevant area (`tags: ["auth"]`) and the files',
+    'they touch (`files: ["src/auth.ts"]`) so later `context_recall` queries',
     "can filter. Keep each `text` to 1–2 sentences.",
     "",
     "_This block is managed by Synthra. Edits inside the BEGIN/END markers",
@@ -157,11 +169,11 @@ export function onboardingSkeleton(projectName: string): string {
     "",
     "## Key decisions",
     "",
-    "- TODO: non-obvious choices and *why* (\"we use X not Y because …\")",
+    '- TODO: non-obvious choices and *why* ("we use X not Y because …")',
     "",
     "## Gotchas",
     "",
-    "- TODO: traps, footguns, \"don't touch X without Y\"",
+    '- TODO: traps, footguns, "don\'t touch X without Y"',
     "",
     "_Tip: run `/init` in Claude Code to auto-draft the sections above, then trim",
     "to the durable bits. Synthra manages its own block below — leave it._",

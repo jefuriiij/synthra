@@ -1,31 +1,48 @@
-// This-session rolling log of what the AI read and edited.
-// Persisted to .synthra-graph/session.json for resume support.
-// TODO: M1 (write); M3 (read on resume)
+// Per-session snapshot, captured at session end (Stop hook → /context-update)
+// and read by the SessionStart primer to build the "Since you were last here"
+// resume digest. Persisted to .synthra-graph/session.json (machine-local,
+// gitignored): it describes THIS machine's last session and is regenerated every
+// Stop, so there is no migration — a schema mismatch is simply treated as
+// "no snapshot" and the primer degrades to its legacy output.
 
-export type SessionEventKind = "read" | "edit" | "query";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
-export interface SessionEvent {
-  kind: SessionEventKind;
-  target: string;
-  ts: string;
-  meta?: Record<string, unknown>;
+export const SESSION_SCHEMA_VERSION = 1;
+
+export interface SessionCommit {
+  hash: string;
+  message: string;
+  date: string;
+}
+
+export interface SessionSummary {
+  tasks: string[];
+  decisions: string[];
+  next: string[];
 }
 
 export interface SessionState {
-  startedAt: string;
-  events: SessionEvent[];
-  filesIdentified: string[];
-  symbolsChanged: string[];
+  schema_version: number;
+  endedAt: string;
+  branch: string;
+  filesTouched: string[];
+  recentCommits: SessionCommit[];
+  summary: SessionSummary;
 }
 
-export async function readSession(_path: string): Promise<SessionState | null> {
-  throw new Error("Synthra: readSession not yet implemented (M1)");
+export async function readSession(path: string): Promise<SessionState | null> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as Partial<SessionState>;
+    if (parsed.schema_version !== SESSION_SCHEMA_VERSION) return null;
+    return parsed as SessionState;
+  } catch {
+    return null;
+  }
 }
 
-export async function writeSession(_path: string, _state: SessionState): Promise<void> {
-  throw new Error("Synthra: writeSession not yet implemented (M1)");
-}
-
-export async function appendEvent(_path: string, _event: SessionEvent): Promise<void> {
-  throw new Error("Synthra: appendEvent not yet implemented (M1)");
+export async function writeSession(path: string, state: SessionState): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(state, null, 2) + "\n", "utf8");
 }

@@ -13,6 +13,9 @@ export interface ContextEntry {
   tags: string[];
   files: string[];
   date: string;
+  /** Provenance. Reserved for v2 auto-capture; v1 only writes manual entries, so
+   *  the field is omitted today and read back as undefined (treated as manual). */
+  source?: "manual" | "auto";
 }
 
 interface Store {

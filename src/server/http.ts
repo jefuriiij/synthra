@@ -12,6 +12,7 @@ import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
 import { scanProject } from "../cli/scan-command.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
+import { LearnRuntime } from "../learn/runtime.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
@@ -45,9 +46,7 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
     // an incompatible on-disk shape. On a version mismatch, auto-rescan once and
     // reload, rather than serving a stale/incompatible graph.
     if (graph.schema_version !== SCHEMA_VERSION) {
-      log.info(
-        `graph schema v${graph.schema_version} ≠ current v${SCHEMA_VERSION} — rescanning…`,
-      );
+      log.info(`graph schema v${graph.schema_version} ≠ current v${SCHEMA_VERSION} — rescanning…`);
       await scanProject(paths.projectRoot, { silent: true });
       [graph, symbolIndex] = await Promise.all([
         readGraph(paths.infoGraph),
@@ -55,7 +54,10 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
       ]);
     }
     const activity = new ActivityStore(paths.activityLog);
-    return { paths, graph, symbolIndex, activity };
+    // Usage-learning runtime: loads the decayed aggregate (replaying the raw
+    // access log if the aggregate is cold). Best-effort — never blocks startup.
+    const learn = await LearnRuntime.load(paths.accessLog, paths.learnStore);
+    return { paths, graph, symbolIndex, activity, learn };
   } catch (err) {
     throw new Error(
       `failed to load graph from ${paths.infoGraph}: ${(err as Error).message}. ` +
@@ -100,9 +102,7 @@ function buildApp(ctx: ServerContext, port: number): Hono {
   app.get("/activity", async (c) => {
     const sinceParam = c.req.query("since");
     const sinceMs = sinceParam ? Number(sinceParam) : undefined;
-    return c.json(
-      await handleActivity(Number.isFinite(sinceMs) ? sinceMs : undefined, ctx),
-    );
+    return c.json(await handleActivity(Number.isFinite(sinceMs) ? sinceMs : undefined, ctx));
   });
 
   app.post("/context-update", async (c) => {
@@ -137,9 +137,7 @@ export async function startServer(
 
   // Spin up the human-activity watchers. Both are best-effort — if chokidar
   // can't watch (e.g. unsupported FS) or .git is missing, they no-op silently.
-  const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) =>
-    ctx.activity.add(e),
-  );
+  const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) => ctx.activity.add(e));
   const gitWatcher: GitWatcher = createGitWatcher(paths.projectRoot, async (e) => {
     await ctx.activity.add(e);
     // Per-branch graph: rebuild on branch switch so the in-memory graph
@@ -180,6 +178,8 @@ export async function startServer(
     async stop() {
       await fileWatcher.stop().catch(() => undefined);
       await gitWatcher.stop().catch(() => undefined);
+      // Persist any pending usage signal before we go down.
+      await ctx.learn?.flush().catch(() => undefined);
       await new Promise<void>((resolve, reject) => {
         nodeServer.close((err) => (err ? reject(err) : resolve()));
       });

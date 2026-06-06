@@ -18,6 +18,9 @@ export interface RetrieveOptions {
   topK?: number;
   recentlyEditedPaths?: string[];
   sessionKnownPaths?: string[];
+  /** Decayed per-file usage weights from the learning layer. Passed straight
+   *  through to the ranker as a bounded boost on already-matching files. */
+  usageScores?: ReadonlyMap<string, number>;
 }
 
 export async function retrieve(
@@ -28,9 +31,7 @@ export async function retrieve(
   const topK = options.topK ?? 12;
   const qTokens = tokenizeQuery(query);
 
-  const allFiles: FileNode[] = graph.nodes.filter(
-    (n): n is FileNode => n.kind === "file",
-  );
+  const allFiles: FileNode[] = graph.nodes.filter((n): n is FileNode => n.kind === "file");
 
   if (allFiles.length === 0 || qTokens.length === 0) {
     return {
@@ -47,6 +48,7 @@ export async function retrieve(
     graph,
     recentlyEditedPaths: options.recentlyEditedPaths,
     sessionKnownPaths: options.sessionKnownPaths,
+    usageScores: options.usageScores,
   };
   const scored = scoreFiles(rankInputs);
   const positive = scored.filter((s) => s.score > 0);
