@@ -47,7 +47,8 @@ export interface Edge {
 
 // Bump when the on-disk info_graph.json shape changes incompatibly. The server
 // auto-rescans on load when a stored graph's schema_version differs (#8).
-export const SCHEMA_VERSION = 1;
+// v2: `calls` edges are now populated.
+export const SCHEMA_VERSION = 2;
 
 export interface GraphSchema {
   root: string;

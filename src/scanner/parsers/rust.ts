@@ -12,6 +12,9 @@ const QUERY = `
 (enum_item name: (type_identifier) @enum.name) @enum
 (trait_item name: (type_identifier) @trait.name) @trait
 (impl_item type: (type_identifier) @impl.name) @impl
+(call_expression function: (identifier) @call.name) @call
+(call_expression function: (scoped_identifier name: (identifier) @call.name)) @call
+(call_expression function: (field_expression field: (field_identifier) @call.name)) @call
 `;
 
 export async function parseRust(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -26,6 +29,8 @@ export async function parseRust(f: WalkedFile, source: string): Promise<ParsedFi
         { declCapture: "trait", nameCapture: "trait.name", kind: "interface" },
         { declCapture: "impl", nameCapture: "impl.name", kind: "class" },
       ],
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

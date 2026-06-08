@@ -11,6 +11,7 @@ const QUERY = `
 (type_definition declarator: (type_identifier) @type.name) @type
 (preproc_include path: (string_literal) @import)
 (preproc_include path: (system_lib_string) @import)
+(call_expression function: (identifier) @call.name) @call
 `;
 
 export async function parseC(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -25,6 +26,8 @@ export async function parseC(f: WalkedFile, source: string): Promise<ParsedFile>
         { declCapture: "type", nameCapture: "type.name", kind: "type" },
       ],
       importCapture: "import",
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

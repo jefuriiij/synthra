@@ -32,12 +32,20 @@ export interface ParsedSymbol {
   signature: string;
 }
 
+/** A raw call site: the bare callee name as written (e.g. "login", not
+ *  "auth.login") + its 1-based line. Caller attribution + callee resolution
+ *  happen centrally in buildGraph (which has the full file set). */
+export interface CallSite {
+  callee: string;
+  line: number;
+}
+
 export interface ParsedFile {
   file: WalkedFile;
   source: string;
   symbols: ParsedSymbol[];
   imports: string[];
-  calls: Array<{ from: string; to: string }>;
+  calls: CallSite[];
 }
 
 const require = createRequire(import.meta.url);

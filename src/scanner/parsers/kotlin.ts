@@ -9,6 +9,7 @@ const QUERY = `
 (class_declaration (type_identifier) @class.name) @class
 (object_declaration (type_identifier) @object.name) @object
 (import_header (identifier) @import)
+(call_expression (simple_identifier) @call.name) @call
 `;
 
 export async function parseKotlin(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -22,6 +23,8 @@ export async function parseKotlin(f: WalkedFile, source: string): Promise<Parsed
         { declCapture: "object", nameCapture: "object.name", kind: "class" },
       ],
       importCapture: "import",
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

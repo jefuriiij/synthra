@@ -13,6 +13,9 @@ const QUERY = `
 (namespace_definition name: (namespace_identifier) @namespace.name) @namespace
 (preproc_include path: (string_literal) @import)
 (preproc_include path: (system_lib_string) @import)
+(call_expression function: (identifier) @call.name) @call
+(call_expression function: (field_expression field: (field_identifier) @call.name)) @call
+(call_expression function: (qualified_identifier name: (identifier) @call.name)) @call
 `;
 
 export async function parseCpp(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -29,6 +32,8 @@ export async function parseCpp(f: WalkedFile, source: string): Promise<ParsedFil
         { declCapture: "namespace", nameCapture: "namespace.name", kind: "class" },
       ],
       importCapture: "import",
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

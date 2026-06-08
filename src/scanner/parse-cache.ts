@@ -14,16 +14,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fileHash } from "./hash.js";
-import { parseSource, type ParsedFile, type ParsedSymbol } from "./parser.js";
+import { parseSource, type CallSite, type ParsedFile, type ParsedSymbol } from "./parser.js";
 import type { WalkedFile } from "./walker.js";
 
-export const PARSE_CACHE_VERSION = 1;
+// Bumped to 2 when call sites were added to the parse output (the calls shape
+// changed) — old caches invalidate and re-parse cleanly.
+export const PARSE_CACHE_VERSION = 2;
 
 export interface CachedParse {
   hash: string;
   symbols: ParsedSymbol[];
   imports: string[];
-  calls: Array<{ from: string; to: string }>;
+  calls: CallSite[];
 }
 
 export interface ParseCache {

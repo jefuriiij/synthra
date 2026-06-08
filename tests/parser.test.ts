@@ -139,3 +139,94 @@ describe("parseFile dispatch + per-language smoke", () => {
     });
   }
 });
+
+async function parseTmp(file: string, src: string) {
+  const dir = await mkdtemp(join(tmpdir(), "syn-call-"));
+  const absPath = join(dir, file);
+  await writeFile(absPath, src, "utf8");
+  return parseFile({ absPath, relPath: file, ext: extname(file).toLowerCase(), size: src.length });
+}
+
+// Confident grammars: assert the call site is captured (callee name in parsed.calls).
+const CALL_CASES: Array<{ lang: string; file: string; src: string; callee: string }> = [
+  {
+    lang: "typescript",
+    file: "c.ts",
+    src: "function helper() {\n  return 1;\n}\nexport function run() {\n  return helper();\n}\n",
+    callee: "helper",
+  },
+  {
+    lang: "python",
+    file: "c.py",
+    src: "def helper():\n    return 1\ndef run():\n    return helper()\n",
+    callee: "helper",
+  },
+  {
+    lang: "go",
+    file: "c.go",
+    src: "package m\nfunc helper() int { return 1 }\nfunc Run() int { return helper() }\n",
+    callee: "helper",
+  },
+  {
+    lang: "java",
+    file: "C.java",
+    src: "class C {\n  int helper() { return 1; }\n  int run() { return helper(); }\n}\n",
+    callee: "helper",
+  },
+  {
+    lang: "c",
+    file: "c.c",
+    src: "int helper() { return 1; }\nint run() { return helper(); }\n",
+    callee: "helper",
+  },
+  {
+    lang: "cpp",
+    file: "c.cpp",
+    src: "int helper() { return 1; }\nint run() { return helper(); }\n",
+    callee: "helper",
+  },
+  {
+    lang: "csharp",
+    file: "C.cs",
+    src: "class C {\n  int Helper() { return 1; }\n  int Run() { return Helper(); }\n}\n",
+    callee: "Helper",
+  },
+  {
+    lang: "rust",
+    file: "c.rs",
+    src: "fn helper() -> i32 { 1 }\nfn run() -> i32 { helper() }\n",
+    callee: "helper",
+  },
+];
+
+describe("parseFile — call capture (confident grammars)", () => {
+  for (const c of CALL_CASES) {
+    it(`captures a call site in ${c.lang}`, async () => {
+      const parsed = await parseTmp(c.file, c.src);
+      expect(parsed.calls.map((x) => x.callee)).toContain(c.callee);
+    });
+  }
+});
+
+// Best-effort grammars: only require that symbols still extract and `calls` is an
+// array — the call clause must never regress symbol extraction (cf. the file's
+// stated philosophy). Specific callees are verified at impl, not pinned here.
+const BEST_EFFORT: Array<{ lang: string; file: string; src: string }> = [
+  { lang: "kotlin", file: "C.kt", src: "fun helper(): Int = 1\nfun run(): Int = helper()\n" },
+  {
+    lang: "php",
+    file: "c.php",
+    src: "<?php\nfunction helper() { return 1; }\nfunction run() { return helper(); }\n",
+  },
+  { lang: "ruby", file: "c.rb", src: "def helper\n  1\nend\ndef run\n  helper\nend\n" },
+];
+
+describe("parseFile — call capture (best-effort grammars, tolerant)", () => {
+  for (const c of BEST_EFFORT) {
+    it(`extracts symbols + returns a calls array for ${c.lang}`, async () => {
+      const parsed = await parseTmp(c.file, c.src);
+      expect(parsed.symbols.length).toBeGreaterThan(0);
+      expect(Array.isArray(parsed.calls)).toBe(true);
+    });
+  }
+});

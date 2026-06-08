@@ -10,6 +10,7 @@ const QUERY = `
 (method_declaration name: (identifier) @method.name) @method
 (enum_declaration name: (identifier) @enum.name) @enum
 (import_declaration (scoped_identifier) @import)
+(method_invocation name: (identifier) @call.name) @call
 `;
 
 export async function parseJava(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -24,6 +25,8 @@ export async function parseJava(f: WalkedFile, source: string): Promise<ParsedFi
         { declCapture: "enum", nameCapture: "enum.name", kind: "enum" },
       ],
       importCapture: "import",
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

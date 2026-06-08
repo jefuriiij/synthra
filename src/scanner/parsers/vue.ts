@@ -44,6 +44,7 @@ export async function parseVue(f: WalkedFile, source: string): Promise<ParsedFil
       });
     }
     for (const imp of parsed.imports) out.imports.push(imp);
+    for (const call of parsed.calls) out.calls.push({ ...call, line: call.line + offset });
   }
 
   out.symbols.push({

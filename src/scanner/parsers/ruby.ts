@@ -11,6 +11,7 @@ const QUERY = `
 (singleton_method name: (identifier) @method.name) @method
 (class name: (constant) @class.name) @class
 (module name: (constant) @module.name) @module
+(call method: (identifier) @call.name) @call
 `;
 
 export async function parseRuby(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -24,6 +25,8 @@ export async function parseRuby(f: WalkedFile, source: string): Promise<ParsedFi
         { declCapture: "class", nameCapture: "class.name", kind: "class" },
         { declCapture: "module", nameCapture: "module.name", kind: "class" },
       ],
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

@@ -4,7 +4,13 @@
 
 import { Query, type Node } from "web-tree-sitter";
 import type { SymbolKind } from "../../graph/types.js";
-import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
+import {
+  createParser,
+  type CallSite,
+  type GrammarName,
+  type ParsedFile,
+  type ParsedSymbol,
+} from "../parser.js";
 import type { WalkedFile } from "../walker.js";
 
 // TS / TSX query — uses the type-identifier node type for class names, includes
@@ -19,6 +25,8 @@ const TS_QUERY = `
 (lexical_declaration (variable_declarator name: (identifier) @const-fn.name value: [(arrow_function) (function_expression)])) @const-fn
 (assignment_expression left: (member_expression property: (property_identifier) @member-fn.name) right: [(arrow_function) (function_expression)]) @member-fn
 (import_statement source: (string) @import)
+(call_expression function: (identifier) @call.name) @call
+(call_expression function: (member_expression property: (property_identifier) @call.name)) @call
 `;
 
 // JS query — class names are plain identifiers (JS grammar has no
@@ -33,6 +41,8 @@ const JS_QUERY = `
 (assignment_expression left: (member_expression property: (property_identifier) @member-fn.name) right: [(arrow_function) (function_expression)]) @member-fn
 (import_statement source: (string) @import)
 (call_expression function: (identifier) @_require_fn arguments: (arguments . (string) @require_source))
+(call_expression function: (identifier) @call.name) @call
+(call_expression function: (member_expression property: (property_identifier) @call.name)) @call
 `;
 
 function grammarFor(ext: string): GrammarName {
@@ -83,11 +93,12 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
   const grammar = grammarFor(f.ext);
   let symbols: ParsedSymbol[] = [];
   let imports: string[] = [];
+  const calls: CallSite[] = [];
 
   try {
     const { parser, language } = await createParser(grammar);
     const tree = parser.parse(source);
-    if (!tree) return { file: f, source, symbols, imports, calls: [] };
+    if (!tree) return { file: f, source, symbols, imports, calls };
 
     const query = new Query(language, queryFor(grammar));
     const matches = query.matches(tree.rootNode);
@@ -118,6 +129,14 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
       const requireSource = byName.get("require_source");
       if (requireFn && requireSource && requireFn.text === "require") {
         imports.push(unquote(requireSource.text));
+        continue;
+      }
+      // Call site (bare or member call). `require(...)` also matches here — it
+      // resolves to no project symbol and is dropped, so no special-casing.
+      const callName = byName.get("call.name");
+      const callNode = byName.get("call");
+      if (callName && callNode) {
+        calls.push({ callee: callName.text, line: callNode.startPosition.row + 1 });
       }
     }
 
@@ -133,5 +152,5 @@ export async function parseTypeScript(f: WalkedFile, source: string): Promise<Pa
     // Parse failure shouldn't abort the whole scan — return what we have.
   }
 
-  return { file: f, source, symbols, imports, calls: [] };
+  return { file: f, source, symbols, imports, calls };
 }

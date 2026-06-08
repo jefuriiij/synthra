@@ -12,6 +12,8 @@ const QUERY = `
 (method_declaration name: (identifier) @method.name) @method
 (namespace_declaration name: (_) @namespace.name) @namespace
 (using_directive (_) @import)
+(invocation_expression function: (identifier) @call.name) @call
+(invocation_expression function: (member_access_expression name: (identifier) @call.name)) @call
 `;
 
 export async function parseCSharp(f: WalkedFile, source: string): Promise<ParsedFile> {
@@ -28,6 +30,8 @@ export async function parseCSharp(f: WalkedFile, source: string): Promise<Parsed
         { declCapture: "namespace", nameCapture: "namespace.name", kind: "class" },
       ],
       importCapture: "import",
+      callCapture: "call",
+      callCalleeCapture: "call.name",
     },
     f,
     source,

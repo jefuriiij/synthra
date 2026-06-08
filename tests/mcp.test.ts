@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ActivityStore } from "../src/activity/activity-log.js";
-import type { FileNode, GraphSchema } from "../src/graph/types.js";
+import type { FileNode, GraphSchema, SymbolNode } from "../src/graph/types.js";
 import type { ServerContext } from "../src/server/context.js";
 import { handleMcpRequest, resolveFileTarget } from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
@@ -118,5 +118,70 @@ describe("per-file usage capture", () => {
     );
     // Tool-level "not found" is returned as a result (isError), never a transport error.
     expect(res.error).toBeUndefined();
+  });
+});
+
+function symNode(file: string, name: string, start: number, end: number): SymbolNode {
+  return {
+    id: `symbol:${file}::${name}:${start}`,
+    kind: "symbol",
+    symbol_kind: "function",
+    name,
+    file,
+    start_line: start,
+    end_line: end,
+    signature: `${name}()`,
+  };
+}
+
+async function blastText(graph: GraphSchema, target: string): Promise<string> {
+  const ctx = await ctxWith(graph);
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: { name: "blast_radius", arguments: { target } },
+    },
+    ctx,
+  );
+  const result = res.result as { content: Array<{ text: string }> } | undefined;
+  return result?.content?.[0]?.text ?? "";
+}
+
+describe("blast_radius — calls projected to file level", () => {
+  // a.ts::caller → b.ts::target (cross-file); a.ts::localCaller → a.ts::localTarget (intra-file).
+  const a = fileNode("src/a.ts");
+  const b = fileNode("src/b.ts");
+  const callerA = symNode("src/a.ts", "caller", 1, 10);
+  const targetB = symNode("src/b.ts", "target", 1, 5);
+  const localCaller = symNode("src/a.ts", "localCaller", 12, 20);
+  const localTarget = symNode("src/a.ts", "localTarget", 22, 30);
+  const graph: GraphSchema = {
+    root: ".",
+    node_count: 6,
+    edge_count: 2,
+    file_count: 2,
+    symbol_count: 4,
+    nodes: [a, b, callerA, targetB, localCaller, localTarget],
+    edges: [
+      { from: callerA.id, to: targetB.id, kind: "calls" },
+      { from: localCaller.id, to: localTarget.id, kind: "calls" },
+    ],
+    generated_at: "1970-01-01T00:00:00.000Z",
+    schema_version: 2,
+  };
+
+  it("lists the caller's file as a dependent via calls", async () => {
+    const text = await blastText(graph, "src/b.ts");
+    expect(text).toContain("src/a.ts");
+    expect(text).toContain("via calls");
+  });
+
+  it("does not add a self-dependent for an intra-file call", async () => {
+    const text = await blastText(graph, "src/a.ts");
+    // a.ts has no INCOMING calls; the intra-file edge is skipped, so it's isolated.
+    expect(text).toMatch(/no dependents|isolated/);
+    expect(text).not.toContain("via calls");
   });
 });

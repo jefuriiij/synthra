@@ -45,6 +45,7 @@ export async function parseSvelte(f: WalkedFile, source: string): Promise<Parsed
       });
     }
     for (const imp of parsed.imports) out.imports.push(imp);
+    for (const call of parsed.calls) out.calls.push({ ...call, line: call.line + offset });
   }
 
   // The .svelte file itself is treated as a component.

@@ -2,7 +2,7 @@
 // Extracts: function/class definitions, methods, and import statements.
 
 import { Query, type Node } from "web-tree-sitter";
-import { createParser, type ParsedFile, type ParsedSymbol } from "../parser.js";
+import { createParser, type CallSite, type ParsedFile, type ParsedSymbol } from "../parser.js";
 import type { WalkedFile } from "../walker.js";
 
 const QUERY = `
@@ -11,6 +11,8 @@ const QUERY = `
 (import_statement name: (dotted_name) @import.module)
 (import_from_statement module_name: (dotted_name) @import.from)
 (import_from_statement module_name: (relative_import) @import.from)
+(call function: (identifier) @call.name) @call
+(call function: (attribute attribute: (identifier) @call.name)) @call
 `;
 
 function firstLine(text: string, max = 200): string {
@@ -21,11 +23,12 @@ function firstLine(text: string, max = 200): string {
 export async function parsePython(f: WalkedFile, source: string): Promise<ParsedFile> {
   let symbols: ParsedSymbol[] = [];
   let imports: string[] = [];
+  const calls: CallSite[] = [];
 
   try {
     const { parser, language } = await createParser("python");
     const tree = parser.parse(source);
-    if (!tree) return { file: f, source, symbols, imports, calls: [] };
+    if (!tree) return { file: f, source, symbols, imports, calls };
 
     const query = new Query(language, QUERY);
     const matches = query.matches(tree.rootNode);
@@ -63,7 +66,16 @@ export async function parsePython(f: WalkedFile, source: string): Promise<Parsed
       }
 
       const importNode = byName.get("import.module") ?? byName.get("import.from");
-      if (importNode) imports.push(importNode.text);
+      if (importNode) {
+        imports.push(importNode.text);
+        continue;
+      }
+
+      const callName = byName.get("call.name");
+      const callNode = byName.get("call");
+      if (callName && callNode) {
+        calls.push({ callee: callName.text, line: callNode.startPosition.row + 1 });
+      }
     }
 
     const seen = new Set<string>();
@@ -78,5 +90,5 @@ export async function parsePython(f: WalkedFile, source: string): Promise<Parsed
     // swallow parse errors
   }
 
-  return { file: f, source, symbols, imports, calls: [] };
+  return { file: f, source, symbols, imports, calls };
 }

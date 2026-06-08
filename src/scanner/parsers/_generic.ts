@@ -11,7 +11,13 @@
 import { Query, type Node } from "web-tree-sitter";
 
 import type { SymbolKind } from "../../graph/types.js";
-import { createParser, type GrammarName, type ParsedFile, type ParsedSymbol } from "../parser.js";
+import {
+  createParser,
+  type CallSite,
+  type GrammarName,
+  type ParsedFile,
+  type ParsedSymbol,
+} from "../parser.js";
 import type { WalkedFile } from "../walker.js";
 
 export interface DeclCapture {
@@ -29,6 +35,10 @@ export interface GenericParserConfig {
   decls: DeclCapture[];
   /** Capture name for import-source nodes. Skipped when omitted. */
   importCapture?: string;
+  /** Capture name for the whole call-site node (for its line). */
+  callCapture?: string;
+  /** Capture name for the callee-name node. Both call captures must be set. */
+  callCalleeCapture?: string;
 }
 
 export function firstLine(text: string, max = 200): string {
@@ -49,11 +59,12 @@ export async function runGenericParser(
 ): Promise<ParsedFile> {
   let symbols: ParsedSymbol[] = [];
   let imports: string[] = [];
+  const calls: CallSite[] = [];
 
   try {
     const { parser, language } = await createParser(config.grammar);
     const tree = parser.parse(source);
-    if (!tree) return { file: f, source, symbols, imports, calls: [] };
+    if (!tree) return { file: f, source, symbols, imports, calls };
 
     const query = new Query(language, config.query);
     const matches = query.matches(tree.rootNode);
@@ -83,6 +94,15 @@ export async function runGenericParser(
         continue;
       }
 
+      if (config.callCapture && config.callCalleeCapture) {
+        const callNode = byName.get(config.callCapture);
+        const calleeNode = byName.get(config.callCalleeCapture);
+        if (callNode && calleeNode) {
+          calls.push({ callee: calleeNode.text, line: callNode.startPosition.row + 1 });
+          continue;
+        }
+      }
+
       if (config.importCapture) {
         const imp = byName.get(config.importCapture);
         if (imp) imports.push(cleanImport(imp.text));
@@ -102,5 +122,5 @@ export async function runGenericParser(
     // bad file doesn't abort the whole scan.
   }
 
-  return { file: f, source, symbols, imports, calls: [] };
+  return { file: f, source, symbols, imports, calls };
 }

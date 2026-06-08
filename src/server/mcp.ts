@@ -182,7 +182,7 @@ const TOOLS = [
   {
     name: "blast_radius",
     description:
-      "Given a file (or 'file::symbol' target), return all files that depend on it transitively via imports + tests edges. Use BEFORE editing a widely-used file to see what could break. Symbol-level granularity is approximated at the file level (we don't track call edges in v0.1).",
+      "Given a file (or 'file::symbol' target), return all files that depend on it transitively via imports, tests, and call edges (callers). Use BEFORE editing a widely-used file to see what could break. Call edges are name-resolved (precise within a file, unique-name across files) and projected to file granularity.",
     inputSchema: {
       type: "object",
       properties: {
@@ -195,7 +195,7 @@ const TOOLS = [
   {
     name: "dead_code",
     description:
-      "Return files in the project that no other file imports and no test file references — strong candidates for unused/orphaned code. File-level granularity (v0.1 limitation — symbol-level needs call-graph edges). Common entry-point patterns (main, index, app, CLI, bin/) are excluded heuristically.",
+      "Return files in the project that no other file imports and no test file references — strong candidates for unused/orphaned code. File-level granularity; symbol-level dead code (unused exports, on top of the call graph) is a planned follow-up. Common entry-point patterns (main, index, app, CLI, bin/) are excluded heuristically.",
     inputSchema: {
       type: "object",
       properties: {
@@ -250,13 +250,27 @@ function blastRadius(args: Record<string, unknown> | undefined, ctx: ServerConte
   const root = ctx.graph.nodes.find((n): n is FileNode => n.kind === "file" && n.path === filePath);
   if (!root) return errorContent(`blast_radius: file not in graph: ${filePath}`);
 
-  // Index reverse edges (to → [{from, kind}]) once per call.
+  // Index reverse edges (to → [{from, kind}]) once per call. `calls` edges are
+  // symbol→symbol, so project them to file level (a caller's file depends on the
+  // callee's file), skipping intra-file calls.
+  const fileIdBySymbol = new Map<string, string>();
+  for (const n of ctx.graph.nodes) {
+    if (n.kind === "symbol") fileIdBySymbol.set(n.id, `file:${n.file}`);
+  }
   const incoming = new Map<string, Array<{ from: string; kind: string }>>();
+  const addIncoming = (to: string, from: string, kind: string): void => {
+    const list = incoming.get(to) ?? [];
+    list.push({ from, kind });
+    incoming.set(to, list);
+  };
   for (const e of ctx.graph.edges) {
-    if (e.kind !== "imports" && e.kind !== "tests") continue;
-    const list = incoming.get(e.to) ?? [];
-    list.push({ from: e.from, kind: e.kind });
-    incoming.set(e.to, list);
+    if (e.kind === "imports" || e.kind === "tests") {
+      addIncoming(e.to, e.from, e.kind);
+    } else if (e.kind === "calls") {
+      const fromFile = fileIdBySymbol.get(e.from);
+      const toFile = fileIdBySymbol.get(e.to);
+      if (fromFile && toFile && fromFile !== toFile) addIncoming(toFile, fromFile, "calls");
+    }
   }
 
   interface Hit {
@@ -350,7 +364,7 @@ function deadCode(args: Record<string, unknown> | undefined, ctx: ServerContext)
   }
   lines.push("");
   lines.push(
-    `_v0.1 caveat:_ this is file-level only. Symbol-level dead code (unused exports) needs call-graph edges, which land in v0.2.`,
+    `_caveat:_ this is file-level only. Symbol-level dead code (unused exports), built on the now-populated call graph, is a planned follow-up.`,
   );
   return textContent(lines.join("\n"));
 }

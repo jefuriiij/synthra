@@ -11,7 +11,7 @@ import type { Edge, FileNode, GraphSchema, SymbolIndex, SymbolNode } from "../gr
 import { SCHEMA_VERSION } from "../graph/types.js";
 import { fileHash } from "./hash.js";
 import { extractKeywords } from "./keywords.js";
-import type { ParsedFile, ParsedSymbol } from "./parser.js";
+import type { CallSite, ParsedFile, ParsedSymbol } from "./parser.js";
 
 const RESOLVE_EXTS = [
   ".ts",
@@ -150,15 +150,24 @@ export async function buildGraph(root: string, parsed: ParsedFile[]): Promise<Gr
   const nodes: (FileNode | SymbolNode)[] = [];
   const edges: Edge[] = [];
 
+  // Collected during the file loop, then resolved into `calls` edges in one pass
+  // (callee resolution needs the full symbol set).
+  const symbolsByFile = new Map<string, SymbolNode[]>();
+  const callsByFile = new Map<string, CallSite[]>();
+
   for (const p of parsed) {
     const fileNode = toFileNode(p);
     nodes.push(fileNode);
 
+    const fileSymNodes: SymbolNode[] = [];
     for (const sym of p.symbols) {
       const symNode = toSymbolNode(p, sym);
       nodes.push(symNode);
+      fileSymNodes.push(symNode);
       edges.push({ from: fileNode.id, to: symNode.id, kind: "defines" });
     }
+    symbolsByFile.set(p.file.relPath, fileSymNodes);
+    callsByFile.set(p.file.relPath, p.calls);
 
     const importEdges = new Set<string>();
     for (const spec of p.imports) {
@@ -175,6 +184,8 @@ export async function buildGraph(root: string, parsed: ParsedFile[]): Promise<Gr
       edges.push({ from: fileNode.id, to: fileId(testTargetPath), kind: "tests" });
     }
   }
+
+  edges.push(...buildCallEdges(symbolsByFile, callsByFile));
 
   const symbolCount = nodes.filter((n) => n.kind === "symbol").length;
   const fileCount = nodes.length - symbolCount;
@@ -203,6 +214,67 @@ export function buildSymbolIndex(graph: GraphSchema): SymbolIndex {
     list.push({ file: node.file, line: node.start_line, kind: node.symbol_kind });
   }
   return out;
+}
+
+/** The same-file symbol whose [start_line, end_line] tightest-contains `line`
+ *  (smallest span wins, so an inner method beats its enclosing class). null if
+ *  the line is outside every symbol (e.g. a module-level call). */
+export function tightestContainer(syms: SymbolNode[], line: number): SymbolNode | null {
+  let best: SymbolNode | null = null;
+  for (const s of syms) {
+    if (line < s.start_line || line > s.end_line) continue;
+    if (!best || s.end_line - s.start_line < best.end_line - best.start_line) best = s;
+  }
+  return best;
+}
+
+/**
+ * Resolve raw call sites into symbol→symbol `calls` edges. Name-based (no type
+ * info), precision-first:
+ *   - caller = the call site's tightest-containing symbol in the SAME file
+ *     (no container, e.g. a top-level call → skipped)
+ *   - callee = a same-file symbol of that name, else the UNIQUE repo-wide symbol
+ *     of that name; 0 matches (external/builtin) or >1 (ambiguous) → skipped
+ * Recursion self-edges and duplicates are dropped.
+ */
+export function buildCallEdges(
+  symbolsByFile: Map<string, SymbolNode[]>,
+  callsByFile: Map<string, CallSite[]>,
+): Edge[] {
+  // Repo-wide name → symbols index, for the cross-file fallback.
+  const byName = new Map<string, SymbolNode[]>();
+  for (const syms of symbolsByFile.values()) {
+    for (const s of syms) {
+      const list = byName.get(s.name);
+      if (list) list.push(s);
+      else byName.set(s.name, [s]);
+    }
+  }
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+
+  for (const [relPath, sites] of callsByFile) {
+    const fileSyms = symbolsByFile.get(relPath) ?? [];
+    for (const site of sites) {
+      const caller = tightestContainer(fileSyms, site.line);
+      if (!caller) continue;
+
+      let callee = fileSyms.find((s) => s.name === site.callee);
+      if (!callee) {
+        const cands = byName.get(site.callee) ?? [];
+        if (cands.length !== 1) continue; // 0 = external/builtin, >1 = ambiguous
+        callee = cands[0];
+      }
+      if (!callee || callee.id === caller.id) continue; // skip recursion self-edges
+
+      const key = `${caller.id}->${callee.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from: caller.id, to: callee.id, kind: "calls" });
+    }
+  }
+  return edges;
 }
 
 // Re-export node path helpers in case downstream wants the canonical id format
