@@ -20,5 +20,6 @@ export default defineConfig({
     ".sh": "text",
     ".html": "text",
     ".css": "text",
+    ".svg": "text",
   },
 });

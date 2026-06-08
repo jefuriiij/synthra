@@ -20,6 +20,7 @@ import { computeDashboardData } from "./delta.js";
 
 import indexHtml from "./public/index.html";
 import styleCss from "./public/style.css";
+import faviconSvg from "./public/favicon.svg";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
 const VERSION = (pkgJson as { version: string }).version;
@@ -52,6 +53,12 @@ export async function startDashboard(
     c.header("Content-Type", "text/css; charset=utf-8");
     c.header("Cache-Control", "no-cache");
     return c.body(styleCss);
+  });
+
+  app.get("/favicon.svg", (c) => {
+    c.header("Content-Type", "image/svg+xml; charset=utf-8");
+    c.header("Cache-Control", "public, max-age=86400");
+    return c.body(faviconSvg);
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
