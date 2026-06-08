@@ -39,6 +39,7 @@ const VERSION = (pkgJson as { version: string }).version;
 interface DefaultOpts {
   resume?: string;
   "launch-cli"?: boolean;
+  full?: boolean;
 }
 
 interface BannerInfo {
@@ -107,7 +108,7 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   // 1. bootstrap + scan + record in the global registry so the dashboard
   //    can list this project alongside any others.
   await recordProject(projectRoot);
-  const scan = await scanCommand(rawPath);
+  const scan = await scanCommand(rawPath, { full: opts.full });
 
   // 2. MCP server (background within this process)
   const mcpHandle: ServerHandle = await startServer(paths);
@@ -171,14 +172,16 @@ export function buildProgram() {
     )
     .option("--resume <id>", "Resume an existing Claude session (only with --launch-cli)")
     .option("--launch-cli", "Also spawn `claude` CLI in this terminal (legacy M3 behavior)", false)
+    .option("--full", "Re-parse every file, ignoring the incremental parse cache", false)
     .action(async (path: string | undefined, opts: DefaultOpts) => {
       await defaultFlow(path ?? ".", opts);
     });
 
   prog
     .command("scan [path]", "Scan only — walk + parse + write graph.")
-    .action(async (path: string | undefined) => {
-      await scanCommand(path ?? ".");
+    .option("--full", "Re-parse every file, ignoring the incremental parse cache", false)
+    .action(async (path: string | undefined, opts: { full?: boolean }) => {
+      await scanCommand(path ?? ".", { full: opts.full });
     });
 
   prog

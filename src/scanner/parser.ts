@@ -118,7 +118,13 @@ export async function parseFile(f: WalkedFile): Promise<ParsedFile> {
   } catch {
     return emptyParsed(f, "");
   }
+  return parseSource(f, source);
+}
 
+/** Parse already-read source. Split from parseFile so the incremental scanner
+ *  can read a file's content once (to hash it) and parse from that same string
+ *  on a cache miss — avoiding a second read. */
+export async function parseSource(f: WalkedFile, source: string): Promise<ParsedFile> {
   switch (f.ext) {
     case ".ts":
     case ".tsx":

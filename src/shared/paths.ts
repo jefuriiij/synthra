@@ -15,6 +15,7 @@ export interface SynthraPaths {
   toolLog: string;
   accessLog: string;
   learnStore: string;
+  parseCache: string;
   mcpPort: string;
   mcpServerLog: string;
   mcpServerErrLog: string;
@@ -46,6 +47,7 @@ export function resolvePaths(projectRoot: string): SynthraPaths {
     toolLog: join(graphDir, "tool_log.jsonl"),
     accessLog: join(graphDir, "access_log.jsonl"),
     learnStore: join(graphDir, "learn_store.json"),
+    parseCache: join(graphDir, "parse_cache.json"),
     mcpPort: join(graphDir, "mcp_port"),
     mcpServerLog: join(graphDir, "mcp_server.log"),
     mcpServerErrLog: join(graphDir, "mcp_server.err.log"),

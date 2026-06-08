@@ -4,7 +4,7 @@
 import { resolve } from "node:path";
 
 import { buildGraph, buildSymbolIndex } from "../scanner/extract.js";
-import { parseFile, type ParsedFile } from "../scanner/parser.js";
+import { incrementalParse, readParseCache, writeParseCache } from "../scanner/parse-cache.js";
 import { walk, type WalkedFile } from "../scanner/walker.js";
 import { writeGraph, writeSymbolIndex } from "../graph/store.js";
 import { log } from "../shared/logger.js";
@@ -54,6 +54,8 @@ export interface ScanResult {
 export interface ScanOptions {
   /** Suppress per-step log output (used for branch-switch rescans). */
   silent?: boolean;
+  /** Ignore the parse cache and re-parse every file from scratch. */
+  full?: boolean;
 }
 
 /**
@@ -92,21 +94,17 @@ export async function scanProject(
   if (verbose) log.info(`  walked ${walked.length} files`);
 
   const parsable = walked.filter((f) => PARSABLE_EXTS.has(f.ext));
-  const parsed: ParsedFile[] = [];
-  let parseErrors = 0;
-  for (const file of parsable) {
-    try {
-      parsed.push(await parseFile(file));
-    } catch (err) {
-      parseErrors += 1;
-      if (verbose) log.debug(`    parse failed: ${file.relPath} — ${(err as Error).message}`);
-    }
-  }
+  const prevCache = await readParseCache(paths.parseCache);
+  const { parsed, cache, reused, reparsed, parseErrors } = await incrementalParse(
+    parsable,
+    prevCache,
+    { full: opts.full },
+  );
   if (verbose) {
     log.info(
-      `  parsed ${parsed.length} files (${walked.length - parsable.length} skipped` +
+      `  parsed ${parsed.length} files (${reused} reused · ${reparsed} reparsed` +
         (parseErrors ? `, ${parseErrors} errored` : "") +
-        ")",
+        `; ${walked.length - parsable.length} non-code skipped)`,
     );
   }
 
@@ -115,6 +113,7 @@ export async function scanProject(
 
   await writeGraph(paths.infoGraph, graph);
   await writeSymbolIndex(paths.symbolIndex, symbolIndex);
+  await writeParseCache(paths.parseCache, cache);
 
   if (verbose) {
     log.info(
@@ -137,6 +136,6 @@ export async function scanProject(
 
 // Thin alias so the CLI command keeps its current name. Drop in v0.2 if we
 // settle on a single public function.
-export async function scanCommand(rawPath: string): Promise<ScanResult> {
-  return scanProject(rawPath);
+export async function scanCommand(rawPath: string, opts: ScanOptions = {}): Promise<ScanResult> {
+  return scanProject(rawPath, opts);
 }
