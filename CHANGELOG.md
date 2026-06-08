@@ -7,6 +7,37 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.3.0] — 2026-06-09
+
+### Added
+
+- **Incremental scanner.** `syn .` now re-parses only the files whose content
+  changed since the last scan, reusing cached parses (symbols, imports, calls)
+  for everything else via a content-hash parse cache. Rescans of a large repo
+  after editing a handful of files are dramatically faster; the resulting graph
+  is byte-identical to a full scan. `syn . --full` forces a clean rebuild. This
+  makes the long-standing "updated incrementally" claim actually true.
+- **Call-graph edges.** Function and method call sites are now captured during
+  parsing and resolved (name-based, precision-first: same-file wins, else the
+  unique repo-wide symbol; ambiguous/external calls are skipped) into
+  symbol→symbol `calls` edges. `blast_radius` therefore surfaces **callers**,
+  not just importers and tests — so the impact of changing a function includes
+  the code that calls it. Captured across 14 languages (TypeScript, Python, Go,
+  Rust, Java, C, C++, C#, plus best-effort Kotlin/PHP/Ruby and Svelte/Vue
+  passthrough); this makes the "call relationships" claim honest.
+- **Dashboard "Hot files" card.** The dashboard now surfaces the usage-learning
+  layer directly: the active project's hottest files by recent, decayed access.
+- **Dashboard favicon.** The dashboard tab now carries the Synthra S mark.
+
+### Internal
+
+- The scanner is now under test — directory walker, parser dispatch, a
+  per-language symbol/call smoke suite, and the context packer — alongside the
+  call-resolution and incremental-equivalence tests. CI runs on Node 24 actions
+  with the test matrix on Node 22 (ubuntu + windows).
+
+---
+
 ## [0.2.1] — 2026-06-06
 
 ### Changed
