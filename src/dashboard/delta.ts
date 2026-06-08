@@ -5,6 +5,8 @@
 
 import { readFile } from "node:fs/promises";
 
+import { readLearnStore } from "../learn/store.js";
+import { effectiveScores, emptyStore, type LearnStore } from "../learn/usage.js";
 import { resolvePaths, type SynthraPaths } from "../shared/paths.js";
 import { estimateCostUsd } from "../shared/pricing.js";
 import { listProjects } from "../shared/project-registry.js";
@@ -49,6 +51,21 @@ export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> 
   return out;
 }
 
+export interface HotFile {
+  path: string;
+  score: number;
+}
+
+/** Top files by current (decayed-to-now) usage weight — surfaces what the
+ *  usage-learning layer has learned this repo leans on. Ranked by effective
+ *  score so recency matters; score rounded for display. */
+export function topHotFiles(store: LearnStore, nowMs: number, limit = 8): HotFile[] {
+  return [...effectiveScores(store, nowMs).entries()]
+    .map(([path, score]) => ({ path, score: Math.round(score * 10) / 10 }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 export interface ProjectStats {
   path: string;
   name: string;
@@ -64,6 +81,8 @@ export interface ProjectStats {
   estimated_cost_usd: number;
   total_tool_calls: number;
   tool_calls: Record<string, number>;
+  hot_files: HotFile[];
+  hot_files_total: number;
   models: Record<string, number>;
 }
 
@@ -145,6 +164,7 @@ interface ProjectFiles {
   tokens: TokenLogEntry[];
   gates: GateLogEntry[];
   tools: ToolLogEntry[];
+  learn: LearnStore;
 }
 
 function summarize(p: ProjectFiles): ProjectStats {
@@ -166,6 +186,7 @@ function summarize(p: ProjectFiles): ProjectStats {
 
   const blocked = p.gates.filter((g) => g.decision === "block").length;
   const saved = blocked * AVG_TOKENS_PER_BLOCKED_GREP;
+  const now = Date.now();
 
   return {
     path: p.path,
@@ -182,6 +203,8 @@ function summarize(p: ProjectFiles): ProjectStats {
     estimated_cost_usd: Math.round(costUsd * 100) / 100,
     total_tool_calls: p.tools.length,
     tool_calls: countToolCalls(p.tools),
+    hot_files: topHotFiles(p.learn, now),
+    hot_files_total: effectiveScores(p.learn, now).size,
     models,
   };
 }
@@ -200,13 +223,14 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates, tools] = await Promise.all([
+  const [rawTokens, gates, tools, learn] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
     readJsonl<ToolLogEntry>(paths.toolLog),
+    readLearnStore(paths.learnStore),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
-  return { path, name, last_seen: lastSeen, tokens, gates, tools };
+  return { path, name, last_seen: lastSeen, tokens, gates, tools, learn };
 }
 
 /**
@@ -301,6 +325,7 @@ export async function computeDashboardData(
     tokens: [],
     gates: [],
     tools: [],
+    learn: emptyStore(),
   };
   const activeStats = summarize(activeFiles);
 

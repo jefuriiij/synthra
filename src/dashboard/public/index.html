@@ -198,6 +198,16 @@
         <div class="gate-mini" id="gate-mini"></div>
       </div>
 
+      <!-- Hot files (usage-learning) -->
+      <div class="card tools-card has-tooltip" data-tooltip="Files Synthra has learned you work in most, weighted by recent use — it ranks these higher in retrieval. Scoped to the active project; decays over ~7 days, so the list reflects what's hot now.">
+        <div class="card-head">
+          <div class="card-eyebrow">Hot <em>files</em></div>
+          <div class="card-meta" id="hot-files-project">active project</div>
+        </div>
+        <div class="moat-value"><span id="hot-files-total">0</span> <em>tracked</em></div>
+        <div class="cost-sub" id="hot-files-list"></div>
+      </div>
+
     </aside>
   </main>
 
@@ -569,6 +579,40 @@
       el.appendChild(frag);
     }
 
+    function shortenPath(p) {
+      const parts = String(p).split('/');
+      return parts.length <= 2 ? p : '…/' + parts.slice(-2).join('/');
+    }
+
+    function renderHotFiles(active) {
+      const stats = (active && active.stats) || {};
+      const files = stats.hot_files || [];
+      $('#hot-files-total').innerHTML = fmt(stats.hot_files_total || 0);
+      const proj = $('#hot-files-project');
+      if (proj) proj.textContent = (active && active.project_name) || 'active project';
+      const el = $('#hot-files-list');
+      el.innerHTML = '';
+      if (!files.length) {
+        el.innerHTML = '<div class="empty">No usage learned yet — Synthra learns as you read/edit files.</div>';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const f of files) {
+        const row = document.createElement('div');
+        row.className = 'cs-row';
+        row.title = f.path;
+        const k = document.createElement('span');
+        k.className = 'cs-k path';
+        k.textContent = shortenPath(f.path);
+        const v = document.createElement('span');
+        v.className = 'cs-v';
+        v.textContent = String(f.score);
+        row.append(k, v);
+        frag.appendChild(row);
+      }
+      el.appendChild(frag);
+    }
+
     function renderTurns(turns) {
       const tbody = $('#turns-body');
       const empty = $('#turns-empty');
@@ -835,6 +879,7 @@
       renderCostHero(data.global);
       renderMoat(data.global);
       renderToolUsage(data.global);
+      renderHotFiles(data.active);
       renderTurns(turns);
       renderGateMini(gates);
 
