@@ -7,6 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.3.1] — 2026-06-09
+
+### Changed
+
+- **Dashboard layout.** The Total-spend (cost) hero now sits beside the Savings
+  card in a responsive two-column row at the top of the center column (collapsing
+  to one column on narrow viewports), and the new "Hot files" list is height-capped
+  with its own scrollbar so a long list never crowds the Moat card beneath it.
+
+---
+
 ## [0.3.0] — 2026-06-09
 
 ### Added
