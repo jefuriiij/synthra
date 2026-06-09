@@ -404,6 +404,21 @@ a {
   min-height: 0;
 }
 
+/* Savings + Cost share one row at the top of the center column */
+.hero-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.hero-row > .card { flex-shrink: 1; }
+
+@media (max-width: 1100px) {
+  .hero-row { grid-template-columns: 1fr; }
+}
+
 /* ============================================================
    Panels / cards — darker
    ============================================================ */
@@ -1063,6 +1078,12 @@ button.check {
   gap: 8px;
 }
 
+/* Hot-files list: cap height + scroll so a long list never squeezes the Moat */
+#hot-files-list {
+  max-height: 190px;
+  overflow-y: auto;
+}
+
 .moat-value {
   font-family: var(--font-sans);
   font-weight: 500;
@@ -1228,20 +1249,23 @@ button.check {
 /* Scrollbar styling */
 .turns-scroll::-webkit-scrollbar,
 .proj-chart::-webkit-scrollbar,
-.gate-mini::-webkit-scrollbar {
+.gate-mini::-webkit-scrollbar,
+#hot-files-list::-webkit-scrollbar {
   width: 6px;
 }
 
 .turns-scroll::-webkit-scrollbar-thumb,
 .proj-chart::-webkit-scrollbar-thumb,
-.gate-mini::-webkit-scrollbar-thumb {
+.gate-mini::-webkit-scrollbar-thumb,
+#hot-files-list::-webkit-scrollbar-thumb {
   background: var(--rule);
   border-radius: 999px;
 }
 
 .turns-scroll::-webkit-scrollbar-track,
 .proj-chart::-webkit-scrollbar-track,
-.gate-mini::-webkit-scrollbar-track {
+.gate-mini::-webkit-scrollbar-track,
+#hot-files-list::-webkit-scrollbar-track {
   background: transparent;
 }
 

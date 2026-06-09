@@ -99,6 +99,9 @@
         </div>
       </div>
 
+      <!-- Savings + Cost, side by side -->
+      <div class="hero-row">
+
       <!-- Savings hero -->
       <div class="card savings has-tooltip" data-tooltip="What Synthra has saved you, as a deliberately conservative floor estimate. Each time the gate blocks an exploratory Grep/Glob, we credit 500 tokens × $3 per million-token input rate. Real savings are usually higher because the formula ignores cache thrash and follow-up Reads that the block also prevents. The audit line below shows the exact math live.">
         <div class="card-head">
@@ -125,6 +128,26 @@
           </span>
         </div>
       </div>
+
+      <!-- Cost hero (moved beside Savings) -->
+      <div class="card cost-hero has-tooltip" data-tooltip="Your all-time Claude spend across every project Synthra has tracked on this machine. Token counts come from Claude's transcript JSONL files; dollar amounts are computed by multiplying those counts by Anthropic's published per-model rates. See the FAQ for full rate tables.">
+        <div class="card-head">
+          <div class="card-eyebrow">Total spend · <em>all time</em></div>
+        </div>
+        <div class="big-money" id="big-cost">$0.<em>00</em></div>
+        <div class="cost-sub">
+          <div class="cs-row">
+            <span class="cs-k">Tokens (in+out)</span>
+            <span class="cs-v" id="cs-tokens">0</span>
+          </div>
+          <div class="cs-row">
+            <span class="cs-k">Avg / turn</span>
+            <span class="cs-v" id="cs-avg">$0.00</span>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /hero-row -->
 
       <!-- Recent turns -->
       <div class="card turns-card has-tooltip" data-tooltip="Every conversational turn Synthra has observed across all your projects, newest first. Each row shows when, which project, which model, and how the cost broke down between fresh input, generated output, and cache.">
@@ -160,24 +183,6 @@
 
     <!-- ===== Right ===== -->
     <aside class="col-right">
-
-      <!-- Cost hero -->
-      <div class="card cost-hero has-tooltip" data-tooltip="Your all-time Claude spend across every project Synthra has tracked on this machine. Token counts come from Claude's transcript JSONL files; dollar amounts are computed by multiplying those counts by Anthropic's published per-model rates. See the FAQ for full rate tables.">
-        <div class="card-head">
-          <div class="card-eyebrow">Total spend · <em>all time</em></div>
-        </div>
-        <div class="big-money" id="big-cost">$0.<em>00</em></div>
-        <div class="cost-sub">
-          <div class="cs-row">
-            <span class="cs-k">Tokens (in+out)</span>
-            <span class="cs-v" id="cs-tokens">0</span>
-          </div>
-          <div class="cs-row">
-            <span class="cs-k">Avg / turn</span>
-            <span class="cs-v" id="cs-avg">$0.00</span>
-          </div>
-        </div>
-      </div>
 
       <!-- Graph tool usage -->
       <div class="card tools-card has-tooltip" data-tooltip="How often Claude actually used Synthra's graph tools (graph_continue / graph_read / …) across all projects. A positive usage signal — unlike the Moat's block count, it captures every time Claude reached for the graph instead of running a Grep.">
