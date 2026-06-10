@@ -7,6 +7,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.4.0] — 2026-06-10
+
+### Changed
+
+- **The Moat's block messages now deliver the answer, not just directions.**
+  When the gate blocks a Grep/Glob, the deny reason used to name the relevant
+  file paths — and agents responded by Reading those files whole, erasing the
+  savings the block was meant to create. The block message now carries
+  copy-pasteable `mcp__synthra__graph_read("file::symbol")` targets with
+  one-line signatures for the query's best-matching symbols (~300 tokens,
+  signatures only), plus a `graph_continue` pointer for the full pack. The
+  cheap path is now the path of least resistance. Budget tunable via
+  `SYN_GATE_HINT_CHARS` (default 1200 chars). Gate decisions are unchanged —
+  only the message got smarter.
+- **Policy v7 — full namespaced tool names.** Agents wasted tool-discovery
+  round-trips searching for short names like `graph_continue` that don't
+  resolve. The CLAUDE.md policy block now states the `mcp__synthra__` namespace
+  requirement up front, provides a ready ToolSearch `select:` line for the
+  graph tools, and uses the full form in every invocation example. Existing
+  policy blocks upgrade automatically on the next `syn .`.
+
+---
+
 ## [0.3.1] — 2026-06-09
 
 ### Changed
