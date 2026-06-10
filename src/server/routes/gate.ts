@@ -4,16 +4,19 @@
 //   - If recent human activity touches a file matching the query → ALLOW
 //     even at high confidence (the user's head is in that file; static
 //     context may be stale).
-//   - If confidence === "high" and no recent overlap → BLOCK with a reason
-//     pointing at graph_continue / graph_read.
+//   - If confidence === "high" and no recent overlap → BLOCK. The deny reason
+//     carries the answer: exact file::symbol graph_read targets + one-line
+//     signatures, so the agent never needs the whole-file Read fallback.
 //   - Otherwise → ALLOW.
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { retrieve } from "../../graph/retrieve.js";
+import type { RetrievalResult } from "../../graph/retrieve.js";
 import { tokenizeQuery } from "../../graph/rank.js";
-import type { GraphSchema } from "../../graph/types.js";
+import type { GraphSchema, SymbolNode } from "../../graph/types.js";
+import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
 
 export interface GateRequest {
@@ -104,12 +107,18 @@ function recentlyTouchedMatchesQuery(
   return matches;
 }
 
+// Block hints can run to ~1200 chars; the log (and the dashboard /data payload
+// built from it) only needs enough to identify the decision, so the stored
+// reason is truncated and the full hint size is kept as a separate count.
+const LOG_REASON_MAX_CHARS = 240;
+
 async function logDecision(
   ctx: ServerContext,
   toolName: string,
   query: string | null,
   decision: "allow" | "block",
   reason: string | undefined,
+  hintChars?: number,
 ): Promise<void> {
   try {
     await mkdir(dirname(ctx.paths.gateLog), { recursive: true });
@@ -118,12 +127,105 @@ async function logDecision(
       tool: toolName,
       decision,
       query,
-      reason,
+      reason:
+        reason && reason.length > LOG_REASON_MAX_CHARS
+          ? `${reason.slice(0, LOG_REASON_MAX_CHARS)}…`
+          : reason,
+      ...(hintChars === undefined ? {} : { hint_chars: hintChars }),
     };
     await appendFile(ctx.paths.gateLog, JSON.stringify(entry) + "\n", "utf8");
   } catch {
     // Durability is best-effort; an unwritable disk shouldn't fail the gate.
   }
+}
+
+const SIG_LINE_MAX_CHARS = 140;
+
+// How relevant is a symbol name to the query? Mirrors the packer's inline
+// scoring: exact token match dominates, substring containment is a weak hit.
+function scoreSymbolName(name: string, qTokens: string[]): number {
+  const lower = name.toLowerCase();
+  let score = 0;
+  for (const t of qTokens) {
+    if (t === lower) score += 3;
+    else if (t.length >= 3 && lower.includes(t)) score += 1;
+  }
+  return score;
+}
+
+/**
+ * Render the deny reason for a block. Instead of bare file paths (which sent
+ * agents into whole-file Read fallbacks — see the dogfood log), the hint
+ * delivers copy-pasteable namespaced graph_read targets plus one-line
+ * signatures for the query's best symbols. Signatures only, no bodies: the
+ * hint lands in the transcript on every block, so its own size is a cost.
+ */
+export function buildBlockHint(
+  query: string,
+  retrieval: RetrievalResult,
+  graph: GraphSchema,
+  toolName: string,
+  maxChars = loadConfig().gateHintMaxChars,
+): string {
+  const topFiles = retrieval.files.slice(0, 3);
+  const topPaths = new Set(topFiles.map((f) => f.path));
+
+  const symsByFile = new Map<string, SymbolNode[]>();
+  for (const n of graph.nodes) {
+    if (n.kind !== "symbol" || !topPaths.has(n.file)) continue;
+    const list = symsByFile.get(n.file);
+    if (list) list.push(n);
+    else symsByFile.set(n.file, [n]);
+  }
+
+  const qTokens = tokenizeQuery(query);
+  const entries: string[] = [];
+  for (const f of topFiles) {
+    const syms = (symsByFile.get(f.path) ?? []).slice().sort((a, b) => a.start_line - b.start_line);
+    if (syms.length === 0) {
+      // Content-indexed only (no symbols) — still point at the slice tool.
+      entries.push(`• mcp__synthra__graph_read("${f.path}")`);
+      continue;
+    }
+    const scored = syms
+      .map((s) => ({ s, score: scoreSymbolName(s.name, qTokens) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    // Best 1–2 query-relevant symbols; when nothing scores, the file's first
+    // symbol still gives the agent a foothold into the file.
+    const picks = scored.length > 0 ? scored.slice(0, 2).map((x) => x.s) : syms.slice(0, 1);
+    for (const s of picks) {
+      const sig = `L${s.start_line}: ${s.signature.trim()}`;
+      const sigLine =
+        sig.length > SIG_LINE_MAX_CHARS ? `${sig.slice(0, SIG_LINE_MAX_CHARS - 1)}…` : sig;
+      entries.push(`• mcp__synthra__graph_read("${f.path}::${s.name}")\n  ${sigLine}`);
+    }
+  }
+
+  const header =
+    `Synthra blocked this ${toolName} — ${retrieval.confidence}-confidence context for "${query}" already exists.\n` +
+    `Read symbols directly (~50 tokens each) instead of whole files:\n`;
+  const footer = `\nFull pack: mcp__synthra__graph_continue("${query}")`;
+
+  const parts: string[] = [];
+  let used = header.length + footer.length + 1;
+  for (const e of entries) {
+    if (used + e.length + 1 > maxChars) break; // drop whole entries, never mid-entry
+    parts.push(e);
+    used += e.length + 1;
+  }
+
+  if (parts.length === 0) {
+    // Degenerate budget — fall back to the legacy path list, namespaced.
+    const top = topFiles.map((f) => f.path).join(", ");
+    return (
+      `Synthra has ${retrieval.confidence}-confidence context for "${query}" (top files: ${top}). ` +
+      `Use mcp__synthra__graph_continue("${query}") instead of ${toolName}, ` +
+      `or read a specific file/symbol with mcp__synthra__graph_read.`
+    );
+  }
+
+  return `${header}\n${parts.join("\n")}\n${footer}`;
 }
 
 export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<GateResponse> {
@@ -203,17 +305,8 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
-  const top = retrieval.files
-    .slice(0, 3)
-    .map((f) => f.path)
-    .join(", ");
-  const res: GateResponse = {
-    decision: "block",
-    reason:
-      `Synthra has ${retrieval.confidence}-confidence context for "${query}" (top files: ${top}). ` +
-      `Use the \`graph_continue\` MCP tool with this query instead of ${req.tool_name}, ` +
-      `or read a specific file/symbol with \`graph_read\`.`,
-  };
-  await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+  const hint = buildBlockHint(query, retrieval, ctx.graph, req.tool_name);
+  const res: GateResponse = { decision: "block", reason: hint };
+  await logDecision(ctx, req.tool_name, query, res.decision, hint, hint.length);
   return res;
 }

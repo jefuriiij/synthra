@@ -6,7 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 6;
+export const POLICY_VERSION = 7;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -32,9 +32,12 @@ export function policyBlock(): string {
     "",
     "> **Tool namespace.** Synthra's MCP tools are exposed as",
     "> `mcp__synthra__graph_continue`, `mcp__synthra__graph_read`, and",
-    "> `mcp__synthra__graph_register_edit`. Below they are referred to by",
-    "> their short names (`graph_continue` etc.) for readability — use the",
-    "> full namespaced form when actually invoking them.",
+    "> `mcp__synthra__graph_register_edit`. **Short names will NOT resolve**",
+    "> in ToolSearch or invocation — always use the full namespaced form.",
+    "> If the tools are deferred, load their schemas with ToolSearch:",
+    "> `select:mcp__synthra__graph_continue,mcp__synthra__graph_read,mcp__synthra__graph_register_edit`.",
+    "> Below, short names (`graph_continue` etc.) appear in prose for",
+    "> readability only.",
     "",
     "### Tools",
     "",
@@ -63,8 +66,8 @@ export function policyBlock(): string {
     "  test, docs, cleanup, commit)",
     "- The task is pure text (commit message, explanation, summary)",
     "",
-    'If skipping, go directly to `graph_read("file.ts::symbol")` on what',
-    "you already know.",
+    "If skipping, go directly to",
+    '`mcp__synthra__graph_read("file.ts::symbol")` on what you already know.',
     "",
     "### Confidence caps",
     "",
@@ -73,8 +76,8 @@ export function policyBlock(): string {
     "- **`Confidence: high`** → Stop. Do NOT Grep, Glob, or further explore",
     "  for this query. The graph already has it.",
     "- **`Confidence: medium`** → Read the listed `Files` directly via",
-    '  `graph_read("file::symbol")` *before* trying Grep. The graph has',
-    "  narrowed the search space — use it, don't bypass it.",
+    '  `mcp__synthra__graph_read("file::symbol")` *before* trying Grep. The',
+    "  graph has narrowed the search space — use it, don't bypass it.",
     "- **`Confidence: low`** → You may use Grep / Glob, but the PreToolUse",
     "  hook may still block redundant calls.",
     "",
@@ -85,8 +88,9 @@ export function policyBlock(): string {
     "- If `graph_continue`'s `Files` list contains a `::` entry, pass it",
     "  verbatim to `graph_read`.",
     "- **Large file?** Don't read it in successive line-range chunks — call",
-    '  `graph_continue` or `graph_read("file::symbol")` to pull the one symbol',
-    "  you need. Chunked whole-file Reads are exactly the cost `graph_read`",
+    "  `mcp__synthra__graph_continue` or",
+    '  `mcp__synthra__graph_read("file::symbol")` to pull the one symbol you',
+    "  need. Chunked whole-file Reads are exactly the cost `graph_read`",
     "  exists to avoid.",
     "",
     "### Editing a file",
@@ -114,9 +118,10 @@ export function policyBlock(): string {
     "decisions carried over from the previous session. **Trust it.** It is the",
     "cheapest possible orientation: do NOT re-run `graph_continue` or Grep just",
     'to rediscover "what were we doing / what changed" — that work is already',
-    'done. For the concrete next steps, `context_recall({kind:"next"})` returns',
-    "them verbatim. Only reach for fresh retrieval when the task moves beyond",
-    "what the digest covers.",
+    "done. For the concrete next steps,",
+    '`mcp__synthra__context_recall({kind:"next"})` returns them verbatim. Only',
+    "reach for fresh retrieval when the task moves beyond what the digest",
+    "covers.",
     "",
     "### Session-end resume note",
     "",

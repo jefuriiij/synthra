@@ -10,7 +10,8 @@ import { describe, it, expect } from "vitest";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handleGate } from "../src/server/routes/gate.js";
+import { buildBlockHint, handleGate } from "../src/server/routes/gate.js";
+import type { RetrievalResult } from "../src/graph/retrieve.js";
 import type { ServerContext } from "../src/server/context.js";
 import type {
   FileNode,
@@ -185,6 +186,118 @@ describe("gate — existing behavior preserved", () => {
   it("allows that same symbol query when the human just touched a matching file", async () => {
     // recent-activity overlap relaxes even a real symbol block (path match).
     expect(await grep("login", ["src/lib/login.ts"])).toBe("allow");
+  });
+});
+
+describe("gate — block reason carries the payload (v0.4.0)", () => {
+  async function blockReason(pattern: string): Promise<string> {
+    const res = await handleGate({ tool_name: "Grep", tool_input: { pattern } }, ctx());
+    expect(res.decision).toBe("block");
+    return res.reason ?? "";
+  }
+
+  it("includes a copy-pasteable namespaced graph_read target with file::symbol", async () => {
+    const reason = await blockReason("login");
+    expect(reason).toContain('mcp__synthra__graph_read("src/lib/login.ts::login")');
+  });
+
+  it("includes the symbol's signature line with its line number", async () => {
+    const reason = await blockReason("login");
+    expect(reason).toMatch(/L1: login\(\)/);
+  });
+
+  it("offers the full pack via namespaced graph_continue", async () => {
+    const reason = await blockReason("login");
+    expect(reason).toContain('mcp__synthra__graph_continue("login")');
+  });
+
+  it("never mentions a bare short tool name the agent could mis-ToolSearch", async () => {
+    const reason = await blockReason("login");
+    // every tool mention must be namespaced — `graph_read` only as mcp__synthra__graph_read
+    expect(reason).not.toMatch(/(?<!mcp__synthra__)graph_(read|continue)/);
+  });
+
+  it("stays within the default hint budget", async () => {
+    const reason = await blockReason("fetchWith429Retry|isRateLimit|retry5xx|Retry-After");
+    expect(reason.length).toBeLessThanOrEqual(1200);
+  });
+});
+
+describe("buildBlockHint (unit)", () => {
+  function retrievalOf(
+    graph: GraphSchema,
+    paths: string[],
+    confidence: RetrievalResult["confidence"] = "high",
+  ): RetrievalResult {
+    const byPath = new Map(
+      graph.nodes.filter((n): n is FileNode => n.kind === "file").map((n) => [n.path, n]),
+    );
+    return {
+      files: paths.map((p) => byPath.get(p) as FileNode),
+      confidence,
+      reason: "test",
+      symbolMatched: true,
+    };
+  }
+
+  it("picks the query-relevant symbol over an irrelevant one in the same file", () => {
+    const hint = buildBlockHint("verifyPin", retrievalOf(GRAPH, ["src/lib/pin.ts"]), GRAPH, "Grep");
+    expect(hint).toContain('graph_read("src/lib/pin.ts::verifyPin")');
+    // verifyOrSetPin scores 0 for this query — not listed.
+    expect(hint).not.toContain("verifyOrSetPin");
+  });
+
+  it("falls back to the file's first symbol when nothing scores", () => {
+    const hint = buildBlockHint(
+      "completely unrelated words",
+      retrievalOf(GRAPH, ["src/lib/socket.ts"]),
+      GRAPH,
+      "Grep",
+    );
+    expect(hint).toContain('graph_read("src/lib/socket.ts::SOCKET_AUTH_SECRET")');
+  });
+
+  it("emits a path-only target for a file with no indexed symbols", () => {
+    const g = buildGraph([
+      { path: "docs/readme.md", keywords: ["readme"] },
+      { path: "src/lib/login.ts", keywords: ["login"], symbols: ["login"] },
+    ]);
+    const hint = buildBlockHint(
+      "login",
+      retrievalOf(g, ["docs/readme.md", "src/lib/login.ts"]),
+      g,
+      "Grep",
+    );
+    expect(hint).toContain('mcp__synthra__graph_read("docs/readme.md")');
+    expect(hint).toContain('mcp__synthra__graph_read("src/lib/login.ts::login")');
+  });
+
+  it("drops whole entries (never truncates mid-entry) when over budget", () => {
+    const retrieval = retrievalOf(GRAPH, [
+      "src/lib/login.ts",
+      "src/lib/session.ts",
+      "src/lib/pin.ts",
+    ]);
+    const full = buildBlockHint("login", retrieval, GRAPH, "Grep", 10_000);
+    const firstEntryEnd = full.indexOf("\n•", full.indexOf("•") + 1);
+    // budget that fits the header/footer + first entry but not the second
+    const tight = buildBlockHint("login", retrieval, GRAPH, "Grep", firstEntryEnd + 80);
+    const bullets = tight.match(/•/g) ?? [];
+    expect(bullets.length).toBeGreaterThanOrEqual(1);
+    expect(bullets.length).toBeLessThan((full.match(/•/g) ?? []).length);
+    expect(tight).toContain('mcp__synthra__graph_continue("login")'); // footer intact
+  });
+
+  it("degenerate budget falls back to a namespaced path list", () => {
+    const hint = buildBlockHint(
+      "login",
+      retrievalOf(GRAPH, ["src/lib/login.ts"]),
+      GRAPH,
+      "Grep",
+      10,
+    );
+    expect(hint).toContain("top files: src/lib/login.ts");
+    expect(hint).toContain("mcp__synthra__graph_continue");
   });
 });
 

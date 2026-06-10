@@ -32,7 +32,10 @@ export interface GateLogEntry {
   tool: string;
   decision: "allow" | "block";
   query: string | null;
+  /** Truncated to ~240 chars in the log; the full block hint lives only in the deny response. */
   reason?: string;
+  /** Full length of the block hint delivered to the agent (v0.4.0+). */
+  hint_chars?: number;
 }
 
 export interface ToolLogEntry {

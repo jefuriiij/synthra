@@ -20,10 +20,10 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(content).toContain("# my-proj");
     expect(content).toContain("## Build & test");
     expect(content).toContain("## Key decisions");
-    expect(content).toContain("synthra-policy v6 BEGIN");
+    expect(content).toContain("synthra-policy v7 BEGIN");
     // Skeleton must come BEFORE the policy block.
     expect(content.indexOf("## Build & test")).toBeLessThan(
-      content.indexOf("synthra-policy v6 BEGIN"),
+      content.indexOf("synthra-policy v7 BEGIN"),
     );
   });
 
@@ -37,7 +37,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
     const content = await readFile(path, "utf8");
     expect(content).toContain("# Existing user doc");
     expect(content).not.toContain("## Build & test"); // no skeleton injected
-    expect(content).toContain("synthra-policy v6 BEGIN"); // policy still appended
+    expect(content).toContain("synthra-policy v7 BEGIN"); // policy still appended
   });
 
   it("preserves the user's filled-in onboarding content across re-runs", async () => {
@@ -59,12 +59,12 @@ describe("patchClaudeMd onboarding skeleton", () => {
   });
 });
 
-describe("patchClaudeMd policy v6 (resume digest)", () => {
-  it("strips a prior v5 block and installs v6 with resume guidance", async () => {
+describe("patchClaudeMd policy v7 (namespaced tool invocations)", () => {
+  it("strips a prior v6 block and installs v7 with full tool names + loader line", async () => {
     const path = await tmpClaudeMd();
     await writeFile(
       path,
-      "# Doc\n\n<!-- synthra-policy v5 BEGIN -->\nold policy\n<!-- synthra-policy v5 END -->\n",
+      "# Doc\n\n<!-- synthra-policy v6 BEGIN -->\nold policy\n<!-- synthra-policy v6 END -->\n",
       "utf8",
     );
 
@@ -72,10 +72,17 @@ describe("patchClaudeMd policy v6 (resume digest)", () => {
     expect(res.updated).toBe(true);
 
     const content = await readFile(path, "utf8");
-    expect(content).toContain("synthra-policy v6 BEGIN");
-    expect(content).not.toContain("synthra-policy v5 BEGIN");
+    expect(content).toContain("synthra-policy v7 BEGIN");
+    expect(content).not.toContain("synthra-policy v6 BEGIN");
     expect(content).toContain("### Resuming a session");
     expect(content).toContain("Since you were last here");
+    // v7: the ToolSearch loader line + full-form invocation examples — the
+    // dogfood failure was Claude ToolSearching short names and finding nothing.
+    expect(content).toContain(
+      "select:mcp__synthra__graph_continue,mcp__synthra__graph_read,mcp__synthra__graph_register_edit",
+    );
+    expect(content).toContain('mcp__synthra__graph_read("file.ts::symbol")');
+    expect(content).toContain('mcp__synthra__context_recall({kind:"next"})');
     // The user's prose is preserved; exactly one managed block remains.
     expect(content).toContain("# Doc");
     expect((content.match(/synthra-policy v\d+ BEGIN/g) ?? []).length).toBe(1);
