@@ -7,6 +7,21 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.4.1] — 2026-06-10
+
+### Added
+
+- **Claude Fable model family.** Fable turns (`claude-fable-5`, including the
+  `[1m]` long-context variant) were bucketed as "Other" in the model donut and
+  billed at the Sonnet fallback rates. The dashboard now prices Fable at its
+  published rates ($10/M input, $50/M output, $1/M cache read, $12.50/M cache
+  write) and gives it its own donut segment, legend entry, turn pill, color,
+  and FAQ rate-table column. Historical Fable turns reprice correctly on the
+  next dashboard load — cost is computed at read time from the raw model IDs
+  in the token log.
+
+---
+
 ## [0.4.0] — 2026-06-10
 
 ### Changed
