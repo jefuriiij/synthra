@@ -37,6 +37,7 @@
   --signal-violet: oklch(72% 0.14 285);
 
   /* Model family colors */
+  --c-fable: #2EE08F;
   --c-opus: #FF6338;
   --c-sonnet: #FFB938;
   --c-haiku: #7438FF;
@@ -569,6 +570,10 @@ button.check {
   flex-shrink: 0;
 }
 
+.dot-sq.fable {
+  background: var(--c-fable);
+}
+
 .dot-sq.opus {
   background: var(--c-opus);
 }
@@ -953,6 +958,16 @@ button.check {
   height: 6px;
   border-radius: 2px;
   background: var(--text-mute);
+}
+
+.model-pill.fable {
+  color: #6BEFB4;
+  border-color: rgba(46, 224, 143, .32);
+  background: rgba(46, 224, 143, .07);
+}
+
+.model-pill.fable .sq {
+  background: var(--c-fable);
 }
 
 .model-pill.opus {

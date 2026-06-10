@@ -45,7 +45,7 @@
 
     <!-- ===== Left ===== -->
     <aside class="col-left">
-      <div class="card donut-card has-tooltip" data-tooltip="Which Claude models you've been calling, weighted by turn count. Opus = slow and expensive; Sonnet = workhorse; Haiku = cheap and fast. Helps you see where your budget is actually going.">
+      <div class="card donut-card has-tooltip" data-tooltip="Which Claude models you've been calling, weighted by turn count. Fable = frontier reasoning, premium output rate; Opus = slow and expensive; Sonnet = workhorse; Haiku = cheap and fast. Helps you see where your budget is actually going.">
         <div class="card-head">
           <div class="card-eyebrow">Model usage</div>
           <div class="card-meta">by turns</div>
@@ -308,11 +308,11 @@
           <div class="faq-body">
             <p>Each token type has a different per-million-token rate. Synthra uses these rates (defined in <code>src/shared/pricing.ts</code>):</p>
             <table>
-              <thead><tr><td><strong>Token type</strong></td><td><strong>Haiku 4.5</strong></td><td><strong>Sonnet 4.x</strong></td><td><strong>Opus 4.x</strong></td></tr></thead>
-              <tr><td>Raw Input</td><td>$1.00/M</td><td>$3.00/M</td><td>$15.00/M</td></tr>
-              <tr><td>Cache Write</td><td>$1.25/M</td><td>$3.75/M</td><td>$18.75/M</td></tr>
-              <tr><td>Cache Read</td><td>$0.10/M</td><td>$0.30/M</td><td>$1.50/M</td></tr>
-              <tr><td>Output</td><td>$5.00/M</td><td>$15.00/M</td><td>$75.00/M</td></tr>
+              <thead><tr><td><strong>Token type</strong></td><td><strong>Haiku 4.5</strong></td><td><strong>Sonnet 4.x</strong></td><td><strong>Fable 5</strong></td><td><strong>Opus 4.x</strong></td></tr></thead>
+              <tr><td>Raw Input</td><td>$1.00/M</td><td>$3.00/M</td><td>$10.00/M</td><td>$15.00/M</td></tr>
+              <tr><td>Cache Write</td><td>$1.25/M</td><td>$3.75/M</td><td>$12.50/M</td><td>$18.75/M</td></tr>
+              <tr><td>Cache Read</td><td>$0.10/M</td><td>$0.30/M</td><td>$1.00/M</td><td>$1.50/M</td></tr>
+              <tr><td>Output</td><td>$5.00/M</td><td>$15.00/M</td><td>$50.00/M</td><td>$75.00/M</td></tr>
             </table>
             <p><strong>Cost</strong> = (Input × input rate) + (Output × output rate) + (Cache Read × read rate) + (Cache Write × write rate)</p>
             <p>Cache reads are <strong>10× cheaper</strong> than raw input. Cache writes are <strong>25% more expensive</strong> than raw input. So Claude Code's caching strategy pays for itself quickly across a session.</p>
@@ -453,6 +453,7 @@
       if (!model) return 'unknown';
       const m = model.toLowerCase();
       if (m === '<synthetic>') return 'unknown';
+      if (m.includes('fable'))  return 'fable';
       if (m.includes('opus'))   return 'opus';
       if (m.includes('sonnet')) return 'sonnet';
       if (m.includes('haiku'))  return 'haiku';
@@ -812,11 +813,12 @@
     // Takes a { model-string -> count } map summed across ALL projects, so it
     // reflects true all-time usage — independent of the recent-turns cap.
     function renderDonut(modelCounts) {
-      const counts = { opus: 0, sonnet: 0, haiku: 0, unknown: 0 };
+      const counts = { fable: 0, opus: 0, sonnet: 0, haiku: 0, unknown: 0 };
       for (const [model, n] of Object.entries(modelCounts || {})) counts[modelFamily(model)] += n;
-      const total = counts.opus + counts.sonnet + counts.haiku + counts.unknown;
+      const total = counts.fable + counts.opus + counts.sonnet + counts.haiku + counts.unknown;
 
       const segs = [
+        { fam: 'fable',   label: 'Fable',   n: counts.fable,   color: 'var(--c-fable)' },
         { fam: 'opus',    label: 'Opus',    n: counts.opus,    color: 'var(--c-opus)' },
         { fam: 'sonnet',  label: 'Sonnet',  n: counts.sonnet,  color: 'var(--c-sonnet)' },
         { fam: 'haiku',   label: 'Haiku',   n: counts.haiku,   color: 'var(--c-haiku)' },
@@ -857,6 +859,7 @@
       legend.innerHTML = '';
       const lf = document.createDocumentFragment();
       const display = segs.length ? segs : [
+        { fam: 'fable', label: 'Fable', n: 0, color: 'var(--c-fable)' },
         { fam: 'opus', label: 'Opus', n: 0, color: 'var(--c-opus)' },
         { fam: 'sonnet', label: 'Sonnet', n: 0, color: 'var(--c-sonnet)' },
         { fam: 'haiku', label: 'Haiku', n: 0, color: 'var(--c-haiku)' },

@@ -15,6 +15,9 @@ export interface ModelPricing {
 }
 
 const PRICING: Record<string, ModelPricing> = {
+  // Fable-class — frontier tier (same 0.1× cache-read / 1.25× cache-write
+  // multipliers as the rest of the lineup, on a $10 input base)
+  "claude-fable-5": { input: 10, output: 50, cacheRead: 1, cacheCreate: 12.5 },
   // Opus-class models — premium tier
   "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 },
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5, cacheCreate: 18.75 },
@@ -32,7 +35,9 @@ export function pricingFor(model: string | undefined | null): ModelPricing {
   if (!model) return FALLBACK;
   const direct = PRICING[model];
   if (direct) return direct;
-  // Loose prefix match: "claude-opus-…" / "claude-sonnet-…" / "claude-haiku-…"
+  // Loose prefix match: "claude-fable-…" (incl. the "[1m]" long-context
+  // variant) / "claude-opus-…" / "claude-sonnet-…" / "claude-haiku-…"
+  if (model.includes("fable")) return PRICING["claude-fable-5"] ?? FALLBACK;
   if (model.includes("opus")) return PRICING["claude-opus-4-7"] ?? FALLBACK;
   if (model.includes("sonnet")) return PRICING["claude-sonnet-4-6"] ?? FALLBACK;
   if (model.includes("haiku")) return PRICING["claude-haiku-4-5"] ?? FALLBACK;
