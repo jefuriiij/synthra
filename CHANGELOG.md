@@ -7,6 +7,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.5.0] — 2026-06-13
+
+### Added
+
+- **`graph_read` hands you the cheap edit recipe.** Reading a symbol slice now
+  ends with the exact targeted `Read(path, offset, limit)` (covering the symbol
+  plus a little headroom) that satisfies Claude Code's Edit read-gate, plus a
+  "do not re-read the whole file" nudge. A `graph_read` slice doesn't satisfy
+  the gate on its own, so editing a symbol used to force a whole-file Read —
+  and the same large file would get re-read many times across a session.
+  Delivering the recipe at the point of use (not just once in the session
+  primer) keeps edits cheap.
+
+### Changed
+
+- **The Moat stops wasting blocks on styling searches.** Grep/Glob patterns for
+  CSS custom properties (`var(--brand)`, `--sidebar`), hex color literals
+  (`#fff`), and all-kebab class names (`cw-code-chip`) now pass through instead
+  of being blocked and redirected to a graph the symbol index can't answer.
+  Mixed queries that also name a real symbol still block.
+
+---
+
 ## [0.4.1] — 2026-06-10
 
 ### Added
