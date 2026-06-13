@@ -185,3 +185,60 @@ describe("blast_radius — calls projected to file level", () => {
     expect(text).not.toContain("via calls");
   });
 });
+
+describe("graph_read — edit footer (v0.5.0)", () => {
+  function graphWithSymbol(): GraphSchema {
+    const f: FileNode = {
+      id: "file:src/a.ts",
+      kind: "file",
+      path: "src/a.ts",
+      ext: ".ts",
+      size: 1,
+      keywords: [],
+      content: "line1\nfunction foo() {\n  return 1;\n}\nline5\nline6\n",
+      summary: "",
+      file_hash: "x",
+    };
+    const s = symNode("src/a.ts", "foo", 2, 4);
+    return {
+      root: ".",
+      node_count: 2,
+      edge_count: 0,
+      file_count: 1,
+      symbol_count: 1,
+      nodes: [f, s],
+      edges: [],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+
+  async function readText(graph: GraphSchema, target: string): Promise<string> {
+    const ctx = await ctxWith(graph);
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "graph_read", arguments: { target } },
+      },
+      ctx,
+    );
+    const result = res.result as { content: Array<{ text: string }> } | undefined;
+    return result?.content?.[0]?.text ?? "";
+  }
+
+  it("appends a targeted-Read edit recipe for a symbol read", async () => {
+    const text = await readText(graphWithSymbol(), "src/a.ts::foo");
+    // offset = max(1, start-2) = max(1,0) = 1 ; limit = (4-2+1)+4 = 7
+    expect(text).toContain('Read("src/a.ts", offset=1, limit=7)');
+    expect(text).toContain("then Edit");
+    expect(text).toContain("do NOT re-read the whole file");
+  });
+
+  it("does not append the edit footer for a bare-file read", async () => {
+    const text = await readText(graphWithSymbol(), "src/a.ts");
+    expect(text).not.toContain("To edit this symbol");
+    expect(text).toContain("line1"); // whole-file content still returned
+  });
+});

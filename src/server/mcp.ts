@@ -454,8 +454,20 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
 
   const lines = fileNode.content.split(/\r?\n/);
   const body = lines.slice(symbol.start_line - 1, symbol.end_line).join("\n");
+
+  // Point-of-use edit recipe. Claude Code's Edit tool only accepts a file
+  // opened with its own Read tool — this slice doesn't satisfy that gate — so
+  // without this nudge agents re-Read the whole file before editing (the
+  // dogfood log's biggest token leak: the same large file Read 15-19× a
+  // session). Hand them the exact targeted Read that satisfies the gate cheaply,
+  // with 2 lines of headroom each side for off-by-one safety + unique Edit context.
+  const offset = Math.max(1, symbol.start_line - 2);
+  const limit = symbol.end_line - symbol.start_line + 1 + 4;
+  const editHint =
+    `\n\n---\n✎ To edit this symbol: Read("${fileNode.path}", offset=${offset}, limit=${limit}) ` +
+    `then Edit — that satisfies Claude Code's read-gate at ~${limit} lines; do NOT re-read the whole file.`;
   return textContent(
-    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}`,
+    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${editHint}`,
   );
 }
 

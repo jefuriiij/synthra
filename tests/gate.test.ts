@@ -313,3 +313,25 @@ describe("gate — #3 content-keyword recency relaxation", () => {
     expect(await grep("login", ["src/lib/socket.ts"])).toBe("block");
   });
 });
+
+describe("gate — guard lets styling/markup searches through (v0.5.0)", () => {
+  it.each([
+    ["var(--sidebar)|var(--surface)", "CSS custom properties"],
+    ["generate|var(--ok)|#fff", "CSS var + hex color"],
+    ["#0a0a0a", "hex color literal"],
+    ["cw-feedback-context-label|cw-code-chip", "all-kebab class names"],
+  ])("allows %s (%s)", async (pattern) => {
+    expect(await grep(pattern)).toBe("allow");
+  });
+
+  it("still blocks a real symbol query that contains a hyphenated header alongside it", async () => {
+    // "Retry-After" is kebab, but the query also names real symbols — not every
+    // branch is kebab, so it must still block (regression guard for the over-allow).
+    expect(await grep("fetchWith429Retry|isRateLimit|retry5xx|Retry-After")).toBe("block");
+  });
+
+  it("still blocks a real symbol query that merely contains a regex char-class range", async () => {
+    // "[A-Z]" must be stripped before the kebab check, else "A-Z" reads as kebab.
+    expect(await grep("fetchWith429Retry|[A-Z]x")).toBe("block");
+  });
+});
