@@ -16,6 +16,7 @@ import pkgJson from "../../package.json" with { type: "json" };
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
+import { computeArsenal } from "./arsenal.js";
 import { computeDashboardData } from "./delta.js";
 
 import indexHtml from "./public/index.html";
@@ -62,6 +63,10 @@ export async function startDashboard(
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  // Installed skills / agents / MCP servers (project · personal · plugin).
+  // Fetched lazily when the Arsenal drawer opens — not on the /data poll.
+  app.get("/arsenal", async (c) => c.json(await computeArsenal(paths.projectRoot)));
 
   app.get("/data", async (c) => {
     const data = await computeDashboardData(paths, RECENT_N);

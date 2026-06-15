@@ -14,6 +14,7 @@
 
   <!-- ============ Top nav ============ -->
   <header class="topnav">
+    <button class="arsenal-toggle has-tooltip" id="arsenal-toggle" data-tooltip="Your arsenal — every skill, agent, and MCP server installed for this project, personally, or via plugins, with descriptions. So you never have to drop to the CLI to remember what's available." aria-label="Toggle arsenal">⚔ <span>Arsenal</span></button>
     <div class="brand">
       <div class="brand-mark"></div>
       <div class="brand-name">Synth<em>ra</em></div>
@@ -39,6 +40,26 @@
       <button class="faq-btn has-tooltip" id="faq-btn" data-tooltip="Open the FAQ — explains where every number on this dashboard comes from, how cost is calculated, and what the savings floor actually measures." aria-label="Open FAQ">?</button>
     </div>
   </header>
+
+  <!-- ============ Arsenal drawer ============ -->
+  <div class="arsenal-scrim" id="arsenal-scrim"></div>
+  <aside class="arsenal-drawer" id="arsenal-drawer" aria-hidden="true">
+    <div class="arsenal-head">
+      <div class="arsenal-title">⚔ Arsenal</div>
+      <button class="arsenal-icon" id="arsenal-refresh" title="Rescan" aria-label="Rescan">↻</button>
+      <button class="arsenal-icon" id="arsenal-close" title="Close" aria-label="Close">✕</button>
+    </div>
+    <div class="arsenal-tabs">
+      <button class="arsenal-tab active" data-tab="skills">Skills <span class="at-count" id="at-skills">0</span></button>
+      <button class="arsenal-tab" data-tab="agents">Agents <span class="at-count" id="at-agents">0</span></button>
+      <button class="arsenal-tab" data-tab="mcp">MCP <span class="at-count" id="at-mcp">0</span></button>
+    </div>
+    <input class="arsenal-filter" id="arsenal-filter" type="text" placeholder="Filter by name or description…" autocomplete="off" />
+    <div class="arsenal-list" id="arsenal-list">
+      <div class="empty">Open to load your arsenal…</div>
+    </div>
+    <div class="arsenal-foot" id="arsenal-foot"></div>
+  </aside>
 
   <!-- ============ Main 3-column grid ============ -->
   <main class="grid-main">
@@ -967,6 +988,115 @@
     });
     document.addEventListener('scroll', hideTooltip, true);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTooltip(); });
+
+    // ----- Arsenal drawer -----
+    let arsenalData = null;     // cached payload after first load
+    let arsenalTab = 'skills';
+    let arsenalLoading = false;
+
+    function scopeBadge(item) {
+      const s = item.scope;
+      const label = s === 'plugin' ? (item.source || 'plugin') : s;
+      const dis = (s === 'plugin' && item.enabled === false) ? ' off' : '';
+      return '<span class="scope-badge ' + s + dis + '">' + escapeHtml(label) + (dis ? ' · off' : '') + '</span>';
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+      ));
+    }
+
+    function renderArsenal() {
+      const listEl = $('#arsenal-list');
+      const footEl = $('#arsenal-foot');
+      if (arsenalLoading) { listEl.innerHTML = '<div class="empty">Scanning…</div>'; return; }
+      if (!arsenalData) { listEl.innerHTML = '<div class="empty">Open to load your arsenal…</div>'; return; }
+
+      $('#at-skills').textContent = arsenalData.counts.skills;
+      $('#at-agents').textContent = arsenalData.counts.agents;
+      $('#at-mcp').textContent = arsenalData.counts.mcp;
+      footEl.textContent = arsenalData.counts.plugins + ' plugins · scanned ' +
+        new Date(arsenalData.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const q = ($('#arsenal-filter').value || '').toLowerCase().trim();
+      let items = arsenalData[arsenalTab] || [];
+      if (q) items = items.filter((it) =>
+        it.name.toLowerCase().includes(q) ||
+        (it.description || '').toLowerCase().includes(q) ||
+        (it.source || '').toLowerCase().includes(q));
+
+      listEl.innerHTML = '';
+      if (!items.length) {
+        listEl.innerHTML = '<div class="empty">' + (q ? 'No matches.' : 'Nothing installed in this category.') + '</div>';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'arsenal-item';
+        const meta = it.meta || {};
+        const metaBits = [];
+        if (meta.model) metaBits.push('model: ' + meta.model);
+        if (meta.type) metaBits.push(meta.type);
+        if (meta.url) metaBits.push(meta.url);
+        if (meta.argument_hint) metaBits.push('args: ' + meta.argument_hint);
+        if (meta.tools) metaBits.push('tools: ' + meta.tools);
+        row.innerHTML =
+          '<div class="ai-head">' +
+            '<span class="ai-name">' + escapeHtml(it.name) + '</span>' +
+            scopeBadge(it) +
+          '</div>' +
+          (it.description ? '<div class="ai-desc">' + escapeHtml(it.description) + '</div>' : '') +
+          (metaBits.length ? '<div class="ai-meta">' + escapeHtml(metaBits.join('  ·  ')) + '</div>' : '');
+        row.addEventListener('click', () => row.classList.toggle('open'));
+        frag.appendChild(row);
+      }
+      listEl.appendChild(frag);
+    }
+
+    async function loadArsenal(force) {
+      if (arsenalData && !force) { renderArsenal(); return; }
+      arsenalLoading = true; renderArsenal();
+      try {
+        const res = await fetch('/arsenal');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        arsenalData = await res.json();
+      } catch (e) {
+        arsenalData = null;
+        $('#arsenal-list').innerHTML = '<div class="empty">Failed to load arsenal.</div>';
+      } finally {
+        arsenalLoading = false;
+        renderArsenal();
+      }
+    }
+
+    function openArsenal() {
+      $('#arsenal-drawer').classList.add('open');
+      $('#arsenal-drawer').setAttribute('aria-hidden', 'false');
+      $('#arsenal-scrim').classList.add('on');
+      loadArsenal(false);
+    }
+    function closeArsenal() {
+      $('#arsenal-drawer').classList.remove('open');
+      $('#arsenal-drawer').setAttribute('aria-hidden', 'true');
+      $('#arsenal-scrim').classList.remove('on');
+    }
+
+    $('#arsenal-toggle').addEventListener('click', () =>
+      $('#arsenal-drawer').classList.contains('open') ? closeArsenal() : openArsenal());
+    $('#arsenal-close').addEventListener('click', closeArsenal);
+    $('#arsenal-scrim').addEventListener('click', closeArsenal);
+    $('#arsenal-refresh').addEventListener('click', () => loadArsenal(true));
+    $('#arsenal-filter').addEventListener('input', renderArsenal);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeArsenal(); });
+    for (const tab of document.querySelectorAll('.arsenal-tab')) {
+      tab.addEventListener('click', () => {
+        arsenalTab = tab.getAttribute('data-tab');
+        for (const t of document.querySelectorAll('.arsenal-tab')) t.classList.toggle('active', t === tab);
+        renderArsenal();
+      });
+    }
 
     setHeroDate();
     tick();
