@@ -7,6 +7,20 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.6.0] — 2026-06-13
+
+### Added
+
+- **`graph_read` now delivers a symbol's dependency surface.** Reading a symbol
+  appends a footer built from the call graph: **Depends on** — the symbols it
+  calls, each with its full one-line signature and a `graph_read` target, so you
+  can edit against real signatures instead of guessing parameter shapes or
+  re-reading the callee files; and **Used by** — the names of the symbols that
+  call it, so a change's blast radius is visible at a glance. Budgeted via
+  `SYN_READ_DEPS_CHARS` (default 900); leaf symbols with no calls add nothing.
+
+---
+
 ## [0.5.0] — 2026-06-13
 
 ### Added
