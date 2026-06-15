@@ -7,6 +7,19 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.8.1] — 2026-06-16
+
+### Changed
+
+- **Dashboard polish.** The Overview is now a tidy bento — equal-height cards,
+  with the Savings and Total-spend cards sized to their content and a tall Moat
+  spanning the right that scrolls internally. The Arsenal view groups skills,
+  agents, and MCP servers into labeled sections by source ("In this project",
+  "Personal · this machine", and one per plugin) so a big toolkit is easy to
+  scan. Base text bumped to 14px for readability. UI-only; data unchanged.
+
+---
+
 ## [0.8.0] — 2026-06-15
 
 ### Changed
