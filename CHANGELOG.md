@@ -7,6 +7,21 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.8.0] — 2026-06-15
+
+### Changed
+
+- **The dashboard is rebuilt on Svelte + shadcn-svelte with a real sidebar.** A
+  persistent, collapsible left sidebar (Overview · Arsenal · FAQ) replaces the
+  old top-nav + cramped drawer; the **Arsenal is now a roomy first-class view**
+  (tabs, filter, expandable cards) instead of a 340px slide-out. Same data, same
+  endpoints, same numbers — only the UI changed. The Svelte/Tailwind/Vite
+  toolchain is build-time only: it compiles to a single inlined HTML the server
+  serves exactly as before, so the installed runtime and zero-config setup are
+  unchanged (no new runtime dependencies).
+
+---
+
 ## [0.7.0] — 2026-06-15
 
 ### Added
