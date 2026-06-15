@@ -18,6 +18,7 @@ import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
+import { loadConfig } from "../shared/config.js";
 import type { ServerContext } from "./context.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
@@ -82,7 +83,7 @@ const TOOLS = [
   {
     name: "graph_read",
     description:
-      "Return the source code for a specific file or symbol. Target is either a project-relative file path (e.g. 'src/auth.ts') or 'file::symbol' (e.g. 'src/auth.ts::AuthService').",
+      "Return the source code for a specific file or symbol. Target is either a project-relative file path (e.g. 'src/auth.ts') or 'file::symbol' (e.g. 'src/auth.ts::AuthService'). A symbol read also returns its dependency surface — the signatures of the symbols it calls (edit against these instead of guessing or re-reading their files) and the names of the symbols that call it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -416,6 +417,94 @@ export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTar
   return { none: true };
 }
 
+const DEPS_SIG_MAX = 140;
+const DEPS_MAX_CALLEES = 10;
+const DEPS_MAX_CALLERS = 12;
+
+/**
+ * Dependency surface for a symbol, rendered as a point-of-use footer for
+ * graph_read: the symbols it CALLS (with full signatures + graph_read targets —
+ * so the agent edits against real signatures instead of guessing or re-reading
+ * the callee files) and the symbols that CALL it (names only — cheap "a change
+ * here affects these" awareness). Built from the v0.3.0 symbol→symbol `calls`
+ * edges. Returns "" when the symbol has no call edges (leaf — keep reads lean).
+ */
+export function buildDepsFooter(
+  symbol: SymbolNode,
+  graph: GraphSchema,
+  maxChars = loadConfig().readDepsMaxChars,
+): string {
+  const symById = new Map<string, SymbolNode>();
+  for (const n of graph.nodes) if (n.kind === "symbol") symById.set(n.id, n);
+
+  const calleeIds: string[] = [];
+  const callerIds: string[] = [];
+  const seenCallee = new Set<string>();
+  const seenCaller = new Set<string>();
+  for (const e of graph.edges) {
+    if (e.kind !== "calls") continue;
+    if (e.from === symbol.id && e.to !== symbol.id && !seenCallee.has(e.to)) {
+      seenCallee.add(e.to);
+      calleeIds.push(e.to);
+    } else if (e.to === symbol.id && e.from !== symbol.id && !seenCaller.has(e.from)) {
+      seenCaller.add(e.from);
+      callerIds.push(e.from);
+    }
+  }
+
+  const resolve = (ids: string[]): SymbolNode[] =>
+    ids.map((id) => symById.get(id)).filter((n): n is SymbolNode => !!n);
+  const callees = resolve(calleeIds).sort((a, b) =>
+    a.file === b.file ? a.start_line - b.start_line : a.file < b.file ? -1 : 1,
+  );
+  const callers = resolve(callerIds);
+
+  if (callees.length === 0 && callers.length === 0) return "";
+
+  const lines: string[] = [];
+  let used = 0;
+
+  if (callees.length > 0) {
+    const head = "Depends on (signatures — don't guess these):";
+    lines.push(head);
+    used += head.length + 1;
+    let shown = 0;
+    for (const c of callees.slice(0, DEPS_MAX_CALLEES)) {
+      const sig = c.signature.trim().slice(0, DEPS_SIG_MAX);
+      const entry = `• ${sig}   → mcp__synthra__graph_read("${c.file}::${c.name}")`;
+      if (used + entry.length + 1 > maxChars) break;
+      lines.push(entry);
+      used += entry.length + 1;
+      shown += 1;
+    }
+    const omitted = callees.length - shown;
+    if (omitted > 0) lines.push(`…+${omitted} more`);
+  }
+
+  if (callers.length > 0) {
+    const sep = lines.length > 0 ? 1 : 0;
+    const head = `Used by (${callers.length}): `;
+    const shown: string[] = [];
+    let cUsed = used + sep + head.length;
+    for (const c of callers.slice(0, DEPS_MAX_CALLERS)) {
+      const part = `${c.name} → ${c.file}`;
+      const join = shown.length > 0 ? 3 : 0; // " · "
+      if (cUsed + join + part.length > maxChars) break;
+      shown.push(part);
+      cUsed += join + part.length;
+    }
+    if (lines.length > 0) lines.push("");
+    if (shown.length > 0) {
+      const omitted = callers.length - shown.length;
+      lines.push(head + shown.join(" · ") + (omitted > 0 ? ` …+${omitted} more` : ""));
+    } else {
+      lines.push(`Used by (${callers.length} callers)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const target = typeof args?.target === "string" ? args.target : "";
   if (!target) return errorContent("graph_read: 'target' (string) is required");
@@ -466,8 +555,12 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const editHint =
     `\n\n---\n✎ To edit this symbol: Read("${fileNode.path}", offset=${offset}, limit=${limit}) ` +
     `then Edit — that satisfies Claude Code's read-gate at ~${limit} lines; do NOT re-read the whole file.`;
+
+  const deps = buildDepsFooter(symbol, ctx.graph);
+  const depsBlock = deps ? `\n\n---\n${deps}` : "";
+
   return textContent(
-    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${editHint}`,
+    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${editHint}`,
   );
 }
 

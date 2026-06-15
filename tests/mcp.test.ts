@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { ActivityStore } from "../src/activity/activity-log.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../src/graph/types.js";
 import type { ServerContext } from "../src/server/context.js";
-import { handleMcpRequest, resolveFileTarget } from "../src/server/mcp.js";
+import { buildDepsFooter, handleMcpRequest, resolveFileTarget } from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
 function fileNode(path: string): FileNode {
@@ -240,5 +240,116 @@ describe("graph_read — edit footer (v0.5.0)", () => {
     const text = await readText(graphWithSymbol(), "src/a.ts");
     expect(text).not.toContain("To edit this symbol");
     expect(text).toContain("line1"); // whole-file content still returned
+  });
+});
+
+describe("buildDepsFooter — dependency surface (v0.6.0)", () => {
+  const login = symNode("src/auth.ts", "login", 3, 6);
+  const findUser = {
+    ...symNode("src/users.ts", "findUser", 1, 4),
+    signature: "findUser(email: string): Promise<User|null>",
+  };
+  const createSession = {
+    ...symNode("src/session.ts", "createSession", 1, 5),
+    signature: "createSession(user: User): Session",
+  };
+  const handleLogin = symNode("src/routes/auth.ts", "handleLogin", 10, 20);
+
+  function depsGraph(edges: Array<{ from: string; to: string }>): GraphSchema {
+    const nodes: SymbolNode[] = [login, findUser, createSession, handleLogin];
+    return {
+      root: ".",
+      node_count: nodes.length,
+      edge_count: edges.length,
+      file_count: 4,
+      symbol_count: nodes.length,
+      nodes,
+      edges: edges.map((e) => ({ ...e, kind: "calls" as const })),
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+
+  it("lists callees with full signatures + namespaced graph_read targets", () => {
+    const footer = buildDepsFooter(
+      login,
+      depsGraph([
+        { from: login.id, to: findUser.id },
+        { from: login.id, to: createSession.id },
+      ]),
+    );
+    expect(footer).toContain("Depends on");
+    expect(footer).toContain("findUser(email: string): Promise<User|null>");
+    expect(footer).toContain('mcp__synthra__graph_read("src/users.ts::findUser")');
+    expect(footer).toContain('mcp__synthra__graph_read("src/session.ts::createSession")');
+  });
+
+  it("lists callers by name + file only (no caller signature)", () => {
+    const footer = buildDepsFooter(login, depsGraph([{ from: handleLogin.id, to: login.id }]));
+    expect(footer).toContain("Used by (1):");
+    expect(footer).toContain("handleLogin → src/routes/auth.ts");
+    expect(footer).not.toContain("handleLogin("); // names only, no signature
+  });
+
+  it("returns '' for a leaf symbol with no call edges", () => {
+    expect(buildDepsFooter(login, depsGraph([]))).toBe("");
+  });
+
+  it("skips recursion self-edges", () => {
+    expect(buildDepsFooter(login, depsGraph([{ from: login.id, to: login.id }]))).toBe("");
+  });
+
+  it("drops whole callee entries under a tight budget (never splits an entry)", () => {
+    const footer = buildDepsFooter(
+      login,
+      depsGraph([
+        { from: login.id, to: findUser.id },
+        { from: login.id, to: createSession.id },
+      ]),
+      120,
+    );
+    expect(footer).toContain("…+");
+    const calleeLines = footer.split("\n").filter((l) => l.startsWith("•"));
+    expect(calleeLines.length).toBeLessThan(2);
+  });
+
+  it("graph_read places the deps footer before the edit recipe (integration)", async () => {
+    const authFile: FileNode = {
+      id: "file:src/auth.ts",
+      kind: "file",
+      path: "src/auth.ts",
+      ext: ".ts",
+      size: 1,
+      keywords: [],
+      content: "l1\nl2\nfunction login() {\n  return findUser();\n}\nl6\n",
+      summary: "",
+      file_hash: "x",
+    };
+    const g: GraphSchema = {
+      root: ".",
+      node_count: 3,
+      edge_count: 1,
+      file_count: 2,
+      symbol_count: 2,
+      nodes: [authFile, login, findUser],
+      edges: [{ from: login.id, to: findUser.id, kind: "calls" }],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+    const ctx = await ctxWith(g);
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "graph_read", arguments: { target: "src/auth.ts::login" } },
+      },
+      ctx,
+    );
+    const text = (res.result as { content: Array<{ text: string }> }).content[0].text;
+    expect(text).toContain("Depends on");
+    expect(text).toContain('mcp__synthra__graph_read("src/users.ts::findUser")');
+    // the edit recipe stays last
+    expect(text.indexOf("Depends on")).toBeLessThan(text.indexOf("✎ To edit this symbol"));
   });
 });
