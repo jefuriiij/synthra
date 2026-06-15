@@ -39,3 +39,6 @@ Thumbs.db
 .synthra-graph/
 # Claude Code per-project agent memory / local settings — dev-only, never shipped
 .claude/
+
+# Dashboard UI build (vite → inlined by tsup)
+src/dashboard/built/

@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!dist", "!**/*.wasm", "!src/dashboard/public"]
+    "includes": [
+      "**",
+      "!dist",
+      "!**/*.wasm",
+      "!src/dashboard/public",
+      "!src/dashboard/ui",
+      "!src/dashboard/built"
+    ]
   },
   "formatter": {
     "enabled": true,

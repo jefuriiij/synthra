@@ -19,8 +19,10 @@ import { findFreePort } from "../server/port.js";
 import { computeArsenal } from "./arsenal.js";
 import { computeDashboardData } from "./delta.js";
 
-import indexHtml from "./public/index.html";
-import styleCss from "./public/style.css";
+// The dashboard UI is built by Vite (svelte + tailwind) into a single
+// self-contained HTML (JS+CSS inlined) at ./built/index.html; tsup text-inlines
+// it here. See vite.config.dashboard.ts. CSS is inside the HTML — no /style.css.
+import indexHtml from "./built/index.html";
 import faviconSvg from "./public/favicon.svg";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
@@ -49,12 +51,6 @@ export async function startDashboard(
   const app = new Hono();
 
   app.get("/", (c) => c.html(indexHtml.replaceAll("__SYN_VERSION__", VERSION)));
-
-  app.get("/style.css", (c) => {
-    c.header("Content-Type", "text/css; charset=utf-8");
-    c.header("Cache-Control", "no-cache");
-    return c.body(styleCss);
-  });
 
   app.get("/favicon.svg", (c) => {
     c.header("Content-Type", "image/svg+xml; charset=utf-8");

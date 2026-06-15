@@ -1,0 +1,134 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Synthra-blue-tinted shadcn dark theme. Dark-only dashboard, so
+   the dark values live on :root (html is always .dark). Shadcn
+   semantic tokens map to Tailwind utilities via @theme inline below;
+   the --c-* model-family colors are used directly by the donut + pills.
+   ============================================================ */
+:root {
+  --radius: 0.75rem;
+
+  --background: #04081a;
+  --foreground: #ecf2fb;
+
+  --card: #0a1733;
+  --card-foreground: #ecf2fb;
+  --popover: #0a1733;
+  --popover-foreground: #ecf2fb;
+
+  --primary: #2c5db8;
+  --primary-foreground: #f4f7fc;
+  --secondary: #122549;
+  --secondary-foreground: #d7e6f7;
+  --muted: #102146;
+  --muted-foreground: #8ba0c2;
+  --accent: #1b3a78;
+  --accent-foreground: #ecf2fb;
+  --destructive: #ff5d5d;
+  --destructive-foreground: #fff5f5;
+
+  --border: rgba(155, 194, 239, 0.14);
+  --input: rgba(155, 194, 239, 0.18);
+  --ring: #5c8fe6;
+
+  --sidebar: #081226;
+  --sidebar-foreground: #d7e6f7;
+  --sidebar-primary: #2c5db8;
+  --sidebar-primary-foreground: #f4f7fc;
+  --sidebar-accent: #122549;
+  --sidebar-accent-foreground: #ecf2fb;
+  --sidebar-border: rgba(155, 194, 239, 0.12);
+  --sidebar-ring: #5c8fe6;
+
+  /* model-family + money (used directly, not via shadcn tokens) */
+  --c-fable: #2ee08f;
+  --c-opus: #ff6338;
+  --c-sonnet: #ffb938;
+  --c-haiku: #7438ff;
+  --c-unknown: #12cbf5;
+  --money: #4ade9b;
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Instrument Serif", "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-fable: var(--c-fable);
+  --color-opus: var(--c-opus);
+  --color-sonnet: var(--c-sonnet);
+  --color-haiku: var(--c-haiku);
+  --color-unknown: var(--c-unknown);
+  --color-money: var(--money);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    background:
+      radial-gradient(1200px 800px at 14% 16%, rgba(44, 93, 184, 0.12), transparent 60%),
+      var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* thin marine scrollbars everywhere */
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

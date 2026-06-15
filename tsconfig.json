@@ -17,5 +17,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests/fixtures"]
+  "exclude": ["node_modules", "dist", "tests/fixtures", "src/dashboard/ui", "src/dashboard/built"]
 }
