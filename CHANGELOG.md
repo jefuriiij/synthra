@@ -7,6 +7,20 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.7.0] — 2026-06-15
+
+### Added
+
+- **Dashboard "Arsenal" drawer.** A collapsible panel (toggle in the nav) lists
+  everything Claude Code has available to you — **skills, subagents, and MCP
+  servers** — scoped project / personal / plugin, each expandable to its
+  description (agents also show tools + model). It scans your project `.claude/`,
+  your personal `~/.claude/`, and every installed plugin, so you never have to
+  drop to the CLI to remember what's in your toolkit. MCP entries are shown as
+  name / type / url only — auth headers and tokens are never read into the view.
+
+---
+
 ## [0.6.0] — 2026-06-13
 
 ### Added
