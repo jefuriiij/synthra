@@ -16,12 +16,12 @@
   <div class="font-mono text-2xl text-foreground">{fmt(total)} <span class="text-sm text-muted-foreground">calls</span></div>
   <div class="flex flex-col gap-1.5">
     {#each rows as [name, n] (name)}
-      <div class="flex items-baseline justify-between font-mono text-[11px]">
+      <div class="flex items-baseline justify-between font-mono text-sm">
         <span class="text-muted-foreground">{name}</span>
         <span class="tabular-nums text-foreground">{n}</span>
       </div>
     {:else}
-      <div class="text-[11px] text-muted-foreground">No graph-tool calls yet.</div>
+      <div class="text-sm text-muted-foreground">No graph-tool calls yet.</div>
     {/each}
   </div>
 </Card>

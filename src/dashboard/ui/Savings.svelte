@@ -26,17 +26,17 @@
   <div class="flex flex-col gap-3">
     <div>
       <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(s.money)}</div>
-      <div class="font-mono text-[11px] text-muted-foreground">{fmt(s.tokens)} tokens avoided</div>
+      <div class="font-mono text-sm text-muted-foreground">{fmt(s.tokens)} tokens avoided</div>
     </div>
     <div class="flex h-2 overflow-hidden rounded-full bg-border">
       <div class="h-full bg-muted-foreground/40" style={`width:${s.paidWidth}%`}></div>
       <div class="h-full bg-[var(--money)]" style={`width:${100 - s.paidWidth}%`}></div>
     </div>
-    <div class="flex justify-between font-mono text-[10px] text-muted-foreground">
+    <div class="flex justify-between font-mono text-xs text-muted-foreground">
       <span>you paid <b class="text-foreground">{fmtCost(s.paid)}</b></span>
       <span>baseline <b class="text-foreground">{fmtCost(s.baseline)}</b></span>
     </div>
-    <div class="rounded-md border border-dashed border-border px-3 py-2 text-center font-mono text-[10px] text-muted-foreground">
+    <div class="rounded-md border border-dashed border-border px-3 py-2 text-center font-mono text-xs text-muted-foreground">
       <b class="text-foreground">{s.blocks}</b> blocks × <b class="text-foreground">500</b> tokens × <b class="text-foreground">$3</b>/M = <b class="text-[var(--money)]">{fmtCost(s.money)}</b>
     </div>
   </div>

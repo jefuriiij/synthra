@@ -45,20 +45,20 @@
       <div class="absolute inset-0 grid place-items-center">
         <div class="text-center">
           <div class="font-mono text-2xl text-foreground">{view.total}</div>
-          <div class="font-mono text-[9px] uppercase text-muted-foreground">turns</div>
+          <div class="font-mono text-[10px] uppercase text-muted-foreground">turns</div>
         </div>
       </div>
     </div>
     <div class="flex min-w-0 flex-1 flex-col gap-1.5">
       {#each view.arcs as s (s.fam)}
-        <div class="flex items-center gap-2 font-mono text-[11px]">
+        <div class="flex items-center gap-2 font-mono text-sm">
           <span class="size-2 rounded-sm" style={`background:${s.color}`}></span>
           <span class="flex-1 text-muted-foreground">{s.label}</span>
           <span class="tabular-nums text-foreground">{s.n}</span>
           <span class="w-9 text-right tabular-nums text-muted-foreground">{s.pct}%</span>
         </div>
       {:else}
-        <div class="text-[11px] text-muted-foreground">No turns yet.</div>
+        <div class="text-sm text-muted-foreground">No turns yet.</div>
       {/each}
     </div>
   </div>

@@ -18,9 +18,9 @@
 
 <Card title="Recent turns" meta={`showing ${from}–${to} of ${turns.length}`}>
   <div class="min-h-0 flex-1 overflow-x-auto">
-    <table class="w-full border-collapse font-mono text-[11px]">
+    <table class="w-full border-collapse font-mono text-sm">
       <thead>
-        <tr class="text-left text-[9px] uppercase tracking-[0.1em] text-muted-foreground">
+        <tr class="text-left text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
           <th class="py-1.5 pr-2 font-medium">Time</th>
           <th class="py-1.5 pr-2 font-medium">Project</th>
           <th class="py-1.5 pr-2 font-medium">Model</th>
@@ -53,7 +53,7 @@
     </table>
   </div>
   {#if pages > 1}
-    <div class="flex items-center justify-end gap-3 pt-1 font-mono text-[11px] text-muted-foreground">
+    <div class="flex items-center justify-end gap-3 pt-1 font-mono text-sm text-muted-foreground">
       <button onclick={() => (page = Math.max(1, page - 1))} disabled={page <= 1} class="rounded border px-2 py-1 disabled:opacity-40 enabled:hover:text-foreground">‹ Prev</button>
       <span>page {page} of {pages}</span>
       <button onclick={() => (page = Math.min(pages, page + 1))} disabled={page >= pages} class="rounded border px-2 py-1 disabled:opacity-40 enabled:hover:text-foreground">Next ›</button>

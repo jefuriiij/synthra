@@ -27,7 +27,7 @@
     {#if !collapsed}
       <div class="min-w-0">
         <div class="font-serif text-lg leading-none text-foreground">Synth<em>ra</em></div>
-        <div class="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Dashboard</div>
+        <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Dashboard</div>
       </div>
     {/if}
   </div>
@@ -40,7 +40,7 @@
       class:animate-pulse={store.status === "live"}
     ></span>
     {#if !collapsed}
-      <span class="font-mono text-[11px] text-muted-foreground">
+      <span class="font-mono text-sm text-muted-foreground">
         {store.status === "live" ? `live · ${store.clock}` : store.status}
       </span>
     {/if}
@@ -80,11 +80,11 @@
   <!-- Footer: active project · port · version -->
   {#if !collapsed}
     <div class="flex flex-col gap-1 rounded-lg bg-sidebar-accent/40 p-2.5">
-      <div class="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Active</div>
-      <div class="truncate font-mono text-[11px] text-sidebar-foreground" title={store.data?.active?.project_root ?? "—"}>
+      <div class="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Active</div>
+      <div class="truncate font-mono text-sm text-sidebar-foreground" title={store.data?.active?.project_root ?? "—"}>
         {store.data?.active?.project_name ?? "—"}
       </div>
-      <div class="mt-1 flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+      <div class="mt-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
         <span>port {port}</span>
         <span>v__SYN_VERSION__</span>
       </div>

@@ -34,7 +34,7 @@
   <div class="flex max-h-[260px] flex-col gap-2 overflow-y-auto pr-1">
     {#each projects as p (p.path)}
       <button onclick={() => { sel = p; open = true; }} class="flex flex-col gap-1 text-left">
-        <div class="flex items-center gap-2 font-mono text-[11px]">
+        <div class="flex items-center gap-2 font-mono text-sm">
           <span class="size-2 shrink-0 rounded-sm" style={`background:${projColor(p.name)}`}></span>
           <span class="flex-1 truncate text-foreground">{p.name}</span>
           <span class="tabular-nums text-muted-foreground">{fmt(p.total_turns)}</span>
@@ -44,7 +44,7 @@
         </div>
       </button>
     {:else}
-      <div class="text-[11px] text-muted-foreground">No projects tracked yet — run <code class="text-foreground">syn .</code></div>
+      <div class="text-sm text-muted-foreground">No projects tracked yet — run <code class="text-foreground">syn .</code></div>
     {/each}
   </div>
 </Card>
@@ -57,11 +57,11 @@
     >
       {#if sel}
         <Dialog.Title class="font-serif text-xl" style={`color:${projColor(sel.name)}`}>{sel.name}</Dialog.Title>
-        <Dialog.Description class="truncate font-mono text-[10px] text-muted-foreground">{sel.path}</Dialog.Description>
+        <Dialog.Description class="truncate font-mono text-xs text-muted-foreground">{sel.path}</Dialog.Description>
         <div class="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border">
           {#each cells(sel) as [k, v] (k)}
             <div class="flex flex-col gap-0.5 bg-card p-3">
-              <span class="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{k}</span>
+              <span class="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">{k}</span>
               <span class="font-mono text-sm text-foreground">{v}</span>
             </div>
           {/each}

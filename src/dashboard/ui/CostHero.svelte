@@ -17,7 +17,7 @@
 
 <Card title="Total spend" meta="all time">
   <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(c.cost)}</div>
-  <div class="mt-1 flex flex-col gap-1 font-mono text-[11px] text-muted-foreground">
+  <div class="mt-1 flex flex-col gap-1 font-mono text-sm text-muted-foreground">
     <div class="flex justify-between"><span>Tokens (in+out)</span><span class="text-foreground">{fmt(c.tokens)}</span></div>
     <div class="flex justify-between"><span>Avg / turn</span><span class="text-foreground">{fmtCost(c.avg)}</span></div>
   </div>
