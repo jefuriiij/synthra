@@ -9,7 +9,7 @@ import { walk, type WalkedFile } from "../scanner/walker.js";
 import { writeGraph, writeSymbolIndex } from "../graph/store.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
-import { bootstrap } from "./bootstrap.js";
+import { type BootstrapResult, bootstrap } from "./bootstrap.js";
 
 const PARSABLE_EXTS = new Set([
   ".ts",
@@ -56,6 +56,13 @@ export interface ScanOptions {
   silent?: boolean;
   /** Ignore the parse cache and re-parse every file from scratch. */
   full?: boolean;
+  /**
+   * Skip the bootstrap step (directories, .gitignore, CLAUDE.md policy patch).
+   * Used by in-session reindexes: the project is already bootstrapped, and
+   * rewriting watched root files (CLAUDE.md/.gitignore) from a file-change
+   * handler would feed the watcher its own edits — an endless rescan loop.
+   */
+  skipBootstrap?: boolean;
 }
 
 /**
@@ -74,8 +81,8 @@ export async function scanProject(
 
   if (verbose) log.info(`scanning ${projectRoot}`);
 
-  const boot = await bootstrap(paths);
-  if (verbose) {
+  const boot: BootstrapResult | null = opts.skipBootstrap ? null : await bootstrap(paths);
+  if (verbose && boot) {
     if (boot.graphCreated) log.info("  created .synthra-graph/");
     if (boot.contextCreated) log.info("  created .synthra/");
     if (boot.gitignoreUpdated) log.info("  updated .gitignore");

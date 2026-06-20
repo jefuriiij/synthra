@@ -8,6 +8,8 @@ export interface SynthraConfig {
   turnReadBudgetChars: number;
   fallbackMaxCallsPerTurn: number;
   retrieveCacheTtlSec: number;
+  reindexDebounceMs: number;
+  autoReindex: boolean;
   mcpPort: number | null;
   dashboardPort: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -33,6 +35,11 @@ export function loadConfig(): SynthraConfig {
     turnReadBudgetChars: num("SYN_TURN_READ_BUDGET_CHARS", 18000),
     fallbackMaxCallsPerTurn: num("SYN_FALLBACK_MAX_CALLS_PER_TURN", 1),
     retrieveCacheTtlSec: num("SYN_RETRIEVE_CACHE_TTL_SEC", 900),
+    // Auto-reindex: re-run the incremental scan + swap the in-memory graph this
+    // many ms after the last source-file change, so graph reads never go stale
+    // mid-session. Set SYN_NO_AUTOREINDEX to disable entirely.
+    reindexDebounceMs: num("SYN_REINDEX_DEBOUNCE_MS", 1000),
+    autoReindex: !process.env.SYN_NO_AUTOREINDEX,
     mcpPort: process.env.SYN_MCP_PORT ? num("SYN_MCP_PORT", 0) : null,
     dashboardPort: num("SYN_DASHBOARD_PORT", 8901),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),

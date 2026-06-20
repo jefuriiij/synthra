@@ -13,11 +13,13 @@ import { scanProject } from "../cli/scan-command.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import { LearnRuntime } from "../learn/runtime.js";
+import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
 import { handleMcpRequest } from "./mcp.js";
 import { findFreePort } from "./port.js";
+import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
@@ -135,28 +137,28 @@ export async function startServer(
 
   await writeFile(paths.mcpPort, String(port), "utf8");
 
+  // Auto-reindex: a source edit re-runs the incremental scan + swaps the
+  // in-memory graph so reads never go stale mid-session (debounced; opt out with
+  // SYN_NO_AUTOREINDEX). The watcher already ignores .synthra-graph/, so a scan's
+  // own writes can't loop back.
+  const cfg = loadConfig();
+  const reindexer: Reindexer | null = cfg.autoReindex
+    ? createReindexer(ctx, paths, { debounceMs: cfg.reindexDebounceMs })
+    : null;
+
   // Spin up the human-activity watchers. Both are best-effort — if chokidar
   // can't watch (e.g. unsupported FS) or .git is missing, they no-op silently.
-  const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) => ctx.activity.add(e));
+  const fileWatcher: FileWatcher = createFileWatcher(paths.projectRoot, (e) => {
+    void ctx.activity.add(e);
+    reindexer?.schedule();
+  });
   const gitWatcher: GitWatcher = createGitWatcher(paths.projectRoot, async (e) => {
     await ctx.activity.add(e);
     // Per-branch graph: rebuild on branch switch so the in-memory graph
     // matches whichever branch is currently checked out.
     if (e.kind === "branch-switch") {
-      try {
-        const to = (e.details as { to?: string } | undefined)?.to ?? "unknown";
-        log.info(`branch switched to '${to}' — rebuilding graph…`);
-        await scanProject(paths.projectRoot, { silent: true });
-        const [g, idx] = await Promise.all([
-          readGraph(paths.infoGraph),
-          readSymbolIndex(paths.symbolIndex),
-        ]);
-        ctx.graph = g;
-        ctx.symbolIndex = idx;
-        log.info(`graph rebuilt for '${to}' (${g.symbol_count} symbols).`);
-      } catch (err) {
-        log.warn(`branch rescan failed: ${(err as Error).message}`);
-      }
+      const to = (e.details as { to?: string } | undefined)?.to ?? "unknown";
+      await rescanAndSwap(ctx, paths, `branch ${to}`);
     }
   });
   try {
@@ -176,6 +178,7 @@ export async function startServer(
     port,
     url,
     async stop() {
+      reindexer?.stop();
       await fileWatcher.stop().catch(() => undefined);
       await gitWatcher.stop().catch(() => undefined);
       // Persist any pending usage signal before we go down.
