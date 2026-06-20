@@ -38,7 +38,10 @@ const SCRIPTS: ScriptDef[] = [
   { event: "SessionStart", baseName: "synthra-prime", ps1: primePs1, sh: primeSh },
   {
     event: "PreToolUse",
-    matcher: "Grep|Glob",
+    // Grep/Glob are gated (blockable); Bash is observe-only (the terminal
+    // bypass — see src/server/routes/bash-observe.ts). The shared hook forwards
+    // the tool call to /gate, which decides per-tool.
+    matcher: "Grep|Glob|Bash",
     baseName: "synthra-pre-tool-use",
     ps1: preToolUsePs1,
     sh: preToolUseSh,

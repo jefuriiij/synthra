@@ -5,6 +5,7 @@ export type {
   ProjectStats,
   RecentTurn,
   RecentGate,
+  RecentBash,
   HotFile,
 } from "../../delta.js";
 export type { ArsenalData, ArsenalItem, ArsenalScope } from "../../arsenal.js";

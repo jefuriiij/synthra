@@ -10,6 +10,7 @@ export interface SynthraConfig {
   retrieveCacheTtlSec: number;
   reindexDebounceMs: number;
   autoReindex: boolean;
+  bashObserve: boolean;
   mcpPort: number | null;
   dashboardPort: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -40,6 +41,10 @@ export function loadConfig(): SynthraConfig {
     // mid-session. Set SYN_NO_AUTOREINDEX to disable entirely.
     reindexDebounceMs: num("SYN_REINDEX_DEBOUNCE_MS", 1000),
     autoReindex: !process.env.SYN_NO_AUTOREINDEX,
+    // Observe-only: log codebase-exploration Bash commands (grep/cat/find …) so
+    // the terminal bypass of the Moat can be measured. Never blocks. Opt out
+    // with SYN_NO_BASH_OBSERVE.
+    bashObserve: !process.env.SYN_NO_BASH_OBSERVE,
     mcpPort: process.env.SYN_MCP_PORT ? num("SYN_MCP_PORT", 0) : null,
     dashboardPort: num("SYN_DASHBOARD_PORT", 8901),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),

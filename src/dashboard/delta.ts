@@ -44,6 +44,18 @@ export interface ToolLogEntry {
   tool: string;
 }
 
+/** A codebase-exploration Bash command the observer recorded (observe-only). */
+export interface BashLogEntry {
+  ts: string;
+  kind: "search" | "read" | "list";
+  tool: string;
+  query: string | null;
+  confidence: "low" | "medium" | "high" | null;
+  /** True when the graph could have served this (a real Moat block, had we blocked Bash). */
+  avoidable: boolean;
+  command?: string;
+}
+
 /** Count Synthra MCP tool calls by tool name. (#2) */
 export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -84,6 +96,10 @@ export interface ProjectStats {
   estimated_cost_usd: number;
   total_tool_calls: number;
   tool_calls: Record<string, number>;
+  /** Observe-only: codebase-exploration Bash calls (the Moat's terminal blind spot). */
+  bash_explorations: number;
+  /** Of those, how many the graph could have served (a would-be Moat block). */
+  bash_avoidable: number;
   hot_files: HotFile[];
   hot_files_total: number;
   models: Record<string, number>;
@@ -110,6 +126,17 @@ export interface RecentGate {
   query: string | null;
 }
 
+export interface RecentBash {
+  ts: string;
+  project_name: string;
+  project_path: string;
+  kind: "search" | "read" | "list";
+  tool: string;
+  query: string | null;
+  confidence: "low" | "medium" | "high" | null;
+  avoidable: boolean;
+}
+
 export interface DashboardData {
   active: {
     project_root: string;
@@ -130,10 +157,13 @@ export interface DashboardData {
     estimated_cost_usd: number;
     total_tool_calls: number;
     tool_calls: Record<string, number>;
+    bash_explorations: number;
+    bash_avoidable: number;
   };
   projects: ProjectStats[];
   recent_turns: RecentTurn[];
   recent_gates: RecentGate[];
+  recent_bash: RecentBash[];
 }
 
 async function readJsonl<T>(path: string): Promise<T[]> {
@@ -167,6 +197,7 @@ interface ProjectFiles {
   tokens: TokenLogEntry[];
   gates: GateLogEntry[];
   tools: ToolLogEntry[];
+  bash: BashLogEntry[];
   learn: LearnStore;
 }
 
@@ -206,6 +237,8 @@ function summarize(p: ProjectFiles): ProjectStats {
     estimated_cost_usd: Math.round(costUsd * 100) / 100,
     total_tool_calls: p.tools.length,
     tool_calls: countToolCalls(p.tools),
+    bash_explorations: p.bash.length,
+    bash_avoidable: p.bash.filter((b) => b.avoidable).length,
     hot_files: topHotFiles(p.learn, now),
     hot_files_total: effectiveScores(p.learn, now).size,
     models,
@@ -226,14 +259,15 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates, tools, learn] = await Promise.all([
+  const [rawTokens, gates, tools, bash, learn] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
     readJsonl<ToolLogEntry>(paths.toolLog),
+    readJsonl<BashLogEntry>(paths.bashLog),
     readLearnStore(paths.learnStore),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
-  return { path, name, last_seen: lastSeen, tokens, gates, tools, learn };
+  return { path, name, last_seen: lastSeen, tokens, gates, tools, bash, learn };
 }
 
 /**
@@ -328,6 +362,7 @@ export async function computeDashboardData(
     tokens: [],
     gates: [],
     tools: [],
+    bash: [],
     learn: emptyStore(),
   };
   const activeStats = summarize(activeFiles);
@@ -341,7 +376,9 @@ export async function computeDashboardData(
     g_block = 0,
     g_cost = 0,
     g_turns = 0,
-    g_tools = 0;
+    g_tools = 0,
+    g_bash = 0,
+    g_bash_avoid = 0;
   const g_tool_calls: Record<string, number> = {};
   for (const s of projects) {
     g_turns += s.total_turns;
@@ -353,16 +390,31 @@ export async function computeDashboardData(
     g_block += s.blocked_count;
     g_cost += s.estimated_cost_usd;
     g_tools += s.total_tool_calls;
+    g_bash += s.bash_explorations;
+    g_bash_avoid += s.bash_avoidable;
     for (const [k, v] of Object.entries(s.tool_calls)) g_tool_calls[k] = (g_tool_calls[k] ?? 0) + v;
   }
   const g_saved = g_block * AVG_TOKENS_PER_BLOCKED_GREP;
   const g_used = g_in + g_out + g_cc;
   const g_saved_pct = g_used + g_saved > 0 ? (g_saved / (g_used + g_saved)) * 100 : 0;
 
-  // Recent turns + gates across all projects, sorted by ts descending
+  // Recent turns + gates + bash hunts across all projects, sorted by ts descending
   const allTurns: RecentTurn[] = [];
   const allGates: RecentGate[] = [];
+  const allBash: RecentBash[] = [];
   for (const p of loaded) {
+    for (const b of p.bash) {
+      allBash.push({
+        ts: b.ts,
+        project_name: p.name,
+        project_path: p.path,
+        kind: b.kind,
+        tool: b.tool,
+        query: b.query,
+        confidence: b.confidence,
+        avoidable: b.avoidable,
+      });
+    }
     for (const t of p.tokens) {
       allTurns.push({
         // Fall back to written_at — the Stop hook today posts entries without
@@ -391,6 +443,7 @@ export async function computeDashboardData(
   }
   allTurns.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
   allGates.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  allBash.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
 
   return {
     active: {
@@ -412,10 +465,13 @@ export async function computeDashboardData(
       estimated_cost_usd: Math.round(g_cost * 100) / 100,
       total_tool_calls: g_tools,
       tool_calls: g_tool_calls,
+      bash_explorations: g_bash,
+      bash_avoidable: g_bash_avoid,
     },
     projects,
     recent_turns: allTurns.slice(0, recentN),
     recent_gates: allGates.slice(0, recentN),
+    recent_bash: allBash.slice(0, recentN),
   };
 }
 
