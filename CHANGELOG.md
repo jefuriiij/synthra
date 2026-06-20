@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.10.0] — 2026-06-20
+
+### Added
+
+- **Terminal-bypass visibility (observe-only).** The Moat blocks `Grep`/`Glob`,
+  but the agent can still explore the codebase through the shell — `rg foo src/`,
+  `cat src/x.ts`, `find …` — and every such call is a read the graph could have
+  served in ~50 tokens. Synthra now watches `Bash` too: it classifies these
+  exploration commands and records each one — with whether the graph could have
+  answered it — to `bash_log.jsonl`, surfaced on the dashboard's Moat card as
+  "N terminal hunts · M the graph could answer." It is **observe-only — it never
+  blocks a Bash command** — so you can measure the leak before deciding whether
+  to close it. Conservative by design (it ignores `npm`/`git`/builds, stdin
+  filters like `… | grep`, and any command with a redirect). Disable with
+  `SYN_NO_BASH_OBSERVE`.
+
+---
+
 ## [0.9.0] — 2026-06-20
 
 ### Added
