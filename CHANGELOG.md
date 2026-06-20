@@ -7,6 +7,34 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.9.0] — 2026-06-20
+
+### Added
+
+- **The graph auto-reindexes edited files mid-session — it never goes stale.**
+  Previously the in-memory graph was a snapshot from the last `syn .`: edit a
+  file and `graph_read` / `blast_radius` / the dependency footer would keep
+  serving the *old* signature, body, and line ranges until the next manual scan.
+  Now the running server watches for source changes and, ~1s after edits settle,
+  re-runs the incremental scan and hot-swaps the graph in place — so reads always
+  reflect what's on disk. The rescan is incremental (only the changed file hits
+  tree-sitter; everything else reuses the content-hash parse cache) and debounced
+  so a burst of saves coalesces into one rebuild. Tune with
+  `SYN_REINDEX_DEBOUNCE_MS` (default `1000`); disable with `SYN_NO_AUTOREINDEX`.
+
+### Fixed
+
+- **In-session rescans (auto-reindex and branch-switch) no longer rewrite your
+  `CLAUDE.md` / `.gitignore`.** A rescan now skips the bootstrap step — it only
+  rebuilds the graph. This also closes a feedback loop the new auto-reindex would
+  otherwise hit (rewriting the watched `CLAUDE.md` on every rescan would retrigger
+  the watcher endlessly).
+- **`CLAUDE.md` no longer accumulates a blank line on every `syn .`.** The policy
+  block patcher is now idempotent — re-running with nothing to change is a true
+  no-op instead of appending an empty line above the managed block each time.
+
+---
+
 ## [0.8.1] — 2026-06-16
 
 ### Changed
