@@ -40,6 +40,32 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(content).toContain("synthra-policy v7 BEGIN"); // policy still appended
   });
 
+  it("is idempotent: re-running makes no change (no blank-line creep)", async () => {
+    const path = await tmpClaudeMd();
+    await patchClaudeMd(path, "my-proj"); // create
+    const first = await readFile(path, "utf8");
+
+    const res = await patchClaudeMd(path, "my-proj"); // re-run, nothing changed
+    const second = await readFile(path, "utf8");
+
+    // Byte-identical — the policy block must not accumulate blank lines each
+    // run (the bug that turned auto-reindex into an endless CLAUDE.md rewrite).
+    expect(second).toBe(first);
+    expect(res.skipped).toBe(true);
+    expect(res.updated).toBe(false);
+  });
+
+  it("is idempotent against an existing doc with no prior block", async () => {
+    const path = await tmpClaudeMd();
+    await writeFile(path, "# Existing user doc\n\nsome notes\n", "utf8");
+
+    await patchClaudeMd(path, "p"); // appends block
+    const first = await readFile(path, "utf8");
+    const res = await patchClaudeMd(path, "p"); // re-run is a no-op
+    expect(await readFile(path, "utf8")).toBe(first);
+    expect(res.skipped).toBe(true);
+  });
+
   it("preserves the user's filled-in onboarding content across re-runs", async () => {
     const path = await tmpClaudeMd();
     await patchClaudeMd(path, "my-proj"); // first run scaffolds

@@ -204,14 +204,18 @@ export async function patchClaudeMd(path: string, projectName?: string): Promise
     return { created: true, updated: false, skipped: false };
   }
 
+  // Strip any prior policy block (any version), then re-append the current one.
+  // The block is always separated from the preceding content by exactly one
+  // blank line. We must normalize here: ANY_BLOCK_RE's trailing `\s*` consumes
+  // the block's own newline, so naively re-joining `stripped + "\n" + block`
+  // would add a blank line on every run — invisible per `syn .`, but with
+  // auto-reindex it rewrites the watched CLAUDE.md endlessly. Trimming trailing
+  // whitespace and re-joining with a fixed gap makes the patch idempotent.
   const stripped = existing.replace(ANY_BLOCK_RE, "");
-  const hadBlock = stripped !== existing;
+  const base = stripped.replace(/\s+$/, "");
+  const desired = base.length ? `${base}\n\n${block}\n` : `${block}\n`;
 
-  const desired = stripped.endsWith("\n")
-    ? stripped + "\n" + block + "\n"
-    : (stripped.length ? stripped + "\n\n" : "") + block + "\n";
-
-  if (hadBlock && desired === existing) {
+  if (desired === existing) {
     return { created: false, updated: false, skipped: true };
   }
 
