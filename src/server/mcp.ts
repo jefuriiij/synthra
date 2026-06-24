@@ -232,6 +232,20 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "call_path",
+    description:
+      "Trace how one symbol reaches another through the call graph — the shortest chain of calls from 'from' to 'to'. Use to understand control flow ('how does this handler end up hitting the DB layer?'). Each of 'from'/'to' is a 'file::symbol' target or a bare symbol name when unique.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Starting symbol ('file::symbol' or unique name)." },
+        to: { type: "string", description: "Target symbol ('file::symbol' or unique name)." },
+        depth: { type: "number", description: "Max call hops to search. Default 6." },
+      },
+      required: ["from", "to"],
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -262,6 +276,8 @@ async function callTool(
       return findSymbol(args, ctx);
     case "duplicate_symbols":
       return duplicateSymbols(args, ctx);
+    case "call_path":
+      return callPath(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -451,6 +467,105 @@ function testsCoveringLine(graph: GraphSchema, filePaths: string[]): string {
   const shown = tests.slice(0, TESTS_MAX_FILES);
   const omitted = tests.length - shown.length;
   return `Tests covering the impact: ${shown.join(" · ")}${omitted > 0 ? ` …+${omitted} more` : ""}`;
+}
+
+// Resolve a call_path argument to a single symbol: "file::symbol", or a bare
+// name when it's unique repo-wide. Returns null on miss/ambiguity.
+function resolveSymbolArg(ctx: ServerContext, arg: string): SymbolNode | null {
+  const a = arg.trim();
+  if (a.includes("::")) {
+    const [rawFile, rawSym] = a.split("::", 2);
+    const resolved = resolveFileTarget(ctx.graph, (rawFile ?? "").trim());
+    if (!("node" in resolved)) return null;
+    const name = (rawSym ?? "").trim();
+    return (
+      ctx.graph.nodes.find(
+        (n): n is SymbolNode =>
+          n.kind === "symbol" && n.file === resolved.node.path && n.name === name,
+      ) ?? null
+    );
+  }
+  const matches = ctx.graph.nodes.filter(
+    (n): n is SymbolNode => n.kind === "symbol" && n.name === a,
+  );
+  return matches.length === 1 ? (matches[0] as SymbolNode) : null;
+}
+
+// call_path — forward BFS over `calls` edges from `from` to `to`, reporting the
+// shortest call chain. The forward dual of blast_radius (which walks callers).
+function callPath(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const fromArg = typeof args?.from === "string" ? args.from : "";
+  const toArg = typeof args?.to === "string" ? args.to : "";
+  const maxDepth = typeof args?.depth === "number" && args.depth > 0 ? Math.floor(args.depth) : 6;
+  if (!fromArg.trim() || !toArg.trim()) {
+    return errorContent("call_path: 'from' and 'to' (strings) are required");
+  }
+
+  const from = resolveSymbolArg(ctx, fromArg);
+  if (!from) {
+    return errorContent(
+      `call_path: could not resolve 'from': ${fromArg} (use file::symbol if the name is ambiguous)`,
+    );
+  }
+  const to = resolveSymbolArg(ctx, toArg);
+  if (!to) {
+    return errorContent(
+      `call_path: could not resolve 'to': ${toArg} (use file::symbol if the name is ambiguous)`,
+    );
+  }
+  if (from.id === to.id) {
+    return textContent(`# call_path\n\n\`${from.name}\` and \`${to.name}\` are the same symbol.`);
+  }
+
+  const calleesBy = new Map<string, string[]>();
+  for (const e of ctx.graph.edges) {
+    if (e.kind !== "calls" || e.from === e.to) continue;
+    (calleesBy.get(e.from) ?? calleesBy.set(e.from, []).get(e.from)!).push(e.to);
+  }
+  const symById = new Map<string, SymbolNode>();
+  for (const n of ctx.graph.nodes) if (n.kind === "symbol") symById.set(n.id, n);
+
+  const prevOf = new Map<string, string>();
+  const visited = new Set<string>([from.id]);
+  let frontier = [from.id];
+  let found = false;
+  for (let d = 0; d < maxDepth && !found && frontier.length > 0; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const nb of calleesBy.get(cur) ?? []) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        prevOf.set(nb, cur);
+        if (nb === to.id) {
+          found = true;
+          break;
+        }
+        next.push(nb);
+      }
+      if (found) break;
+    }
+    frontier = next;
+  }
+
+  if (!found) {
+    return textContent(
+      `# call_path: ${from.name} → ${to.name}\n\n_(no call path found within depth ${maxDepth})_`,
+    );
+  }
+
+  const chain: string[] = [];
+  let cur: string | undefined = to.id;
+  while (cur !== undefined) {
+    chain.unshift(cur);
+    if (cur === from.id) break;
+    cur = prevOf.get(cur);
+  }
+  const syms = chain.map((id) => symById.get(id)).filter((s): s is SymbolNode => !!s);
+  const hops = syms.length - 1;
+  const rendered = syms.map((s) => `\`${s.name}\` (${s.file}:${s.start_line})`).join("\n  → ");
+  return textContent(
+    `# call_path: ${from.name} → ${to.name}  (${hops} hop${hops === 1 ? "" : "s"})\n\n${rendered}`,
+  );
 }
 
 const LIKELY_ENTRY_PATTERNS = [

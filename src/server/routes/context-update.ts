@@ -6,7 +6,7 @@
 //    SessionStart primer reads to build a "Since you were last here" digest.
 // Transcript-mining for new entries (auto "we decided X" → store) is deferred.
 
-import { getCommitsSince } from "../../memory/git-snapshot.js";
+import { getCommitsSince, getHeadSha } from "../../memory/git-snapshot.js";
 import { recallEntries, refreshContextMd, resolveActiveBranch } from "../../memory/index.js";
 import {
   readSession,
@@ -49,6 +49,8 @@ async function captureSnapshot(ctx: ServerContext, branchOverride?: string): Pro
   // Commits since the previous snapshot (or the most recent few on first run).
   const prev = await readSession(ctx.paths.sessionState);
   const recentCommits = await getCommitsSince(ctx.paths.projectRoot, prev?.endedAt ?? "");
+  // Baseline for the next session's "changed symbols" digest.
+  const headSha = await getHeadSha(ctx.paths.projectRoot);
 
   const snapshot: SessionState = {
     schema_version: SESSION_SCHEMA_VERSION,
@@ -61,6 +63,7 @@ async function captureSnapshot(ctx: ServerContext, branchOverride?: string): Pro
       decisions: decisions.entries.map((e) => e.content),
       next: next.entries.map((e) => e.content),
     },
+    headSha,
   };
   await writeSession(ctx.paths.sessionState, snapshot);
 }

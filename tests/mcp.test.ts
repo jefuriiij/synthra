@@ -560,3 +560,66 @@ describe("find_symbol + duplicate_symbols (v0.12.0)", () => {
     expect(text).not.toContain("render");
   });
 });
+
+describe("call_path (v0.13.0)", () => {
+  // A → B → C chain (cross-file calls); D is unrelated.
+  const a = symNode("src/a.ts", "A", 1, 5);
+  const b = symNode("src/b.ts", "B", 1, 5);
+  const c = symNode("src/c.ts", "C", 1, 5);
+  const d = symNode("src/d.ts", "D", 1, 5);
+  const graph: GraphSchema = {
+    root: ".",
+    node_count: 8,
+    edge_count: 2,
+    file_count: 4,
+    symbol_count: 4,
+    // file nodes are needed for file::symbol resolution (resolveFileTarget)
+    nodes: [
+      fileNode("src/a.ts"),
+      fileNode("src/b.ts"),
+      fileNode("src/c.ts"),
+      fileNode("src/d.ts"),
+      a,
+      b,
+      c,
+      d,
+    ],
+    edges: [
+      { from: a.id, to: b.id, kind: "calls" },
+      { from: b.id, to: c.id, kind: "calls" },
+    ],
+    generated_at: "1970-01-01T00:00:00.000Z",
+    schema_version: 2,
+  };
+  async function pathText(args: Record<string, unknown>): Promise<string> {
+    const ctx = await ctxWith(graph);
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 31,
+        method: "tools/call",
+        params: { name: "call_path", arguments: args },
+      },
+      ctx,
+    );
+    return (res.result as { content: Array<{ text: string }> }).content[0].text;
+  }
+
+  it("traces the shortest chain for file::symbol targets", async () => {
+    const text = await pathText({ from: "src/a.ts::A", to: "src/c.ts::C" });
+    expect(text).toContain("2 hops");
+    expect(text).toContain("`A`");
+    expect(text).toContain("`B`");
+    expect(text).toContain("`C`");
+  });
+
+  it("resolves bare unique names", async () => {
+    const text = await pathText({ from: "A", to: "C" });
+    expect(text).toContain("`A`");
+    expect(text).toContain("`C`");
+  });
+
+  it("reports no path when the target is unreachable", async () => {
+    expect(await pathText({ from: "A", to: "D" })).toContain("no call path found");
+  });
+});

@@ -9,7 +9,9 @@
 // graph-counts primer verbatim.
 
 import { currentBranch } from "../../memory/branches.js";
+import { getChangedLineRanges } from "../../memory/git-snapshot.js";
 import { readSession, type SessionState } from "../../memory/session.js";
+import type { GraphSchema, SymbolNode } from "../../graph/types.js";
 import type { ServerContext } from "../context.js";
 
 export interface PrimeResponse {
@@ -24,6 +26,44 @@ const RESUME_PRIMER_MAX_CHARS = 2720;
 const MAX_FILES = 15;
 const MAX_COMMITS = 5;
 const MAX_BULLETS = 3;
+const MAX_CHANGED_SYMBOLS = 20;
+const CHANGED_SIG_MAX = 100;
+
+/** Symbols whose line range intersects any changed range (per file). Exported
+ *  for unit tests — the git diff is fetched separately and passed in as ranges. */
+export function changedSymbols(
+  ranges: Map<string, Array<[number, number]>>,
+  graph: GraphSchema,
+): SymbolNode[] {
+  if (ranges.size === 0) return [];
+  const hits: SymbolNode[] = [];
+  for (const n of graph.nodes) {
+    if (n.kind !== "symbol") continue;
+    const rs = ranges.get(n.file);
+    if (!rs) continue;
+    if (rs.some(([a, b]) => a <= n.end_line && b >= n.start_line)) hits.push(n);
+  }
+  hits.sort((a, b) => (a.file === b.file ? a.start_line - b.start_line : a.file < b.file ? -1 : 1));
+  return hits;
+}
+
+function changedSymbolsSection(
+  ranges: Map<string, Array<[number, number]>>,
+  graph: GraphSchema,
+): string[] {
+  const hits = changedSymbols(ranges, graph);
+  if (hits.length === 0) return [];
+  const shown = hits.slice(0, MAX_CHANGED_SYMBOLS);
+  const lines = ["", "### Changed symbols (since last session)"];
+  for (const s of shown) {
+    lines.push(
+      `- \`${s.file}::${s.name}\` (${s.symbol_kind}) — ${s.signature.trim().slice(0, CHANGED_SIG_MAX)}`,
+    );
+  }
+  const more = hits.length - shown.length;
+  if (more > 0) lines.push(`_(+${more} more)_`);
+  return lines;
+}
 
 function legacyPrimer(ctx: ServerContext): string {
   const g = ctx.graph;
@@ -44,7 +84,11 @@ function hasContent(snap: SessionState): boolean {
   );
 }
 
-function buildResumeDigest(snap: SessionState, branchNow: string): string {
+function buildResumeDigest(
+  snap: SessionState,
+  branchNow: string,
+  changedSymbolLines: string[] = [],
+): string {
   const plural = (n: number) => (n === 1 ? "" : "s");
   const head =
     `## Since you were last here — ${snap.branch}  ` +
@@ -72,8 +116,9 @@ function buildResumeDigest(snap: SessionState, branchNow: string): string {
   }
 
   // Supporting context — appended only while budget remains, so commits/files
-  // are what get dropped first if we're over the cap.
-  const extra: string[] = [];
+  // are what get dropped first if we're over the cap. Changed symbols lead (the
+  // highest-signal supporting context for resuming work).
+  const extra: string[] = [...changedSymbolLines];
   if (snap.recentCommits.length) {
     extra.push("", "### Recent commits");
     for (const c of snap.recentCommits.slice(0, MAX_COMMITS)) {
@@ -106,6 +151,11 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
   }
 
   const branchNow = await currentBranch(ctx.paths.projectRoot);
-  const digest = buildResumeDigest(snap, branchNow);
+  let changedSymbolLines: string[] = [];
+  if (snap.headSha) {
+    const ranges = await getChangedLineRanges(ctx.paths.projectRoot, snap.headSha);
+    changedSymbolLines = changedSymbolsSection(ranges, ctx.graph);
+  }
+  const digest = buildResumeDigest(snap, branchNow, changedSymbolLines);
   return { primer: `${digest}\n\n---\n\n${legacy}`, port };
 }

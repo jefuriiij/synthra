@@ -8,7 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-export const SESSION_SCHEMA_VERSION = 1;
+export const SESSION_SCHEMA_VERSION = 2;
 
 export interface SessionCommit {
   hash: string;
@@ -29,6 +29,9 @@ export interface SessionState {
   filesTouched: string[];
   recentCommits: SessionCommit[];
   summary: SessionSummary;
+  /** HEAD sha at session end — baseline for the next session's "changed symbols"
+   *  digest. Optional: absent in non-git projects (digest just omits the section). */
+  headSha?: string;
 }
 
 export async function readSession(path: string): Promise<SessionState | null> {

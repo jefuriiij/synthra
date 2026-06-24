@@ -8,7 +8,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { getCommitsSince, getDiffFiles } from "../src/memory/git-snapshot.js";
+import { getCommitsSince, getDiffFiles, parseDiffHunks } from "../src/memory/git-snapshot.js";
 
 function gitAvailable(): boolean {
   try {
@@ -22,6 +22,44 @@ function gitAvailable(): boolean {
 async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "syn-git-"));
 }
+
+describe("parseDiffHunks", () => {
+  it("parses new-side line ranges per file (count omitted = 1, deletion = single line)", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,2 +1,3 @@",
+      "+added",
+      "@@ -10,0 +12,2 @@",
+      "+x",
+      "+y",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "--- a/src/b.ts",
+      "+++ b/src/b.ts",
+      "@@ -5 +5 @@",
+      "-old",
+      "+new",
+      "@@ -8,2 +7,0 @@", // pure deletion → single adjacent line
+      "-gone1",
+      "-gone2",
+    ].join("\n");
+    const out = parseDiffHunks(diff);
+    expect(out.get("src/a.ts")).toEqual([
+      [1, 3],
+      [12, 13],
+    ]);
+    expect(out.get("src/b.ts")).toEqual([
+      [5, 5],
+      [7, 7],
+    ]);
+  });
+
+  it("skips deleted files (+++ /dev/null)", () => {
+    const diff = ["--- a/gone.ts", "+++ /dev/null", "@@ -1,5 +0,0 @@", "-stuff"].join("\n");
+    expect(parseDiffHunks(diff).size).toBe(0);
+  });
+});
 
 describe("git-snapshot graceful degradation", () => {
   it("returns [] for a non-git directory (never throws)", async () => {
