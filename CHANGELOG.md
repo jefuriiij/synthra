@@ -7,6 +7,20 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.13.1] — 2026-06-24
+
+### Fixed
+
+- **Minified/bundle files are no longer indexed.** Committed vendored plugin JS
+  (`*.min.js`, `*.bundle.js`, `*.min.css`, …) has no readable symbols, so indexing
+  it only polluted retrieval and caused **useless Moat blocks** on markup-heavy
+  projects — a Grep for CSS classes like `nav|menu|toggle` would spuriously match a
+  symbol *inside* the minified library and get blocked, only for `graph_continue` to
+  then find nothing. The scanner now skips these files (cleaner retrieval, smaller
+  graph, no behavior change for real source).
+
+---
+
 ## [0.13.0] — 2026-06-24
 
 ### Added
