@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.11.0] — 2026-06-24
+
+### Added
+
+- **`graph_read` now shows which tests cover a symbol.** A symbol read appends a
+  `Tests (file-level): …` line listing the test files linked to the symbol's file
+  (via the graph's `tests` edges) — so after an edit you run the *right* test
+  instead of guessing or running the whole suite. Ordinary source files with no
+  linked test get a one-line "none linked" nudge.
+- **`blast_radius` is now symbol-aware.** A `file::symbol` target returns the
+  exact caller **symbols** that transitively call it (`name → file:line`), plus a
+  line naming the test files that guard the impact — the precise view you want
+  before a rename. A bare file target keeps the existing file-level dependent
+  list. (The `graph_read` "Used by (N)" footer remains the cheap always-on
+  direct-caller summary; this is the complete, transitive, on-demand one.)
+
+---
+
 ## [0.10.0] — 2026-06-20
 
 ### Added
