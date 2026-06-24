@@ -8,7 +8,12 @@ import { join } from "node:path";
 import { ActivityStore } from "../src/activity/activity-log.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../src/graph/types.js";
 import type { ServerContext } from "../src/server/context.js";
-import { buildDepsFooter, handleMcpRequest, resolveFileTarget } from "../src/server/mcp.js";
+import {
+  buildDepsFooter,
+  buildTestsFooter,
+  handleMcpRequest,
+  resolveFileTarget,
+} from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
 function fileNode(path: string): FileNode {
@@ -351,5 +356,139 @@ describe("buildDepsFooter — dependency surface (v0.6.0)", () => {
     expect(text).toContain('mcp__synthra__graph_read("src/users.ts::findUser")');
     // the edit recipe stays last
     expect(text.indexOf("Depends on")).toBeLessThan(text.indexOf("✎ To edit this symbol"));
+  });
+});
+
+// ---- v0.11.0: edit-safety bundle ----
+
+describe("buildTestsFooter — test-link awareness (v0.11.0)", () => {
+  function testGraph(linked: boolean, symbolFile = "src/a.ts"): GraphSchema {
+    const src = fileNode("src/a.ts");
+    const testF = fileNode("src/a.test.ts");
+    const greet = symNode(symbolFile, "greet", 1, 3);
+    const edges = linked ? [{ from: testF.id, to: src.id, kind: "tests" as const }] : [];
+    return {
+      root: ".",
+      node_count: 3,
+      edge_count: edges.length,
+      file_count: 2,
+      symbol_count: 1,
+      nodes: [src, testF, greet],
+      edges,
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+  const symOf = (g: GraphSchema) => g.nodes.find((n): n is SymbolNode => n.kind === "symbol")!;
+
+  it("names the covering test file when a tests edge exists", () => {
+    const footer = buildTestsFooter(symOf(testGraph(true)), testGraph(true));
+    expect(footer).toContain("Tests (file-level): src/a.test.ts");
+    expect(footer).toContain("run after editing");
+  });
+
+  it("nudges when an ordinary source symbol has no linked test", () => {
+    const g = testGraph(false);
+    expect(buildTestsFooter(symOf(g), g)).toBe("Tests: none linked to this file.");
+  });
+
+  it("stays silent for a symbol that lives in a test file", () => {
+    const g = testGraph(false, "src/a.test.ts");
+    expect(buildTestsFooter(symOf(g), g)).toBe("");
+  });
+});
+
+describe("graph_read — test-link footer (v0.11.0)", () => {
+  function g(linked: boolean): GraphSchema {
+    const f: FileNode = {
+      id: "file:src/a.ts",
+      kind: "file",
+      path: "src/a.ts",
+      ext: ".ts",
+      size: 1,
+      keywords: [],
+      content: "function foo() {\n  return 1;\n}\n",
+      summary: "",
+      file_hash: "x",
+    };
+    const tf = fileNode("src/a.test.ts");
+    const foo = symNode("src/a.ts", "foo", 1, 3);
+    return {
+      root: ".",
+      node_count: 3,
+      edge_count: linked ? 1 : 0,
+      file_count: 2,
+      symbol_count: 1,
+      nodes: [f, tf, foo],
+      edges: linked ? [{ from: tf.id, to: f.id, kind: "tests" as const }] : [],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+  async function read(graph: GraphSchema): Promise<string> {
+    const ctx = await ctxWith(graph);
+    const res = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 11,
+        method: "tools/call",
+        params: { name: "graph_read", arguments: { target: "src/a.ts::foo" } },
+      },
+      ctx,
+    );
+    return (res.result as { content: Array<{ text: string }> }).content[0].text;
+  }
+
+  it("shows the covering test file before the edit recipe", async () => {
+    const text = await read(g(true));
+    expect(text).toContain("Tests (file-level): src/a.test.ts");
+    expect(text.indexOf("Tests (file-level)")).toBeLessThan(text.indexOf("✎ To edit this symbol"));
+  });
+
+  it("shows the none-linked nudge when no test covers the file", async () => {
+    expect(await read(g(false))).toContain("Tests: none linked to this file.");
+  });
+});
+
+describe("blast_radius — symbol-level impact (v0.11.0)", () => {
+  // src/b.ts::helper calls src/a.ts::greet; src/a.test.ts tests src/a.ts.
+  const a = fileNode("src/a.ts");
+  const b = fileNode("src/b.ts");
+  const at = fileNode("src/a.test.ts");
+  const greet = symNode("src/a.ts", "greet", 1, 3);
+  const helper = symNode("src/b.ts", "helper", 1, 5);
+  const graph: GraphSchema = {
+    root: ".",
+    node_count: 5,
+    edge_count: 2,
+    file_count: 3,
+    symbol_count: 2,
+    nodes: [a, b, at, greet, helper],
+    edges: [
+      { from: helper.id, to: greet.id, kind: "calls" },
+      { from: at.id, to: a.id, kind: "tests" },
+    ],
+    generated_at: "1970-01-01T00:00:00.000Z",
+    schema_version: 2,
+  };
+
+  it("lists caller symbols (name → file:line) for a file::symbol target", async () => {
+    const text = await blastText(graph, "src/a.ts::greet");
+    expect(text).toContain("caller symbol(s)");
+    expect(text).toContain("`helper` → src/b.ts:1");
+  });
+
+  it("surfaces the tests guarding the impact", async () => {
+    const text = await blastText(graph, "src/a.ts::greet");
+    expect(text).toContain("Tests covering the impact: src/a.test.ts");
+  });
+
+  it("reports a symbol with no callers as safe to rename", async () => {
+    const text = await blastText(graph, "src/b.ts::helper");
+    expect(text).toContain("safe to rename");
+  });
+
+  it("errors clearly when the symbol is not found", async () => {
+    expect(await blastText(graph, "src/a.ts::ghost")).toContain("not found");
   });
 });

@@ -18,6 +18,7 @@ import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
+import { findTestsForFile } from "../packer/tests.js";
 import { loadConfig } from "../shared/config.js";
 import type { ServerContext } from "./context.js";
 
@@ -183,11 +184,14 @@ const TOOLS = [
   {
     name: "blast_radius",
     description:
-      "Given a file (or 'file::symbol' target), return all files that depend on it transitively via imports, tests, and call edges (callers). Use BEFORE editing a widely-used file to see what could break. Call edges are name-resolved (precise within a file, unique-name across files) and projected to file granularity.",
+      "See what could break before an edit. A bare file target returns all files that depend on it transitively via imports, tests, and call edges. A 'file::symbol' target returns the exact caller SYMBOLS that transitively call it (name → file:line) plus the test files guarding the impact — the precise rename-safety view. Call edges are name-resolved (precise within a file, unique-name across files).",
     inputSchema: {
       type: "object",
       properties: {
-        target: { type: "string", description: "File path or 'file::symbol' notation." },
+        target: {
+          type: "string",
+          description: "File path (file-level dependents) or 'file::symbol' (caller symbols).",
+        },
         depth: { type: "number", description: "Max hops to traverse. Default 3." },
       },
       required: ["target"],
@@ -247,7 +251,11 @@ function blastRadius(args: Record<string, unknown> | undefined, ctx: ServerConte
   const maxDepth = typeof args?.depth === "number" && args.depth > 0 ? Math.floor(args.depth) : 3;
   if (!targetRaw) return errorContent("blast_radius: 'target' (string) is required");
 
-  const filePath = targetRaw.split("::", 1)[0]?.trim() ?? targetRaw;
+  // A `file::symbol` target → precise caller-symbol impact (for renames). A bare
+  // file → the file-level dependent view below (unchanged).
+  if (targetRaw.includes("::")) return blastRadiusSymbol(targetRaw, maxDepth, ctx);
+
+  const filePath = targetRaw;
   const root = ctx.graph.nodes.find((n): n is FileNode => n.kind === "file" && n.path === filePath);
   if (!root) return errorContent(`blast_radius: file not in graph: ${filePath}`);
 
@@ -313,6 +321,108 @@ function blastRadius(args: Record<string, unknown> | undefined, ctx: ServerConte
     lines.push(`- **depth ${h.depth}** \`${h.path}\` _(via ${h.via})_`);
   }
   return textContent(lines.join("\n"));
+}
+
+// Symbol-level blast radius: which symbols transitively CALL the target symbol.
+// This is the rename-safety view — exact caller symbols + locations, not the
+// file-level rollup. (`graph_read`'s "Used by (N)" footer covers the cheap
+// always-on direct-caller case; this is the complete, transitive, on-demand one.)
+function blastRadiusSymbol(targetRaw: string, maxDepth: number, ctx: ServerContext) {
+  const [rawFile, rawSym] = targetRaw.split("::", 2);
+  const filePath = (rawFile ?? "").trim();
+  const symName = (rawSym ?? "").trim();
+  if (!symName) return errorContent("blast_radius: 'file::symbol' target needs a symbol name");
+
+  const resolved = resolveFileTarget(ctx.graph, filePath);
+  if ("ambiguous" in resolved) {
+    const shown = resolved.ambiguous.slice(0, 5).join(", ");
+    return errorContent(
+      `blast_radius: '${filePath}' matches multiple files (${shown}). Pass a longer path.`,
+    );
+  }
+  if ("none" in resolved) return errorContent(`blast_radius: file not in graph: ${filePath}`);
+  const fileNode = resolved.node;
+
+  const symbol = ctx.graph.nodes.find(
+    (n): n is SymbolNode => n.kind === "symbol" && n.file === fileNode.path && n.name === symName,
+  );
+  if (!symbol)
+    return errorContent(`blast_radius: symbol '${symName}' not found in ${fileNode.path}`);
+
+  // Reverse call map (callee-id → caller-ids) + symbol lookup, built once.
+  const callersBySym = new Map<string, string[]>();
+  for (const e of ctx.graph.edges) {
+    if (e.kind !== "calls" || e.from === e.to) continue;
+    const list = callersBySym.get(e.to) ?? [];
+    list.push(e.from);
+    callersBySym.set(e.to, list);
+  }
+  const symById = new Map<string, SymbolNode>();
+  for (const n of ctx.graph.nodes) if (n.kind === "symbol") symById.set(n.id, n);
+
+  interface Hit {
+    name: string;
+    file: string;
+    line: number;
+    depth: number;
+  }
+  const visited = new Set<string>([symbol.id]);
+  const hits: Hit[] = [];
+  let frontier = [symbol.id];
+  for (let d = 1; d <= maxDepth; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const fromId of callersBySym.get(cur) ?? []) {
+        if (visited.has(fromId)) continue;
+        visited.add(fromId);
+        next.push(fromId);
+        const s = symById.get(fromId);
+        if (s) hits.push({ name: s.name, file: s.file, line: s.start_line, depth: d });
+      }
+    }
+    frontier = next;
+    if (next.length === 0) break;
+  }
+
+  const header = `# Blast radius for ${fileNode.path}::${symbol.name}  (callers, depth ≤ ${maxDepth})`;
+  if (hits.length === 0) {
+    const tline = testsCoveringLine(ctx.graph, [fileNode.path]);
+    return textContent(
+      `${header}\n\n_(no callers — safe to rename)_${tline ? `\n\n${tline}` : ""}`,
+    );
+  }
+  hits.sort((a, b) => a.depth - b.depth || a.file.localeCompare(b.file) || a.line - b.line);
+  const lines = [header, "", `${hits.length} caller symbol(s):`];
+  for (const h of hits) lines.push(`- **depth ${h.depth}** \`${h.name}\` → ${h.file}:${h.line}`);
+  const tline = testsCoveringLine(ctx.graph, [fileNode.path, ...hits.map((h) => h.file)]);
+  if (tline) {
+    lines.push("");
+    lines.push(tline);
+  }
+  return textContent(lines.join("\n"));
+}
+
+// One-line summary of the test files covering a set of source files (deduped).
+// Reused by the symbol-level blast radius to show which tests guard a rename.
+function testsCoveringLine(graph: GraphSchema, filePaths: string[]): string {
+  const fileByPath = new Map<string, FileNode>();
+  for (const n of graph.nodes) if (n.kind === "file") fileByPath.set(n.path, n);
+  const seen = new Set<string>();
+  const tests: string[] = [];
+  for (const p of new Set(filePaths)) {
+    const fn = fileByPath.get(p);
+    if (!fn) continue;
+    for (const t of findTestsForFile(graph, fn)) {
+      if (!seen.has(t.path)) {
+        seen.add(t.path);
+        tests.push(t.path);
+      }
+    }
+  }
+  if (tests.length === 0) return "";
+  const shown = tests.slice(0, TESTS_MAX_FILES);
+  const omitted = tests.length - shown.length;
+  return `Tests covering the impact: ${shown.join(" · ")}${omitted > 0 ? ` …+${omitted} more` : ""}`;
 }
 
 const LIKELY_ENTRY_PATTERNS = [
@@ -420,6 +530,7 @@ export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTar
 const DEPS_SIG_MAX = 140;
 const DEPS_MAX_CALLEES = 10;
 const DEPS_MAX_CALLERS = 12;
+const TESTS_MAX_FILES = 6;
 
 /**
  * Dependency surface for a symbol, rendered as a point-of-use footer for
@@ -505,6 +616,30 @@ export function buildDepsFooter(
   return lines.join("\n");
 }
 
+/**
+ * Test-coverage footer for graph_read: which test files cover this symbol's file
+ * (file-level `tests` edges — foo.test.ts → foo.ts). Lets the agent run the
+ * right test after an edit instead of guessing or running the whole suite.
+ * Returns a one-line "none linked" nudge for ordinary source files, and "" for
+ * symbols that live in a test/entry file (no nudge there).
+ */
+export function buildTestsFooter(symbol: SymbolNode, graph: GraphSchema): string {
+  const fileNode = graph.nodes.find(
+    (n): n is FileNode => n.kind === "file" && n.path === symbol.file,
+  );
+  if (!fileNode) return "";
+  const tests = findTestsForFile(graph, fileNode);
+  if (tests.length > 0) {
+    const shown = tests.slice(0, TESTS_MAX_FILES).map((t) => t.path);
+    const omitted = tests.length - shown.length;
+    const more = omitted > 0 ? ` …+${omitted} more` : "";
+    return `Tests (file-level): ${shown.join(" · ")}${more}  — run after editing`;
+  }
+  // No linked tests — nudge only for ordinary source files (entry/test files excluded).
+  if (isLikelyEntry(symbol.file)) return "";
+  return "Tests: none linked to this file.";
+}
+
 async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const target = typeof args?.target === "string" ? args.target : "";
   if (!target) return errorContent("graph_read: 'target' (string) is required");
@@ -559,8 +694,11 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const deps = buildDepsFooter(symbol, ctx.graph);
   const depsBlock = deps ? `\n\n---\n${deps}` : "";
 
+  const tests = buildTestsFooter(symbol, ctx.graph);
+  const testsBlock = tests ? `\n\n---\n${tests}` : "";
+
   return textContent(
-    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${editHint}`,
+    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${testsBlock}${editHint}`,
   );
 }
 
