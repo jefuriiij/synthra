@@ -492,3 +492,71 @@ describe("blast_radius — symbol-level impact (v0.11.0)", () => {
     expect(await blastText(graph, "src/a.ts::ghost")).toContain("not found");
   });
 });
+
+// ---- v0.12.0: reuse detection ----
+
+describe("find_symbol + duplicate_symbols (v0.12.0)", () => {
+  function symGraph(nodes: SymbolNode[]): GraphSchema {
+    return {
+      root: ".",
+      node_count: nodes.length,
+      edge_count: 0,
+      file_count: 0,
+      symbol_count: nodes.length,
+      nodes,
+      edges: [],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+  async function callText(
+    graph: GraphSchema,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    const ctx = await ctxWith(graph);
+    const res = await handleMcpRequest(
+      { jsonrpc: "2.0", id: 21, method: "tools/call", params: { name, arguments: args } },
+      ctx,
+    );
+    return (res.result as { content: Array<{ text: string }> }).content[0].text;
+  }
+
+  it("find_symbol lists every exact definition with graph_read targets", async () => {
+    const g = symGraph([
+      symNode("src/utils.ts", "formatDate", 12, 14),
+      symNode("src/legacy.ts", "formatDate", 40, 45),
+    ]);
+    const text = await callText(g, "find_symbol", { name: "formatDate" });
+    expect(text).toContain("Exact matches (2)");
+    expect(text).toContain('mcp__synthra__graph_read("src/utils.ts::formatDate")');
+    expect(text).toContain('mcp__synthra__graph_read("src/legacy.ts::formatDate")');
+  });
+
+  it("find_symbol falls back to similar names when there's no exact match", async () => {
+    const g = symGraph([symNode("src/utils.ts", "formatDate", 12, 14)]);
+    const text = await callText(g, "find_symbol", { name: "formatDat" });
+    expect(text).toContain("Similar names");
+    expect(text).toContain('mcp__synthra__graph_read("src/utils.ts::formatDate")');
+  });
+
+  it("find_symbol green-lights a genuinely new name", async () => {
+    const g = symGraph([symNode("src/utils.ts", "formatDate", 12, 14)]);
+    const text = await callText(g, "find_symbol", { name: "zzznope" });
+    expect(text).toContain("safe to create");
+  });
+
+  it("duplicate_symbols flags cross-file names, excludes single-file + methods", async () => {
+    const g = symGraph([
+      symNode("src/utils.ts", "formatDate", 1, 2),
+      symNode("src/legacy.ts", "formatDate", 1, 2), // same name, 2 files → flagged
+      symNode("src/a.ts", "helper", 1, 2), // single file → not flagged
+      { ...symNode("src/x.ts", "render", 1, 2), symbol_kind: "method" },
+      { ...symNode("src/y.ts", "render", 1, 2), symbol_kind: "method" }, // methods → excluded
+    ]);
+    const text = await callText(g, "duplicate_symbols", {});
+    expect(text).toContain("`formatDate` (2)");
+    expect(text).not.toContain("helper");
+    expect(text).not.toContain("render");
+  });
+});

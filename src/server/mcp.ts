@@ -11,6 +11,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { tokenizeQuery } from "../graph/rank.js";
 import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
 import { appendAccess } from "../learn/store.js";
@@ -208,6 +209,29 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "find_symbol",
+    description:
+      "Find existing symbols by name BEFORE writing a new one — reuse beats re-implementing. Returns exact-name definitions (signatures + graph_read targets) or, if none, similarly-named symbols. 'No symbol matching … — safe to create' means it's genuinely new.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Symbol name (or near-name) to look for." },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "duplicate_symbols",
+    description:
+      "List symbol names defined in more than one file (functions/classes/types; methods excluded) — consolidation candidates for review. Advisory: duplicates may be intentional.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Cap on returned names. Default 30." },
+      },
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -234,6 +258,10 @@ async function callTool(
       return blastRadius(args, ctx);
     case "dead_code":
       return deadCode(args, ctx);
+    case "find_symbol":
+      return findSymbol(args, ctx);
+    case "duplicate_symbols":
+      return duplicateSymbols(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -476,6 +504,138 @@ function deadCode(args: Record<string, unknown> | undefined, ctx: ServerContext)
   lines.push("");
   lines.push(
     `_caveat:_ this is file-level only. Symbol-level dead code (unused exports), built on the now-populated call graph, is a planned follow-up.`,
+  );
+  return textContent(lines.join("\n"));
+}
+
+const FIND_MAX = 12;
+const FIND_SIG_MAX = 140;
+
+function symbolEntry(s: SymbolNode): string {
+  const sig = s.signature.trim().slice(0, FIND_SIG_MAX);
+  return `• ${sig}   → mcp__synthra__graph_read("${s.file}::${s.name}")  [${s.symbol_kind}, L${s.start_line}]`;
+}
+
+const byFileLine = (a: SymbolNode, b: SymbolNode): number =>
+  a.file === b.file ? a.start_line - b.start_line : a.file < b.file ? -1 : 1;
+
+// find_symbol — reuse-first discovery. Exact name matches win; otherwise fall
+// back to substring/token-overlap so a near-name still surfaces an existing impl
+// to reuse instead of writing a duplicate. "No match" is the green light to create.
+function findSymbol(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const name = typeof args?.name === "string" ? args.name.trim() : "";
+  if (!name) return errorContent("find_symbol: 'name' (string) is required");
+
+  const symbols = ctx.graph.nodes.filter((n): n is SymbolNode => n.kind === "symbol");
+  const lower = name.toLowerCase();
+
+  const exact = symbols.filter((s) => s.name === name);
+  const exactHits =
+    exact.length > 0 ? exact : symbols.filter((s) => s.name.toLowerCase() === lower);
+
+  if (exactHits.length > 0) {
+    const sorted = exactHits.slice().sort(byFileLine);
+    const shown = sorted.slice(0, FIND_MAX);
+    const omitted = sorted.length - shown.length;
+    const lines = [
+      `# find_symbol: "${name}"`,
+      "",
+      `Exact matches (${sorted.length}) — reuse one of these instead of writing a new one:`,
+      ...shown.map(symbolEntry),
+    ];
+    if (omitted > 0) lines.push(`…+${omitted} more`);
+    return textContent(lines.join("\n"));
+  }
+
+  const tokens = new Set(tokenizeQuery(name));
+  const scored = symbols
+    .map((s) => {
+      const n = s.name.toLowerCase();
+      let score = 0;
+      if (n.includes(lower) || lower.includes(n)) score += 2;
+      for (const t of tokens) if (n.includes(t)) score += 1;
+      return { s, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || byFileLine(a.s, b.s));
+
+  if (scored.length === 0) {
+    return textContent(
+      `# find_symbol: "${name}"\n\nNo symbol matching "${name}" — safe to create.`,
+    );
+  }
+  const shown = scored.slice(0, FIND_MAX);
+  const omitted = scored.length - shown.length;
+  const lines = [
+    `# find_symbol: "${name}"`,
+    "",
+    `No exact match. Similar names (${scored.length}) — reuse or extend one before writing new:`,
+    ...shown.map((x) => symbolEntry(x.s)),
+  ];
+  if (omitted > 0) lines.push(`…+${omitted} more`);
+  return textContent(lines.join("\n"));
+}
+
+// Symbol kinds worth flagging as cross-file duplicates. Methods are excluded —
+// the same method name across different classes is normal, not redundancy.
+const DUP_INCLUDE = new Set([
+  "function",
+  "class",
+  "interface",
+  "type",
+  "enum",
+  "const",
+  "component",
+]);
+
+// duplicate_symbols — advisory consolidation candidates: names defined in ≥2
+// distinct files. The only over-engineering check the current graph supports
+// cleanly (name lookup); never a "delete this" verdict.
+function duplicateSymbols(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const limit = typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 30;
+
+  const defsByName = new Map<string, Array<{ file: string; line: number }>>();
+  const filesByName = new Map<string, Set<string>>();
+  for (const n of ctx.graph.nodes) {
+    if (n.kind !== "symbol" || !DUP_INCLUDE.has(n.symbol_kind)) continue;
+    (defsByName.get(n.name) ?? defsByName.set(n.name, []).get(n.name)!).push({
+      file: n.file,
+      line: n.start_line,
+    });
+    (filesByName.get(n.name) ?? filesByName.set(n.name, new Set()).get(n.name)!).add(n.file);
+  }
+
+  const dups = [...defsByName.entries()]
+    .filter(([name]) => (filesByName.get(name)?.size ?? 0) >= 2)
+    .map(([name, defs]) => ({
+      name,
+      defs: defs
+        .slice()
+        .sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1)),
+    }))
+    .sort((a, b) => b.defs.length - a.defs.length || a.name.localeCompare(b.name));
+
+  if (dups.length === 0) {
+    return textContent(
+      "# Duplicate symbols\n\n_(no top-level symbol name is defined in more than one file)_",
+    );
+  }
+
+  const shown = dups.slice(0, limit);
+  const lines = [
+    "# Duplicate symbols  (consolidation candidates)",
+    "",
+    `${shown.length} of ${dups.length} name(s) defined in multiple files (functions/classes/types; methods excluded):`,
+    "",
+  ];
+  for (const d of shown) {
+    lines.push(
+      `- \`${d.name}\` (${d.defs.length}): ${d.defs.map((x) => `${x.file}:${x.line}`).join(" · ")}`,
+    );
+  }
+  lines.push("");
+  lines.push(
+    "_advisory: the same name in multiple files may be intentional — verify before consolidating._",
   );
   return textContent(lines.join("\n"));
 }
