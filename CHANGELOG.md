@@ -7,6 +7,26 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.13.0] — 2026-06-24
+
+### Added
+
+- **The resume digest now lists the symbols that changed since your last session.**
+  The SessionStart "Since you were last here" primer showed *files* touched; it now
+  leads its supporting context with the actual **symbols/signatures** that changed —
+  e.g. `src/auth.ts::login (function) — function login(creds: Creds): Promise<...>`.
+  Computed from a git diff against the previous session's HEAD (committed **and**
+  uncommitted changes), overlapped with the current graph. Best-effort: silently
+  omitted in non-git projects.
+- **`call_path(from, to)` — trace control flow.** Returns the shortest chain of
+  calls from one symbol to another (`handler → service → repo`), so you can see how
+  one symbol reaches another. The forward complement to `blast_radius` (callers).
+  Each of `from`/`to` is a `file::symbol` target or a bare symbol name when unique.
+
+Both reuse the existing call graph + git — no graph schema change, no new dependencies.
+
+---
+
 ## [0.12.0] — 2026-06-24
 
 ### Added
