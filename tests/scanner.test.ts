@@ -105,4 +105,18 @@ describe("walk", () => {
     expect(out).toContain("small.ts");
     expect(out).not.toContain("big.ts");
   });
+
+  it("skips minified / bundle files (no readable symbols)", async () => {
+    const root = await tmpProject({
+      "src/app.ts": "export const a = 1;\n",
+      "lib.js": "export const b = 2;\n", // real source — kept
+      "static/js/bootstrap.min.js": "/*min*/",
+      "vendor/swiper.bundle.min.js": "/*min*/", // ends .min.js → matched
+      "app.bundle.js": "/*bundle*/",
+      "jquery-min.js": "/*min*/",
+      "theme.min.css": ".a{color:red}",
+    });
+    const out = await walkRel(root);
+    expect(out).toEqual(["lib.js", "src/app.ts"]);
+  });
 });

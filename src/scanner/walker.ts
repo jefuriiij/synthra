@@ -61,6 +61,16 @@ const DEFAULT_IGNORE = [
   ".ruff_cache/",
   // .NET
   "obj/",
+  // Generated / minified bundles — no readable symbols, so indexing them only
+  // pollutes retrieval (a markup query like `nav|menu|toggle` spuriously matches
+  // a symbol inside vendored plugin JS → a useless Moat block) and bloats the
+  // graph. Committed bootstrap/swiper-style plugin JS is the common offender.
+  "*.min.js",
+  "*.min.cjs",
+  "*.min.mjs",
+  "*.min.css",
+  "*.bundle.js",
+  "*-min.js",
 ];
 
 const BINARY_EXTS = new Set([
