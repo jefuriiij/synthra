@@ -7,6 +7,26 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.12.0] — 2026-06-24
+
+### Added
+
+- **`find_symbol(name)` — reuse before you re-implement.** Before writing a new
+  helper, ask Synthra whether one already exists: `find_symbol` returns every
+  exact-name definition (with signatures + ready `graph_read` targets), or — if
+  there's no exact match — similarly-named symbols to reuse or extend. "No symbol
+  matching … — safe to create" is the green light that it's genuinely new. The
+  injected policy now nudges the agent to check first.
+- **`duplicate_symbols` — consolidation candidates.** Lists symbol names defined
+  in more than one file (functions/classes/types; methods excluded, since shared
+  method names are normal). Advisory — duplicates can be intentional; it never
+  says "delete."
+
+Both are built on the symbol index (exact name lookup) — no false-positive risk,
+no new dependencies.
+
+---
+
 ## [0.11.0] — 2026-06-24
 
 ### Added
