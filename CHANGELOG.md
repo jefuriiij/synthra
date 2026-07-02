@@ -7,6 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.16.1] — 2026-07-02
+
+### Added
+
+- **Dashboard: a Commands page.** New sidebar entry (below Arsenal) listing every
+  `syn` command with its description and flags — including the macOS/Linux note
+  that the hooks need `jq`. No more digging through the README to remember
+  `syn remove --yes` or what `doctor` checks.
+
+---
+
 ## [0.16.0] — 2026-07-02
 
 ### Added
