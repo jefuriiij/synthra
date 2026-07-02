@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.14.1] — 2026-07-02
+
+### Added
+
+- **Dashboard: copy button beside every Arsenal card name.** One click copies the
+  skill/agent/MCP name to your clipboard (with a ✓ flash) — handy for invoking a
+  skill or referencing an agent — without toggling the card open.
+
+### Fixed
+
+- **Dashboard: expanding an Arsenal card no longer stretches its neighbors.**
+  Opening a skill/agent card made the cards beside it in the same grid row grow
+  to matching height — looking expanded while their text stayed clamped until
+  clicked. Cards now align to the top of their row, so only the clicked card
+  grows and neighbors keep their compact size.
+
+---
+
 ## [0.14.0] — 2026-07-02
 
 ### Added
