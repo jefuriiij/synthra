@@ -7,6 +7,22 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.14.0] — 2026-07-02
+
+### Added
+
+- **`syn remove [path]` — cleanly uninstall Synthra from a project.** Ran `syn .`
+  in the wrong folder, or just want Synthra out of a repo? `syn remove` reverses
+  the bootstrap: deletes `.synthra-graph/` and `.synthra/`, strips the policy
+  block from `CLAUDE.md`, Synthra's entries from `.gitignore`, its hooks from
+  `.claude/` — **your own content in those files survives**; a file is deleted
+  only when nothing else remains. Also deregisters the MCP entry (with a direct
+  `.mcp.json` fallback when the `claude` CLI isn't available) and removes the
+  project from the dashboard registry. Shows a summary and asks `[y/N]` first;
+  pass `--yes` to skip (required when not running in a terminal).
+
+---
+
 ## [0.13.1] — 2026-06-24
 
 ### Fixed
