@@ -7,6 +7,28 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.16.0] — 2026-07-02
+
+### Added
+
+- **The Dispatcher — Synthra now routes your tasks.** On every prompt, Synthra
+  scores the request against every installed subagent and skill (plus the
+  project's language fingerprint) and — when it finds a clear fit — injects a
+  one-line hint: *"[Synthra route] This task fits agent 'X' (model: sonnet) +
+  skill 'Y'. Plan here first, then delegate execution."* Works for any domain
+  your arsenal covers: UI work routes to your frontend agents, security audits
+  to your security agents, and so on. Silent when unsure. Disable with
+  `SYN_NO_ROUTE`; tune the confidence bar with `SYN_ROUTE_MIN_SCORE`.
+- **`route_task` tool** — the on-demand version: ask which installed
+  agent/skill fits a task and which model to run it on; returns ranked
+  candidates with match reasons.
+- **Model policy baked in:** plan on the primary model, delegate execution to a
+  subagent on a cheaper one (Sonnet is ~5× cheaper than Opus on every rate).
+  Agents that pin their own `model:` are respected; everything else defaults to
+  a `sonnet` recommendation.
+
+---
+
 ## [0.15.0] — 2026-07-02
 
 ### Added
