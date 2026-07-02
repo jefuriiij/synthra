@@ -7,6 +7,23 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.17.0] — 2026-07-02
+
+### Added
+
+- **Report an issue (or suggest a feature) straight from the dashboard.** A new
+  **Report** button in the sidebar runs the doctor checks live and shows the
+  results — often that alone tells you the fix (e.g. "jq missing — hooks silently
+  no-op"). One click copies a markdown diagnostic (Synthra/OS/Node versions +
+  every check, home paths redacted to `~`), and two buttons open GitHub's bug /
+  feature forms — paste and submit. Nothing is ever sent automatically.
+- **`syn doctor --report`** — the same copy-pasteable diagnostic from the
+  terminal.
+- **GitHub issue templates** — the bug form asks for the diagnostic report, so
+  every report arrives debuggable.
+
+---
+
 ## [0.16.1] — 2026-07-02
 
 ### Added
