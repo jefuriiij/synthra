@@ -104,7 +104,9 @@
             >{g.label}</span>
             <span class="font-mono text-xs tracking-[0.1em] text-muted-foreground">{g.items.length}</span>
           </div>
-          <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+          <!-- items-start: an expanded card must not stretch its row-mates (they'd
+               look open while still clamped) — neighbors keep their compact height. -->
+          <div class="grid grid-cols-1 items-start gap-2 md:grid-cols-2 2xl:grid-cols-3">
             {#each g.items as it (it.scope + (it.source ?? "") + it.name)}
               <ArsenalItem item={it} />
             {/each}
