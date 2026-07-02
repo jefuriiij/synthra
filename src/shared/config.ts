@@ -11,6 +11,8 @@ export interface SynthraConfig {
   reindexDebounceMs: number;
   autoReindex: boolean;
   bashObserve: boolean;
+  route: boolean;
+  routeMinScore: number;
   mcpPort: number | null;
   dashboardPort: number;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -45,6 +47,10 @@ export function loadConfig(): SynthraConfig {
     // the terminal bypass of the Moat can be measured. Never blocks. Opt out
     // with SYN_NO_BASH_OBSERVE.
     bashObserve: !process.env.SYN_NO_BASH_OBSERVE,
+    // The Dispatcher: per-prompt routing hints (best-fit agent/skill/model).
+    // Silent unless the top agent clears routeMinScore. SYN_NO_ROUTE disables.
+    route: !process.env.SYN_NO_ROUTE,
+    routeMinScore: num("SYN_ROUTE_MIN_SCORE", 3),
     mcpPort: process.env.SYN_MCP_PORT ? num("SYN_MCP_PORT", 0) : null,
     dashboardPort: num("SYN_DASHBOARD_PORT", 8901),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),

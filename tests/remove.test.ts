@@ -22,7 +22,12 @@ async function tmpProject(): Promise<string> {
 async function seedHooks(paths: SynthraPaths): Promise<void> {
   await mkdir(paths.claudeHooksDir, { recursive: true });
   const settings = { hooks: {} as Record<string, unknown[]> };
-  for (const base of ["synthra-prime", "synthra-pre-tool-use", "synthra-pre-compact"]) {
+  for (const base of [
+    "synthra-prime",
+    "synthra-pre-tool-use",
+    "synthra-pre-compact",
+    "synthra-route",
+  ]) {
     const script = join(paths.claudeHooksDir, `${base}.ps1`);
     await writeFile(script, "# synthra hook\n", "utf8");
     settings.hooks[base] = [

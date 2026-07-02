@@ -13,6 +13,7 @@ export interface SynthraPaths {
   tokenLog: string;
   gateLog: string;
   bashLog: string;
+  routeLog: string;
   toolLog: string;
   accessLog: string;
   learnStore: string;
@@ -46,6 +47,7 @@ export function resolvePaths(projectRoot: string): SynthraPaths {
     tokenLog: join(graphDir, "token_log.jsonl"),
     gateLog: join(graphDir, "gate_log.jsonl"),
     bashLog: join(graphDir, "bash_log.jsonl"),
+    routeLog: join(graphDir, "route_log.jsonl"),
     toolLog: join(graphDir, "tool_log.jsonl"),
     accessLog: join(graphDir, "access_log.jsonl"),
     learnStore: join(graphDir, "learn_store.json"),

@@ -16,6 +16,8 @@ import preToolUsePs1 from "./scripts/pre-tool-use.ps1";
 import preToolUseSh from "./scripts/pre-tool-use.sh";
 import primePs1 from "./scripts/prime.ps1";
 import primeSh from "./scripts/prime.sh";
+import routePs1 from "./scripts/route.ps1";
+import routeSh from "./scripts/route.sh";
 import stopPs1 from "./scripts/stop.ps1";
 import stopSh from "./scripts/stop.sh";
 
@@ -26,7 +28,7 @@ export interface InstallResult {
 
 interface ScriptDef {
   /** Hook event name as recognized by Claude Code. */
-  event: "SessionStart" | "PreToolUse" | "PreCompact" | "Stop";
+  event: "SessionStart" | "PreToolUse" | "PreCompact" | "Stop" | "UserPromptSubmit";
   /** Tool-name regex for PreToolUse only. */
   matcher?: string;
   /** Base filename written into .claude/hooks/. */
@@ -49,6 +51,8 @@ const SCRIPTS: ScriptDef[] = [
   },
   { event: "PreCompact", baseName: "synthra-pre-compact", ps1: preCompactPs1, sh: preCompactSh },
   { event: "Stop", baseName: "synthra-stop", ps1: stopPs1, sh: stopSh },
+  // The Dispatcher — per-prompt routing hint (best-fit agent/skill/model).
+  { event: "UserPromptSubmit", baseName: "synthra-route", ps1: routePs1, sh: routeSh },
 ];
 
 function commandFor(scriptPath: string): string {

@@ -35,6 +35,7 @@ const HOOK_BASENAMES = [
   "synthra-pre-tool-use",
   "synthra-pre-compact",
   "synthra-stop",
+  "synthra-route",
 ];
 
 async function exists(path: string): Promise<boolean> {

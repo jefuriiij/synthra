@@ -26,6 +26,7 @@ import { handleGate } from "./routes/gate.js";
 import { handleLog } from "./routes/log.js";
 import { handlePack } from "./routes/pack.js";
 import { handlePrime } from "./routes/prime.js";
+import { handleRoute } from "./routes/route.js";
 
 export interface ServerHandle {
   port: number;
@@ -99,6 +100,13 @@ function buildApp(ctx: ServerContext, port: number): Hono {
   app.post("/gate", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleGate(body, ctx));
+  });
+
+  // The Dispatcher: the UserPromptSubmit hook posts each prompt; a non-empty
+  // hint is injected into the conversation as added context.
+  app.post("/route", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleRoute(body, ctx));
   });
 
   app.get("/activity", async (c) => {

@@ -20,8 +20,11 @@ import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { ContextEntry, EntryAnchor, EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
 import { findTestsForFile } from "../packer/tests.js";
+import { computeArsenal } from "../dashboard/arsenal.js";
 import { loadConfig } from "../shared/config.js";
 import type { ServerContext } from "./context.js";
+import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
+import { graphExtCounts } from "./routes/route.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "synthra", version: "0.0.1" } as const;
@@ -247,6 +250,18 @@ const TOOLS = [
       required: ["from", "to"],
     },
   },
+  {
+    name: "route_task",
+    description:
+      "Ask Synthra which installed subagent/skill best fits a task, and which model to run it on. Scores the task against every installed agent and skill (plus the project's language fingerprint). Use BEFORE starting a multi-step implementation task: plan on the primary model, then delegate execution to the recommended agent on a cheaper model (sonnet ≈ 5× cheaper than opus).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "The task to route, in a sentence." },
+      },
+      required: ["task"],
+    },
+  },
 ] as const;
 
 async function callTool(
@@ -279,6 +294,8 @@ async function callTool(
       return duplicateSymbols(args, ctx);
     case "call_path":
       return callPath(args, ctx);
+    case "route_task":
+      return routeTask(args, ctx);
     default:
       return errorContent(`Unknown tool: ${name}`);
   }
@@ -468,6 +485,21 @@ function testsCoveringLine(graph: GraphSchema, filePaths: string[]): string {
   const shown = tests.slice(0, TESTS_MAX_FILES);
   const omitted = tests.length - shown.length;
   return `Tests covering the impact: ${shown.join(" · ")}${omitted > 0 ? ` …+${omitted} more` : ""}`;
+}
+
+// route_task — the Dispatcher's on-demand form: which installed agent/skill
+// fits this task, on which model. Thin wiring over the pure scorer in
+// route-match.ts (the UserPromptSubmit hint shares it via /route).
+async function routeTask(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const task = typeof args?.task === "string" ? args.task.trim() : "";
+  if (!task) return errorContent("route_task: 'task' (string) is required");
+  try {
+    const arsenal = await computeArsenal(ctx.paths.projectRoot);
+    const match = scoreArsenal(task, arsenal, graphExtCounts(ctx), loadConfig().routeMinScore);
+    return textContent(renderRouteReport(task, match));
+  } catch (err) {
+    return errorContent(`route_task: arsenal scan failed — ${(err as Error).message}`);
+  }
 }
 
 // Resolve a call_path argument to a single symbol: "file::symbol", or a bare

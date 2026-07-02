@@ -20,11 +20,12 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(content).toContain("# my-proj");
     expect(content).toContain("## Build & test");
     expect(content).toContain("## Key decisions");
-    expect(content).toContain("synthra-policy v8 BEGIN");
+    expect(content).toContain("synthra-policy v9 BEGIN");
     expect(content).toContain("find_symbol"); // reuse-first nudge (v0.12)
+    expect(content).toContain("route_task"); // delegate-first nudge (v0.16)
     // Skeleton must come BEFORE the policy block.
     expect(content.indexOf("## Build & test")).toBeLessThan(
-      content.indexOf("synthra-policy v8 BEGIN"),
+      content.indexOf("synthra-policy v9 BEGIN"),
     );
   });
 
@@ -38,7 +39,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
     const content = await readFile(path, "utf8");
     expect(content).toContain("# Existing user doc");
     expect(content).not.toContain("## Build & test"); // no skeleton injected
-    expect(content).toContain("synthra-policy v8 BEGIN"); // policy still appended
+    expect(content).toContain("synthra-policy v9 BEGIN"); // policy still appended
   });
 
   it("is idempotent: re-running makes no change (no blank-line creep)", async () => {
@@ -86,7 +87,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
   });
 });
 
-describe("patchClaudeMd policy v8 (namespaced tools + reuse-first)", () => {
+describe("patchClaudeMd policy v9 (namespaced tools + reuse-first + delegate-first)", () => {
   it("strips a prior v6 block and installs the current block with full tool names + loader line", async () => {
     const path = await tmpClaudeMd();
     await writeFile(
@@ -99,7 +100,7 @@ describe("patchClaudeMd policy v8 (namespaced tools + reuse-first)", () => {
     expect(res.updated).toBe(true);
 
     const content = await readFile(path, "utf8");
-    expect(content).toContain("synthra-policy v8 BEGIN");
+    expect(content).toContain("synthra-policy v9 BEGIN");
     expect(content).not.toContain("synthra-policy v6 BEGIN");
     expect(content).toContain("### Resuming a session");
     expect(content).toContain("Since you were last here");

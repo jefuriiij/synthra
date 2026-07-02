@@ -6,7 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 8;
+export const POLICY_VERSION = 9;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -41,7 +41,7 @@ export function policyBlock(): string {
     "> `mcp__synthra__graph_register_edit`. **Short names will NOT resolve**",
     "> in ToolSearch or invocation — always use the full namespaced form.",
     "> If the tools are deferred, load their schemas with ToolSearch:",
-    "> `select:mcp__synthra__graph_continue,mcp__synthra__graph_read,mcp__synthra__graph_register_edit,mcp__synthra__find_symbol`.",
+    "> `select:mcp__synthra__graph_continue,mcp__synthra__graph_read,mcp__synthra__graph_register_edit,mcp__synthra__find_symbol,mcp__synthra__route_task`.",
     "> Below, short names (`graph_continue` etc.) appear in prose for",
     "> readability only.",
     "",
@@ -59,6 +59,11 @@ export function policyBlock(): string {
     "  util, or function, call this to check whether one already exists. If it",
     "  returns matches, reuse or extend them instead of re-implementing; only",
     '  "no match — safe to create" means it is genuinely new.',
+    "- **`route_task(task)`** — **delegate-first**: before starting a multi-step",
+    "  implementation task, ask which installed subagent/skill fits it. Plan on",
+    "  the primary model, then hand execution to the recommended subagent on a",
+    "  cheaper model (sonnet ≈ 5× cheaper than opus). Synthra may also inject a",
+    "  `[Synthra route]` hint on your prompt — treat it the same way.",
     "",
     "### When to call `graph_continue` — and when to skip",
     "",
