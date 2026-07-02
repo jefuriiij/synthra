@@ -1,0 +1,30 @@
+name: Bug report
+description: Something broken or behaving oddly
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you see instead?
+      placeholder: "I ran `syn .` in my project and …"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic report
+      description: >
+        Run `syn doctor --report` in the project (or open the dashboard → Report →
+        Copy report) and paste the output here. Paths are redacted automatically.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (optional)
+      placeholder: "1. … 2. … 3. …"
+    validations:
+      required: false

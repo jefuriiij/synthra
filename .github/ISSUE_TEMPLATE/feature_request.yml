@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea or improvement
+title: "[idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What slows you down or annoys you today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What would you like Synthra to do? Rough is fine.
+    validations:
+      required: true

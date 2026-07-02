@@ -2,7 +2,7 @@
 // /arsenal the first time the Arsenal view opens. The view selector lives here
 // so the sidebar and main area stay in sync.
 
-import type { ArsenalData, DashboardData, View } from "./types";
+import type { ArsenalData, DashboardData, ReportData, View } from "./types";
 
 class DashStore {
   data = $state<DashboardData | null>(null);
@@ -33,6 +33,23 @@ class DashStore {
 
   stop(): void {
     if (this.#timer) clearInterval(this.#timer);
+  }
+
+  report = $state<ReportData | null>(null);
+  reportLoading = $state(false);
+
+  /** Fetch the diagnostic for the Report dialog. No cache — the doctor state
+   *  can change between opens (e.g. jq just installed). */
+  async loadReport(): Promise<void> {
+    this.reportLoading = true;
+    try {
+      const r = await fetch("/report");
+      if (r.ok) this.report = (await r.json()) as ReportData;
+    } catch {
+      // dialog shows its offline/empty state
+    } finally {
+      this.reportLoading = false;
+    }
   }
 
   async loadArsenal(force = false): Promise<void> {

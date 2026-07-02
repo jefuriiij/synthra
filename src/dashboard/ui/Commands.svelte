@@ -32,6 +32,12 @@
     {
       cmd: "syn doctor [path]",
       desc: "Diagnose the setup: Node version, jq (required by the macOS/Linux hooks), the claude CLI, graph freshness, .mcp.json registration, policy version, and installed hooks. Run this first when something feels off.",
+      opts: [
+        {
+          flag: "--report",
+          desc: "Emit a copy-pasteable markdown diagnostic for GitHub issues (paths redacted)",
+        },
+      ],
     },
     {
       cmd: "syn remove [path]",

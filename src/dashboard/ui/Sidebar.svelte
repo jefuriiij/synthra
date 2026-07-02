@@ -4,10 +4,11 @@
   import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
   import Swords from "@lucide/svelte/icons/swords";
   import SquareTerminal from "@lucide/svelte/icons/square-terminal";
+  import LifeBuoy from "@lucide/svelte/icons/life-buoy";
   import CircleHelp from "@lucide/svelte/icons/circle-help";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
 
-  let { onFaq }: { onFaq: () => void } = $props();
+  let { onFaq, onReport }: { onFaq: () => void; onReport: () => void } = $props();
   let collapsed = $state(false);
 
   const port = typeof window !== "undefined" ? window.location.port || "8901" : "8901";
@@ -66,6 +67,15 @@
         {#if !collapsed}<span>{item.label}</span>{/if}
       </button>
     {/each}
+    <button
+      onclick={onReport}
+      title="Report an issue or suggest a feature"
+      class={"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground " +
+        (collapsed ? "justify-center" : "")}
+    >
+      <LifeBuoy class="size-4 shrink-0" />
+      {#if !collapsed}<span>Report</span>{/if}
+    </button>
     <button
       onclick={onFaq}
       title="FAQ"

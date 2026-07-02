@@ -5,6 +5,7 @@
 // an outdated policy block / uninstalled hooks. Never mutates anything.
 
 import { readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import spawn from "cross-spawn";
@@ -201,9 +202,72 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
   return checks;
 }
 
-export async function doctorCommand(rawPath: string): Promise<void> {
+/** Replace the user's home directory (either slash direction) with `~` so a
+ *  shared diagnostic never leaks a username or machine path. */
+export function redactHome(text: string, home = homedir()): string {
+  if (!home) return text;
+  const variants = [home, home.replace(/\\/g, "/"), home.replace(/\//g, "\\")];
+  let out = text;
+  for (const v of new Set(variants)) {
+    out = out.split(v).join("~");
+  }
+  return out;
+}
+
+export interface ReportInfo {
+  version: string;
+  platform: string;
+  arch: string;
+  node: string;
+  claudeBin: string;
+}
+
+/**
+ * Copy-pasteable markdown diagnostic for GitHub issues — shared by
+ * `syn doctor --report` and the dashboard's Report dialog (single source of
+ * truth). Every line passes through redactHome; the project root is
+ * deliberately not included.
+ */
+export function buildDiagnosticReport(checks: DoctorCheck[], info: ReportInfo): string {
+  const lines = [
+    "### Synthra diagnostic report",
+    "",
+    `- Synthra: v${info.version}`,
+    `- OS: ${info.platform} ${info.arch}`,
+    `- Node: v${info.node}`,
+    `- claude bin: ${redactHome(info.claudeBin)}`,
+    "",
+  ];
+  for (const c of checks) {
+    lines.push(`- ${ICON[c.status]} **${c.label}** — ${redactHome(c.detail)}`);
+  }
+  return lines.join("\n");
+}
+
+export interface DoctorOptions {
+  /** Emit the markdown diagnostic (raw stdout, pipe-friendly) instead of the
+   *  human checklist. */
+  report?: boolean;
+  /** Synthra version for the report header (injected by the CLI entry). */
+  version?: string;
+}
+
+export async function doctorCommand(rawPath: string, opts: DoctorOptions = {}): Promise<void> {
   const projectRoot = resolve(rawPath);
   const checks = await runDoctorChecks(projectRoot);
+
+  if (opts.report) {
+    console.log(
+      buildDiagnosticReport(checks, {
+        version: opts.version ?? "unknown",
+        platform: process.platform,
+        arch: process.arch,
+        node: process.versions.node,
+        claudeBin: loadConfig().claudeBin,
+      }),
+    );
+    return;
+  }
 
   log.info("");
   log.info(`  Synthra doctor — ${projectRoot}`);

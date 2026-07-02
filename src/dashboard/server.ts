@@ -13,6 +13,8 @@ import { Hono } from "hono";
 // dashboard footer on every GET /.
 import pkgJson from "../../package.json" with { type: "json" };
 
+import { buildDiagnosticReport, runDoctorChecks } from "../cli/doctor-command.js";
+import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
@@ -63,6 +65,21 @@ export async function startDashboard(
   // Installed skills / agents / MCP servers (project · personal · plugin).
   // Fetched lazily when the Arsenal drawer opens — not on the /data poll.
   app.get("/arsenal", async (c) => c.json(await computeArsenal(paths.projectRoot)));
+
+  // Diagnostic for the Report dialog: runs the doctor checks and prebuilds the
+  // redacted markdown so the UI copies exactly what `syn doctor --report` emits.
+  // Nothing is sent anywhere — the user copies + pastes it into a GitHub issue.
+  app.get("/report", async (c) => {
+    const checks = await runDoctorChecks(paths.projectRoot);
+    const info = {
+      version: VERSION,
+      platform: process.platform,
+      arch: process.arch,
+      node: process.versions.node,
+      claudeBin: loadConfig().claudeBin,
+    };
+    return c.json({ ...info, checks, markdown: buildDiagnosticReport(checks, info) });
+  });
 
   app.get("/data", async (c) => {
     const data = await computeDashboardData(paths, RECENT_N);

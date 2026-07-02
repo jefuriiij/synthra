@@ -199,8 +199,9 @@ export function buildProgram() {
 
   prog
     .command("doctor [path]", "Diagnose this project's Synthra setup + environment.")
-    .action(async (path: string | undefined) => {
-      await doctorCommand(path ?? ".");
+    .option("--report", "Emit a copy-pasteable markdown diagnostic (for GitHub issues)", false)
+    .action(async (path: string | undefined, opts: { report?: boolean }) => {
+      await doctorCommand(path ?? ".", { report: opts.report, version: VERSION });
     });
 
   prog
