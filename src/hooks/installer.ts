@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
+import { SYNTHRA_HOOK_MARKER, stripOurHooks, type HooksConfig } from "./hooks-config.js";
 
 import preCompactPs1 from "./scripts/pre-compact.ps1";
 import preCompactSh from "./scripts/pre-compact.sh";
@@ -50,8 +51,6 @@ const SCRIPTS: ScriptDef[] = [
   { event: "Stop", baseName: "synthra-stop", ps1: stopPs1, sh: stopSh },
 ];
 
-const SYNTHRA_HOOK_MARKER = "synthra-hook=true";
-
 function commandFor(scriptPath: string): string {
   if (process.platform === "win32") {
     // PowerShell on Windows; -ExecutionPolicy Bypass so the script always runs.
@@ -68,16 +67,6 @@ function chosenScriptExt(): string {
   return process.platform === "win32" ? ".ps1" : ".sh";
 }
 
-interface HooksConfig {
-  hooks?: {
-    [event: string]: Array<{
-      matcher?: string;
-      hooks?: Array<{ type: string; command: string; meta?: string }>;
-    }>;
-  };
-  [k: string]: unknown;
-}
-
 async function readSettings(path: string): Promise<HooksConfig> {
   try {
     const raw = await readFile(path, "utf8");
@@ -85,22 +74,6 @@ async function readSettings(path: string): Promise<HooksConfig> {
   } catch {
     return {};
   }
-}
-
-function stripOurHooks(config: HooksConfig): HooksConfig {
-  if (!config.hooks) return config;
-  const next: HooksConfig["hooks"] = {};
-  for (const [event, entries] of Object.entries(config.hooks)) {
-    const filtered = entries
-      .map((entry) => ({
-        ...entry,
-        hooks: (entry.hooks ?? []).filter((h) => h.meta !== SYNTHRA_HOOK_MARKER),
-      }))
-      .filter((entry) => (entry.hooks?.length ?? 0) > 0);
-    if (filtered.length) next[event] = filtered;
-  }
-  config.hooks = next;
-  return config;
 }
 
 function mergeOurHooks(config: HooksConfig, paths: SynthraPaths): HooksConfig {

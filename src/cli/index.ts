@@ -29,6 +29,7 @@ import { recordProject } from "../shared/project-registry.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
+import { removeCommand } from "./remove-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
 import { promptForUpdateOrLog, runStartupChangelogCheck } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
@@ -200,6 +201,16 @@ export function buildProgram() {
     .command("doctor [path]", "Diagnose this project's Synthra setup + environment.")
     .action(async (path: string | undefined) => {
       await doctorCommand(path ?? ".");
+    });
+
+  prog
+    .command(
+      "remove [path]",
+      "Remove Synthra from a project — deletes its state, strips hooks/policy/gitignore entries, deregisters MCP.",
+    )
+    .option("--yes", "Skip the confirmation prompt", false)
+    .action(async (path: string | undefined, opts: { yes?: boolean }) => {
+      await removeCommand(path ?? ".", { yes: opts.yes });
     });
 
   return prog;

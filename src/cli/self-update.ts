@@ -208,9 +208,10 @@ export async function runStartupChangelogCheck(): Promise<void> {
 
 /**
  * Ask a yes/no question on stdin/stdout. Returns true only on explicit "y" /
- * "yes". Empty input or anything else returns false.
+ * "yes". Empty input, anything else, or a non-TTY stdin returns false.
+ * Exported for reuse by other confirming commands (e.g. `syn remove`).
  */
-async function promptYesNo(question: string): Promise<boolean> {
+export async function promptYesNo(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {

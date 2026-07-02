@@ -61,6 +61,29 @@ export async function recordProject(projectRoot: string): Promise<void> {
   }
 }
 
+/** Remove this project's entry (exact-path match). Best-effort — a missing or
+ *  unwritable registry is not an error. `registryPath` is overridable for tests. */
+export async function forgetProject(
+  projectRoot: string,
+  registryPath = REGISTRY_PATH,
+): Promise<boolean> {
+  try {
+    const raw = await readFile(registryPath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<Registry>;
+    const projects = Array.isArray(parsed.projects) ? parsed.projects : [];
+    const filtered = projects.filter((p) => p.path !== projectRoot);
+    if (filtered.length === projects.length) return false;
+    const next: Registry = {
+      schema_version: parsed.schema_version ?? SCHEMA_VERSION,
+      projects: filtered,
+    };
+    await writeFile(registryPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listProjects(): Promise<ProjectRegistryEntry[]> {
   const registry = await readRegistry();
   // Sort by last_seen descending so the most active project surfaces first.

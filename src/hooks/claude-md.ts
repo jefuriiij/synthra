@@ -20,6 +20,12 @@ export interface PatchResult {
   skipped: boolean;
 }
 
+/** Remove every synthra-policy block (any version) from a CLAUDE.md body.
+ *  Exported for `syn remove` — the uninstall mirror of `patchClaudeMd`. */
+export function stripPolicyBlock(content: string): string {
+  return content.replace(ANY_BLOCK_RE, "");
+}
+
 export function policyBlock(): string {
   return [
     POLICY_BEGIN,

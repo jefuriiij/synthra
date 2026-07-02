@@ -20,7 +20,7 @@ export interface BootstrapResult {
 // indentation, trimmed match), it's skipped. Comments are per-entry so
 // users understand why each line is there and can remove what they don't
 // want without breaking the rest.
-const GITIGNORE_ENTRIES: { comment: string; entry: string }[] = [
+export const GITIGNORE_ENTRIES: { comment: string; entry: string }[] = [
   {
     comment: "added by synthra (heavy generated state — gitignored by design)",
     entry: ".synthra-graph/",

@@ -108,6 +108,10 @@ syn . --resume <id>       # Resume a Claude session (requires --launch-cli).
 syn scan [path]           # Scan only — walk + parse + write graph.
 syn serve [path]          # Start the MCP server only.
 syn dashboard [path]      # Run only the token dashboard (standalone process).
+syn doctor [path]         # Diagnose this project's Synthra setup + environment.
+syn remove [path]         # Uninstall Synthra from a project (accidental `syn .`?
+                          # This reverses it). Asks [y/N]; --yes to skip. Your own
+                          # gitignore lines / CLAUDE.md content / hooks survive.
 ```
 
 ---
