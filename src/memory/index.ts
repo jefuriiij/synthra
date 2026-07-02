@@ -9,7 +9,13 @@ import {
   type BranchScopedPaths,
 } from "./branches.js";
 import { deriveContextMd, writeContextMd } from "./context-md.js";
-import { appendEntry, readEntries, type ContextEntry, type EntryKind } from "./context-store.js";
+import {
+  appendEntry,
+  readEntries,
+  type ContextEntry,
+  type EntryAnchor,
+  type EntryKind,
+} from "./context-store.js";
 
 export interface ActiveBranch {
   branch: string;
@@ -36,6 +42,9 @@ export interface RememberInput {
   kind: EntryKind;
   tags?: string[];
   files?: string[];
+  /** Content-hash snapshots of linked files (resolved by the caller against the
+   *  live graph) — powers the "possibly stale" flag at recall time. */
+  anchors?: EntryAnchor[];
 }
 
 export interface RememberResult {
@@ -56,6 +65,7 @@ export async function rememberEntry(
     tags: input.tags ?? [],
     files: input.files ?? [],
     date: new Date().toISOString(),
+    ...(input.anchors && input.anchors.length > 0 ? { anchors: input.anchors } : {}),
   };
   await appendEntry(active.paths.contextStore, entry);
 

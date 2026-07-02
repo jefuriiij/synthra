@@ -7,6 +7,13 @@ import { dirname } from "node:path";
 
 export type EntryKind = "decision" | "task" | "next" | "fact" | "blocker";
 
+/** Content-hash snapshot of a linked file at capture time. Lets recall flag an
+ *  entry "possibly stale" when the anchored file has changed since it was stored. */
+export interface EntryAnchor {
+  path: string;
+  hash: string;
+}
+
 export interface ContextEntry {
   type: EntryKind;
   content: string;
@@ -16,6 +23,10 @@ export interface ContextEntry {
   /** Provenance. Reserved for v2 auto-capture; v1 only writes manual entries, so
    *  the field is omitted today and read back as undefined (treated as manual). */
   source?: "manual" | "auto";
+  /** Staleness anchors (v0.15+). Optional + additive — older entries (and entries
+   *  whose files weren't in the graph at capture) simply have none and are never
+   *  flagged. The store SCHEMA_VERSION stays 1: readers ignore unknown fields. */
+  anchors?: EntryAnchor[];
 }
 
 interface Store {

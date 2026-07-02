@@ -17,7 +17,7 @@ import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
 import { appendAccess } from "../learn/store.js";
 import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
-import type { EntryKind } from "../memory/context-store.js";
+import type { ContextEntry, EntryAnchor, EntryKind } from "../memory/context-store.js";
 import { pack } from "../packer/index.js";
 import { findTestsForFile } from "../packer/tests.js";
 import { loadConfig } from "../shared/config.js";
@@ -131,7 +131,8 @@ const TOOLS = [
         files: {
           type: "array",
           items: { type: "string" },
-          description: "Optional project-relative file paths this entry relates to.",
+          description:
+            "Optional project-relative file paths this entry relates to. Linked files also anchor the entry: recall flags it 'possibly stale' if they change, and graph_read of those files surfaces it automatically.",
         },
       },
       required: ["text", "kind"],
@@ -779,8 +780,49 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
     `Files: ${retrieval.files.map((f) => f.path).join(", ") || "(none)"}\n` +
     `Reason: ${retrieval.reason}\n`;
 
+  // Recall half of the second brain: fold the top query-relevant remembered
+  // entries into the pack header (a couple of lines, no pack-budget impact),
+  // so stored decisions/gotchas resurface exactly when their topic comes up.
+  const remembered = matchRememberedFacts(query, retrieval.files, await safeRecallAll(ctx), ctx);
+
   // The pack body already starts with a header — keep them concatenated.
-  return textContent(`${header}\n${packed.text}`);
+  return textContent(`${header}${remembered}\n${packed.text}`);
+}
+
+/** Score context entries against a query (token overlap on content+tags) and
+ *  the retrieved files (file/anchor overlap); render the top matches as
+ *  `Remembered:` header lines. Returns "" when nothing scores. */
+function matchRememberedFacts(
+  query: string,
+  retrievedFiles: FileNode[],
+  entries: ContextEntry[],
+  ctx: ServerContext,
+): string {
+  if (entries.length === 0) return "";
+  const qTokens = new Set(tokenizeQuery(query));
+  const retrievedPaths = new Set(retrievedFiles.map((f) => f.path));
+
+  const scored = entries
+    .map((e) => {
+      let score = 0;
+      for (const t of tokenizeQuery(`${e.content} ${e.tags.join(" ")}`)) {
+        if (qTokens.has(t)) score += 1;
+      }
+      if (
+        e.files.some((f) => retrievedPaths.has(f)) ||
+        e.anchors?.some((a) => retrievedPaths.has(a.path))
+      ) {
+        score += 2;
+      }
+      return { e, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, PACK_FACTS_MAX);
+
+  if (scored.length === 0) return "";
+  // factLine renders "- [kind] …" — reuse it, swapping the list dash for the label.
+  return `${scored.map((x) => `Remembered: ${factLine(x.e, ctx.graph).slice(2)}`).join("\n")}\n`;
 }
 
 // Resolve a graph_read target's file part to a FileNode. Exact path wins; on a
@@ -915,6 +957,68 @@ export function buildTestsFooter(symbol: SymbolNode, graph: GraphSchema): string
   return "Tests: none linked to this file.";
 }
 
+const FACTS_MAX = 3;
+const FACTS_CONTENT_MAX = 160;
+const PACK_FACTS_MAX = 2;
+
+/** Which anchored files changed since this entry was stored. Empty = fresh or
+ *  unanchored (old entries without anchors are never flagged). Exported for tests. */
+export function staleAnchorPaths(entry: ContextEntry, graph: GraphSchema): string[] {
+  if (!entry.anchors || entry.anchors.length === 0) return [];
+  const hashByPath = new Map<string, string>();
+  for (const n of graph.nodes) if (n.kind === "file") hashByPath.set(n.path, n.file_hash);
+  return entry.anchors.filter((a) => hashByPath.get(a.path) !== a.hash).map((a) => a.path);
+}
+
+function factLine(entry: ContextEntry, graph: GraphSchema): string {
+  const content =
+    entry.content.length > FACTS_CONTENT_MAX
+      ? `${entry.content.slice(0, FACTS_CONTENT_MAX - 1)}…`
+      : entry.content;
+  const date = entry.date ? ` (${entry.date.slice(0, 10)})` : "";
+  const stale = staleAnchorPaths(entry, graph);
+  const staleNote = stale.length ? `  ⚠ possibly stale — ${stale[0]} changed since stored` : "";
+  return `- [${entry.type}] ${content}${date}${staleNote}`;
+}
+
+function entryLinksFile(entry: ContextEntry, filePath: string): boolean {
+  if (entry.anchors?.some((a) => a.path === filePath)) return true;
+  // files[] holds caller-supplied paths — accept exact or suffix matches, the
+  // same leniency resolveFileTarget gives graph_read targets.
+  return entry.files.some((f) => f === filePath || filePath.endsWith(`/${f}`));
+}
+
+/**
+ * Remembered-knowledge footer for graph_read: the context-store entries linked
+ * to this file (via `files`/anchors), newest first, each flagged when its
+ * anchored content has changed since capture. This is the recall half of the
+ * second brain — 152 remembers : 1 recall said the store was write-only.
+ */
+export function buildFactsFooter(
+  filePath: string,
+  entries: ContextEntry[],
+  graph: GraphSchema,
+): string {
+  const linked = entries.filter((e) => entryLinksFile(e, filePath));
+  if (linked.length === 0) return "";
+  const newestFirst = linked.slice().reverse(); // store is append-ordered
+  const shown = newestFirst.slice(0, FACTS_MAX);
+  const omitted = newestFirst.length - shown.length;
+  const lines = ["📌 Remembered for this file:", ...shown.map((e) => factLine(e, graph))];
+  if (omitted > 0) lines.push(`…+${omitted} more — mcp__synthra__context_recall()`);
+  return lines.join("\n");
+}
+
+/** Best-effort read of the branch's context entries — the memory layer must
+ *  never break a graph read/pack. */
+async function safeRecallAll(ctx: ServerContext): Promise<ContextEntry[]> {
+  try {
+    return (await recallEntries(ctx.paths, {})).entries;
+  } catch {
+    return [];
+  }
+}
+
 async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const target = typeof args?.target === "string" ? args.target : "";
   if (!target) return errorContent("graph_read: 'target' (string) is required");
@@ -939,8 +1043,11 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   // short of an edit. Feed it to the learning layer.
   await logAccess(ctx, { ts: nowIso(), path: fileNode.path, source: "read" });
 
+  const facts = buildFactsFooter(fileNode.path, await safeRecallAll(ctx), ctx.graph);
+  const factsBlock = facts ? `\n\n---\n${facts}` : "";
+
   if (!symbolName) {
-    return textContent(`# ${fileNode.path}\n\n${fileNode.content}`);
+    return textContent(`# ${fileNode.path}\n\n${fileNode.content}${factsBlock}`);
   }
 
   const cleanSym = symbolName.trim();
@@ -973,7 +1080,7 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const testsBlock = tests ? `\n\n---\n${tests}` : "";
 
   return textContent(
-    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${testsBlock}${editHint}`,
+    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${testsBlock}${factsBlock}${editHint}`,
   );
 }
 
@@ -1023,17 +1130,32 @@ async function contextRemember(args: Record<string, unknown> | undefined, ctx: S
     ? (args.files as unknown[]).filter((f): f is string => typeof f === "string")
     : [];
 
+  // Staleness anchors: snapshot each linked file's content hash from the live
+  // graph, so recall can flag this entry when the code moves on. Files the
+  // graph doesn't know simply get no anchor (never flagged).
+  const anchors: EntryAnchor[] = [];
+  for (const f of files) {
+    const resolved = resolveFileTarget(ctx.graph, f);
+    if ("node" in resolved) {
+      anchors.push({ path: resolved.node.path, hash: resolved.node.file_hash });
+    }
+  }
+
   const result = await rememberEntry(ctx.paths, {
     text,
     kind: kindRaw as EntryKind,
     tags,
     files,
+    anchors,
   });
 
+  const anchorNote = anchors.length
+    ? `\nAnchored to ${anchors.length} file(s) — recall will flag this entry if they change.`
+    : "";
   return textContent(
     `Remembered ${result.entry.type} on branch '${result.branch}'.\n` +
       `Stored: ${result.storePath}\n` +
-      `CONTEXT.md refreshed: ${result.contextMdPath}`,
+      `CONTEXT.md refreshed: ${result.contextMdPath}${anchorNote}`,
   );
 }
 
@@ -1085,7 +1207,11 @@ async function contextRecall(args: Record<string, unknown> | undefined, ctx: Ser
   const lines = [`# Context entries — branch: ${result.branch}`, ""];
   for (const e of result.entries) {
     const tags = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
-    lines.push(`- **${e.type}**${tags} (${e.date}): ${e.content}`);
+    const stale = staleAnchorPaths(e, ctx.graph);
+    const staleNote = stale.length
+      ? `  ⚠ possibly stale — ${stale.join(", ")} changed since stored`
+      : "";
+    lines.push(`- **${e.type}**${tags} (${e.date}): ${e.content}${staleNote}`);
     if (e.files.length) lines.push(`  files: ${e.files.join(", ")}`);
   }
   return textContent(lines.join("\n"));

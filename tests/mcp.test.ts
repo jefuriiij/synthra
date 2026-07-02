@@ -8,11 +8,15 @@ import { join } from "node:path";
 import { ActivityStore } from "../src/activity/activity-log.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../src/graph/types.js";
 import type { ServerContext } from "../src/server/context.js";
+import type { ContextEntry } from "../src/memory/context-store.js";
+import { recallEntries, rememberEntry } from "../src/memory/index.js";
 import {
   buildDepsFooter,
+  buildFactsFooter,
   buildTestsFooter,
   handleMcpRequest,
   resolveFileTarget,
+  staleAnchorPaths,
 } from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
@@ -621,5 +625,170 @@ describe("call_path (v0.13.0)", () => {
 
   it("reports no path when the target is unreachable", async () => {
     expect(await pathText({ from: "A", to: "D" })).toContain("no call path found");
+  });
+});
+
+// ---- v0.15.0: the second brain talks back ----
+
+function madeEntry(over: Partial<ContextEntry> & { content: string }): ContextEntry {
+  return {
+    type: "fact",
+    tags: [],
+    files: [],
+    date: "2026-07-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("staleAnchorPaths + buildFactsFooter (v0.15.0)", () => {
+  const g = (hash: string): GraphSchema => {
+    const f = { ...fileNode("src/a.ts"), file_hash: hash };
+    return {
+      root: ".",
+      node_count: 1,
+      edge_count: 0,
+      file_count: 1,
+      symbol_count: 0,
+      nodes: [f],
+      edges: [],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  };
+
+  it("flags an anchor whose file content changed (or vanished)", () => {
+    const e = madeEntry({ content: "x", anchors: [{ path: "src/a.ts", hash: "old1" }] });
+    expect(staleAnchorPaths(e, g("new2"))).toEqual(["src/a.ts"]);
+    const gone = madeEntry({ content: "x", anchors: [{ path: "src/zz.ts", hash: "old1" }] });
+    expect(staleAnchorPaths(gone, g("new2"))).toEqual(["src/zz.ts"]);
+  });
+
+  it("stays quiet for fresh anchors and unanchored (old-shape) entries", () => {
+    const fresh = madeEntry({ content: "x", anchors: [{ path: "src/a.ts", hash: "h1" }] });
+    expect(staleAnchorPaths(fresh, g("h1"))).toEqual([]);
+    expect(staleAnchorPaths(madeEntry({ content: "old shape" }), g("h1"))).toEqual([]);
+  });
+
+  it("footer lists file-linked entries only, newest first, capped", () => {
+    const entries = [
+      madeEntry({ content: "oldest note", files: ["src/a.ts"] }),
+      madeEntry({ content: "unrelated", files: ["src/b.ts"] }),
+      madeEntry({ content: "note two", files: ["src/a.ts"] }),
+      madeEntry({ content: "note three", files: ["src/a.ts"] }),
+      madeEntry({ content: "newest note", files: ["src/a.ts"] }),
+    ];
+    const footer = buildFactsFooter("src/a.ts", entries, g("h1"));
+    expect(footer).toContain("📌 Remembered for this file:");
+    expect(footer).toContain("newest note");
+    expect(footer).not.toContain("unrelated");
+    expect(footer).not.toContain("oldest note"); // 4 linked, cap 3, newest first
+    expect(footer).toContain("…+1 more");
+  });
+
+  it("footer marks stale entries and returns '' when nothing links", () => {
+    const stale = madeEntry({
+      content: "moved on",
+      files: ["src/a.ts"],
+      anchors: [{ path: "src/a.ts", hash: "captured" }],
+    });
+    expect(buildFactsFooter("src/a.ts", [stale], g("different"))).toContain("⚠ possibly stale");
+    expect(buildFactsFooter("src/a.ts", [madeEntry({ content: "x" })], g("h1"))).toBe("");
+  });
+});
+
+describe("second-brain integration (v0.15.0)", () => {
+  function graphWithFoo(hash = "h1"): GraphSchema {
+    const f: FileNode = {
+      ...fileNode("src/a.ts"),
+      content: "line1\nfunction foo() {\n  return 1;\n}\n",
+      file_hash: hash,
+    };
+    const s = symNode("src/a.ts", "foo", 2, 4);
+    return {
+      root: ".",
+      node_count: 2,
+      edge_count: 0,
+      file_count: 1,
+      symbol_count: 1,
+      nodes: [f, s],
+      edges: [],
+      generated_at: "1970-01-01T00:00:00.000Z",
+      schema_version: 2,
+    };
+  }
+  async function call(
+    ctx: ServerContext,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    const res = await handleMcpRequest(
+      { jsonrpc: "2.0", id: 41, method: "tools/call", params: { name, arguments: args } },
+      ctx,
+    );
+    return (res.result as { content: Array<{ text: string }> }).content[0].text;
+  }
+
+  it("context_remember anchors resolvable files; graph_read surfaces the fact before the edit recipe", async () => {
+    const ctx = await ctxWith(graphWithFoo());
+    const rememberOut = await call(ctx, "context_remember", {
+      text: "keep foo pure — no side effects",
+      kind: "fact",
+      files: ["src/a.ts"],
+    });
+    expect(rememberOut).toContain("Anchored to 1 file(s)");
+
+    const stored = await recallEntries(ctx.paths, {});
+    expect(stored.entries[0]?.anchors).toEqual([{ path: "src/a.ts", hash: "h1" }]);
+
+    const text = await call(ctx, "graph_read", { target: "src/a.ts::foo" });
+    expect(text).toContain("📌 Remembered for this file:");
+    expect(text).toContain("keep foo pure");
+    expect(text).not.toContain("possibly stale"); // hash unchanged
+    expect(text.indexOf("📌")).toBeLessThan(text.indexOf("✎ To edit this symbol"));
+
+    const bare = await call(ctx, "graph_read", { target: "src/a.ts" });
+    expect(bare).toContain("keep foo pure"); // bare-file branch gets the footer too
+  });
+
+  it("flags the fact once the anchored file changes (fresh graph after reindex)", async () => {
+    const ctx = await ctxWith(graphWithFoo("h1"));
+    await call(ctx, "context_remember", {
+      text: "foo returns a number",
+      kind: "fact",
+      files: ["src/a.ts"],
+    });
+    ctx.graph = graphWithFoo("h2"); // simulate the auto-reindex swap after an edit
+    const text = await call(ctx, "graph_read", { target: "src/a.ts::foo" });
+    expect(text).toContain("⚠ possibly stale — src/a.ts changed since stored");
+
+    const recallText = await call(ctx, "context_recall", {});
+    expect(recallText).toContain("⚠ possibly stale");
+  });
+
+  it("unresolvable files are stored without anchors (no error, never flagged)", async () => {
+    const ctx = await ctxWith(graphWithFoo());
+    const out = await call(ctx, "context_remember", {
+      text: "deploy needs --config",
+      kind: "fact",
+      files: ["ghost/nowhere.ts"],
+    });
+    expect(out).not.toContain("Anchored");
+    const stored = await recallEntries(ctx.paths, {});
+    expect(stored.entries[0]?.anchors).toBeUndefined();
+  });
+
+  it("graph_continue folds query-matched memories into the header", async () => {
+    const ctx = await ctxWith(graphWithFoo());
+    await rememberEntry(ctx.paths, {
+      text: "hubspot deploys must target portal 47879301 via the repo config",
+      kind: "decision",
+      tags: ["deploy"],
+    });
+    const hit = await call(ctx, "graph_continue", { query: "hubspot deploy portal config" });
+    expect(hit).toContain("Remembered: [decision]");
+    expect(hit).toContain("portal 47879301");
+
+    const miss = await call(ctx, "graph_continue", { query: "zebra quantum flux" });
+    expect(miss).not.toContain("Remembered:");
   });
 });
