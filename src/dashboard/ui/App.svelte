@@ -4,6 +4,7 @@
   import Sidebar from "./Sidebar.svelte";
   import Overview from "./Overview.svelte";
   import Arsenal from "./Arsenal.svelte";
+  import Commands from "./Commands.svelte";
   import FaqDialog from "./FaqDialog.svelte";
 
   let faqOpen = $state(false);
@@ -19,6 +20,8 @@
   <main class="min-w-0 flex-1 overflow-y-auto">
     {#if store.view === "overview"}
       <Overview />
+    {:else if store.view === "commands"}
+      <Commands />
     {:else}
       <Arsenal />
     {/if}

@@ -3,6 +3,7 @@
   import { shortenPath } from "$lib/format";
   import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
   import Swords from "@lucide/svelte/icons/swords";
+  import SquareTerminal from "@lucide/svelte/icons/square-terminal";
   import CircleHelp from "@lucide/svelte/icons/circle-help";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
 
@@ -14,6 +15,7 @@
   const nav = [
     { id: "overview" as const, label: "Overview", icon: LayoutDashboard },
     { id: "arsenal" as const, label: "Arsenal", icon: Swords },
+    { id: "commands" as const, label: "Commands", icon: SquareTerminal },
   ];
 </script>
 

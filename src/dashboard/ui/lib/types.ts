@@ -10,4 +10,4 @@ export type {
 } from "../../delta.js";
 export type { ArsenalData, ArsenalItem, ArsenalScope } from "../../arsenal.js";
 
-export type View = "overview" | "arsenal";
+export type View = "overview" | "arsenal" | "commands";
