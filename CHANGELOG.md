@@ -7,6 +7,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.15.0] — 2026-07-02
+
+### Added
+
+- **Your remembered context now talks back.** Synthra's second brain was
+  write-only — decisions and gotchas went in via `context_remember` and never
+  resurfaced. Now they appear exactly where they're relevant:
+  - `graph_read` of a file (or a symbol in it) shows a `📌 Remembered for this
+    file` block with the entries linked to that file.
+  - `graph_continue` packs include `Remembered:` lines for entries matching the
+    query.
+- **Memories know when they might be wrong.** Entries linked to files are now
+  *anchored* to those files' content hashes at capture time. When the code
+  changes afterwards (tracked live by auto-reindex), every surfacing of that
+  entry — graph_read, graph_continue, context_recall — carries
+  `⚠ possibly stale — <file> changed since stored`. Old entries without anchors
+  keep working and are never flagged; the shared context-store format is
+  unchanged (additive optional field).
+
+---
+
 ## [0.14.1] — 2026-07-02
 
 ### Added
