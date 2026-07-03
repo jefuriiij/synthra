@@ -12,7 +12,7 @@ import { computeArsenal, type ArsenalData } from "../../dashboard/arsenal.js";
 import type { FileNode } from "../../graph/types.js";
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
-import { renderHint, scoreArsenal } from "./route-match.js";
+import { renderHint, scoreArsenal, type Difficulty } from "./route-match.js";
 
 export interface RouteRequest {
   prompt?: string;
@@ -41,7 +41,12 @@ export function graphExtCounts(ctx: ServerContext): Map<string, number> {
 
 const PROMPT_LOG_MAX = 200;
 
-async function logRoute(ctx: ServerContext, prompt: string, hint: string): Promise<void> {
+async function logRoute(
+  ctx: ServerContext,
+  prompt: string,
+  hint: string,
+  difficulty: Difficulty,
+): Promise<void> {
   try {
     await mkdir(dirname(ctx.paths.routeLog), { recursive: true });
     const entry = {
@@ -49,6 +54,9 @@ async function logRoute(ctx: ServerContext, prompt: string, hint: string): Promi
       prompt: prompt.length > PROMPT_LOG_MAX ? `${prompt.slice(0, PROMPT_LOG_MAX)}…` : prompt,
       routed: hint.length > 0,
       hint_chars: hint.length,
+      // Grade the v0.18 difficulty heuristic from the field: this trail is how
+      // we learn whether ≥2 hard-signal words is the right bar.
+      difficulty,
     };
     await appendFile(ctx.paths.routeLog, JSON.stringify(entry) + "\n", "utf8");
   } catch {
@@ -70,7 +78,7 @@ export async function handleRoute(
     const arsenal = await deps.arsenal(ctx.paths.projectRoot);
     const match = scoreArsenal(prompt, arsenal, graphExtCounts(ctx), cfg.routeMinScore);
     const hint = renderHint(match);
-    await logRoute(ctx, prompt, hint);
+    await logRoute(ctx, prompt, hint, match.difficulty);
     return { hint };
   } catch {
     return { hint: "" };
