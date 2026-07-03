@@ -7,6 +7,30 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.18.0] — 2026-07-03
+
+### Added
+
+- **The router judges task difficulty.** Prompts carrying two or more hard
+  signals (races, leaks, teardown, migrations, security, performance, …) are
+  flagged **complex**: the routing hint now says *plan AND execute on your
+  primary model* instead of blanket-recommending sonnet, unpinned agents are
+  recommended on opus, and `route_task` reports the verdict on a `Difficulty:`
+  line with a matching model policy. A complex verdict always speaks — even
+  when no installed agent matches — and every decision lands in
+  `route_log.jsonl` so the heuristic can be graded in the field.
+
+### Fixed
+
+- **Routing noise, straight from the first field report.** Generic prose words
+  (add/new/app/across/without/…) no longer score; an item must hit a name token
+  or two distinct words to rank at all; agents declaring a different ecosystem
+  than the project's language fingerprint are penalized out (no more
+  `powershell-module-architect` winning a Svelte task via "module"); and
+  same-named entries installed twice (personal copy + plugin) are deduped.
+
+---
+
 ## [0.17.0] — 2026-07-02
 
 ### Added
