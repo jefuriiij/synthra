@@ -1,8 +1,8 @@
 # Synthra
 
-> Local context engine for AI coding assistants. **Install once. Fire and forget.** Claude Code stops burning tokens on grep → glob → read → repeat — it queries a structured graph instead.
+> **Make Claude Code cheaper *and* sharper on your codebase.** Synthra is a tiny local engine that stops your AI assistant from re-exploring your project every turn, remembers what matters across sessions, and routes each task to the right-priced model — automatically.
 
-Built first for Claude Code (IDE extension + CLI). Anything that speaks the Model Context Protocol can plug in.
+**Install once. Fire and forget.**
 
 ```bash
 npm install -g @jefuriiij/synthra
@@ -10,13 +10,45 @@ cd your-project
 syn .
 ```
 
-That's the whole setup. Open the Claude Code IDE extension in the same folder and work normally; `Ctrl+C` the terminal when you're done. Synthra hangs out in the background, watching for file saves, blocking redundant Greps, and tracking every turn — until you have a reason to look at the dashboard.
+That's the whole setup. Open the Claude Code IDE extension in the same folder, work normally, and press `Ctrl+C` when you're done. Synthra runs quietly in the background — watching your file saves, blocking redundant searches, suggesting the cheapest model that can do the job, and tracking every token — until you have a reason to open the dashboard.
+
+`@jefuriiij/synthra` · **MIT** · **Node ≥ 18** · **no SaaS, no telemetry, no account** · built first for Claude Code (IDE extension + CLI), but anything that speaks the Model Context Protocol can plug in.
+
+---
+
+## The problem
+
+AI coding assistants are powerful but wasteful:
+
+- They **re-explore your codebase on every turn** — grep → glob → read a whole file → repeat — burning tokens to rediscover things they already saw.
+- They **lose context between turns and across sessions**, so you re-explain the same decisions.
+- They're **blind to what *you* just did** in your editor between AI turns.
+- They **default to your most expensive model for everything**, even trivial edits.
+
+Synthra fixes all four — locally, with zero config.
+
+---
+
+## What Synthra does
+
+### 💸 Spend less
+
+- **Reads slices, not whole files.** Synthra parses your project into a symbol graph, so Claude fetches a single function (`graph_read("file.ts::Symbol")`, ~50 tokens) instead of a 2,000-token whole file.
+- **The Moat blocks redundant searches.** A hook intercepts every Grep/Glob; if the graph already has the answer, the search is denied and Claude is handed the answer instead. It literally cannot burn tokens re-searching.
+- **The Dispatcher picks the right-priced model.** For each task it recommends the best-fit agent *and* a model — plan on your premium model, execute on a cheaper one (**Sonnet is ≈ 5× cheaper than Opus**).
+
+### 🧠 Get smarter answers
+
+- **Pre-loaded context.** At session start Claude gets a ~4K-token pack of the signatures, top function bodies, and linked tests most relevant to your project.
+- **A second brain that talks back.** Decisions and notes you save resurface *automatically* when you touch the relevant file — and get flagged if the code changed since you saved them.
+- **Difficulty-aware routing.** Hard tasks (races, leaks, migrations, security…) are kept on your primary model instead of being cheaped-out.
+- **Knows what you just edited.** A file + git watcher means Claude isn't answering from a stale snapshot.
 
 ---
 
 ## What it saves you (real measurement)
 
-Same prompt, same Opus model, same Svelte/Node codebase. Dogfooding on a real production project (`windsor-stables`) shows:
+Same prompt, same Opus model, same codebase across all runs — a controlled before/after on one real production project (a 3-turn WebSocket-auth walkthrough across 4 files). Synthra is language-agnostic; this just happened to be the test bed:
 
 | Setup | Cost per session |
 |---|---|
@@ -24,97 +56,177 @@ Same prompt, same Opus model, same Svelte/Node codebase. Dogfooding on a real pr
 | Synthra w/ MCP fixes (v0.1.6) | **$4.26** (-46%) |
 | Synthra w/ full graph tools (v0.1.7+) | **$2.05** (-74%) |
 
-A 3-turn WebSocket-auth walkthrough across 4 files. The savings come from Claude reading function signatures (`graph_read("file.ts::Symbol")`, ~50 tokens) instead of whole files (~2,000+), and from skipping Greps that the Moat blocks because the graph already has the answer.
+**Up to −74% on a code-heavy session.** Savings vary with workload — a markup/CMS-heavy session leans on the graph less than a refactor does. The dashboard shows the **Savings (floor)** math live (`blocks × 500 tokens × $3/M`), so you verify the number for your own sessions instead of trusting it on faith.
 
-The math behind the dashboard's **Savings (floor)** card is shown live (`blocks × 500 tokens × $3/M`) so you can verify it for your own sessions instead of trusting the number on faith.
+The newer, bigger lever is **model routing**: on heavy usage the assistant can default the large majority of turns to Opus — routing execution to Sonnet cuts those turns ~5×. The Dispatcher makes that the default habit instead of a thing you remember to do.
 
 ---
 
-## What it does
+## Features at a glance
 
-AI coding assistants burn tokens exploring the codebase on every turn. They lose context between turns and across sessions. They're blind to what *you* are doing in your editor between AI turns.
+| Feature | What it does | Why you care |
+|---|---|---|
+| **Graph context pack** | Pre-injects signatures + top bodies + linked tests at session start | Claude starts oriented, without reading whole files |
+| **The Moat** | PreToolUse hook deterministically blocks Grep/Glob the graph can already answer | Kills redundant, expensive searching |
+| **The Dispatcher** | Scores each prompt against your installed agents/skills + language and suggests the best-fit agent + model | Right tool, right-priced model, every task |
+| **Difficulty escalation** | Flags complex tasks (races, leaks, security…) to stay on your primary model | Cheap where safe, powerful where it matters |
+| **Branch-aware memory** | `context_remember` / `context_recall` persist decisions per git branch in `.synthra/` (git-tracked) | Teammates inherit context; it merges naturally |
+| **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
+| **Activity awareness** | Watches file saves, branch switches, uncommitted diffs | Claude knows what you changed between turns |
+| **Live token dashboard** | Cost, model breakdown, savings floor, Moat blocks, hot files | See exactly where your spend goes |
+| **Reuse detection** | `find_symbol` / `duplicate_symbols` surface existing code before you write new | Less duplicated, over-engineered code |
+| **Edit-safety** | `blast_radius` shows callers + guarding tests before a rename | Change things without breaking them |
+| **Auto-reindex on edit** | The graph rescans ~1s after edits settle | Tools never serve stale code mid-session |
+| **Team reporting** | `syn doctor --report` + dashboard Report button emit a redacted diagnostic | Colleagues report issues you can actually debug |
+| **Self-update with consent** | Checks npm on run, prompts `[y/N]`, prints the changelog | Stay current without surprise upgrades |
 
-Synthra is a tiny local CLI (~273 KB tarball, no SaaS, no telemetry, MIT) that sits between you and your AI:
+---
 
-- **Pre-injects** a structured ~4K-token context pack (signatures + top function bodies + linked tests) at session start
-- **The Moat** — deterministically blocks Grep/Glob at the PreToolUse hook layer when the graph already has the answer. Returns `{"decision":"block"}` — Claude literally cannot disobey.
-- **Remembers** decisions and notes branch-by-branch in a git-tracked `.synthra/` directory so teammates inherit context
-- **Watches** file saves, branch switches, and uncommitted diffs (chokidar + a `.git/HEAD` watcher) so the AI knows what just changed
-- **Tracks** every token via Claude's transcript and reports estimated cost + savings on a live dashboard
-- **Updates with consent** — daily npm check prompts you on a TTY (`Update now? [y/N]`) and stays silent on CI
+## Quick start
 
-When `syn .` runs, you see:
+```bash
+npm install -g @jefuriiij/synthra   # 1. install globally
+cd your-project                     # 2. any project root
+syn .                               # 3. scan + serve + dashboard + hooks
+```
+
+After `syn .` finishes you'll see:
 
 ```
-[syn]   ✅  scanned   123 files · 490 symbols · 574 edges
-[syn]   🧠  MCP       http://127.0.0.1:8080   →  registered as 'synthra'
-[syn]   📊  Dashboard http://127.0.0.1:8901
-[syn]   🪝  Hooks     installed in .claude/settings.local.json
+  ✅  scanned   123 files · 490 symbols · 574 edges
+  🧠  MCP       http://127.0.0.1:8080   →  registered as 'synthra'
+  📊  Dashboard http://127.0.0.1:8901
+  🪝  Hooks     installed in .claude/settings.local.json
 
-[syn]   🤖  Ready — open the Claude Code IDE extension (or run `claude` in another terminal).
+  🤖  Ready — open the Claude Code IDE extension (or run `claude` in another terminal).
+      Synthra's tools and gate will be active for that session.
+
+  Press Ctrl+C here when you're done.
 ```
+
+**Then just work.** Open the Claude Code IDE extension (or run `claude`) in the same folder. Synthra's context pack, the Moat, and the Dispatcher are active for that session automatically — you don't call anything by hand. Open **http://127.0.0.1:8901** any time to watch cost and savings live. When you're finished, `Ctrl+C` the `syn .` terminal.
+
+Changed your mind, or ran `syn .` in the wrong folder? `syn remove` cleanly reverses everything (see [Commands](#commands)).
+
+---
+
+## Prerequisites
+
+| Need | Why |
+|---|---|
+| **Node ≥ 18** | Synthra is pure Node ESM |
+| **The `claude` CLI on PATH** | Used to register Synthra's MCP server so the IDE/CLI sees its tools |
+| **A project folder** | `syn .` scans the current directory |
+| **`jq` (macOS/Linux only)** | The bash hooks pipe JSON through `jq`; without it they silently no-op. `brew install jq` / `apt install jq`. Not needed on Windows (PowerShell hooks). |
+
+No account, no extra API key beyond what Claude Code already uses, and no external network service. Everything runs on localhost.
+
+Not sure your setup is healthy? Run **`syn doctor`** — a read-only checklist (Node, jq, claude CLI, graph freshness, `.mcp.json`, policy version, hooks).
+
+---
+
+## Supported languages
+
+**Full symbol extraction** (tree-sitter — functions, classes, methods, types, imports, call edges):
+
+- **TypeScript / JavaScript** — `.ts` `.tsx` `.cts` `.mts` `.js` `.jsx` `.cjs` `.mjs`
+- **Python** — `.py` `.pyi`
+- **Svelte** `.svelte` · **Vue** `.vue` (`<script>` blocks reparsed as TS)
+- **Go** `.go` · **Rust** `.rs` · **Java** `.java` · **Kotlin** `.kt` `.kts`
+- **PHP** `.php` · **Ruby** `.rb`
+- **C** `.c` `.h` · **C++** `.cpp` `.cc` `.cxx` `.hpp` `.hh` `.hxx`
+- **C# / .NET** `.cs`
+- **Dart** `.dart` — class/mixin/extension/enum/typedef/function/method/getter/setter + import normalization
+
+**HubL / HTML** (`.html`, `.hubl`) — regex-based: `{% macro %}` → function, `{% block %}` → component, `{% include/extends/import %}` → import edges. (No tree-sitter grammar exists for HubL.)
+
+**Everything else** (CSS, JSON, YAML, Markdown, …) is walked and content-indexed, so keyword search still finds it — just without symbol-level granularity.
+
+---
+
+## Supported machines
+
+| Platform | Status |
+|---|---|
+| **Windows** | ✅ **Tested.** PowerShell hook scripts; primary development target. |
+| **macOS / Linux** | ⚠️ **Best-effort.** Bash hook scripts ship and the installer picks them automatically. Needs `jq` on PATH (see prerequisites). The full `syn .` flow is wired but not yet exhaustively verified on POSIX — including Claude Code in IntelliJ on macOS. |
+
+The platform-agnostic parts — `syn scan`, `syn serve`, `syn dashboard`, the MCP server, and the dashboard — are pure Node and run anywhere Node 18+ does. The hook integration is what's Windows-verified. Running on macOS/Linux? [Open an issue](https://github.com/jefuriiij/synthra/issues) with what you find — or use the dashboard's **Report** button (below).
+
+---
+
+## The dashboard
+
+Live at **http://127.0.0.1:8901** (falls back through 8901–8910 if the port is busy). Three views plus two dialogs:
+
+- **Overview** — cost hero, model breakdown donut, the Moat card, savings floor, hot files, recent turns, tool usage.
+- **Arsenal** — every skill, subagent, and MCP server installed for this project (scoped project / personal / plugin) with descriptions — so you never drop to the CLI to recall your toolkit.
+- **Commands** — every `syn` command with its flags and description.
+- **Report** — runs the doctor checks live and shows the ✅/⚠️/❌ list (often that alone is the fix). One click copies a **redacted** markdown diagnostic (home paths → `~`); two buttons open GitHub's bug / feature forms. Nothing is ever sent automatically.
+- **FAQ** — the short version of this README.
 
 ---
 
 ## MCP tools
 
-Ten tools exposed over HTTP MCP (namespaced as `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
+Thirteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
 
 | Tool | Purpose |
 |---|---|
-| `graph_continue(query)` | Return the structured context pack — `Confidence` label + `Files` list + signatures + top function bodies |
-| `graph_read(target)` | Fetch source for `file/path.ts` or `file/path.ts::SymbolName` (the latter returns ~50 tokens vs thousands for a whole file) |
-| `graph_register_edit(files)` | Tell Synthra you edited files (boosts their ranking, avoids stale snapshots) |
-| `context_remember(text, kind)` | Persist a decision / task / fact / next-step / blocker, branch-aware |
-| `context_recall(kind?)` | Read previously-stored entries |
-| `recent_activity(since_ms?)` | What the human just saved / branch-switched / changed |
-| `count_tokens(text)` | Char/4 estimate for prompt budgeting |
-| `blast_radius(target, depth?)` | All files that depend on `target` transitively |
-| `dead_code(limit?)` | Files no other file imports and no test references |
-
----
-
-## Languages
-
-Full symbol extraction:
-
-- **TypeScript** (`.ts`, `.tsx`, `.cts`, `.mts`, `.jsx`) — interfaces, type aliases, enums, classes, methods, arrow consts, ES imports
-- **JavaScript** (`.js`, `.cjs`, `.mjs`) — uses a JS-specific tree-sitter query (v0.1.7+) that captures CommonJS `require()` calls in addition to ES `import` statements, and uses the JS grammar's `(identifier)` node for class names
-- **Python** (`.py`, `.pyi`)
-- **Svelte** (`.svelte`) — `<script>` blocks reparsed as TS
-- **Vue** (`.vue`) — same
-- **Go** (`.go`)
-- **Rust** (`.rs`)
-- **Java** (`.java`)
-- **Kotlin** (`.kt`, `.kts`)
-- **PHP** (`.php`)
-- **Ruby** (`.rb`)
-- **C** (`.c`, `.h`)
-- **C++** (`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`)
-- **C#** / .NET (`.cs`)
-- **Dart** (`.dart`) — content indexed; symbol extraction is best-effort in v0.1
-
-Files in other formats (HTML, CSS, JSON, YAML, Markdown, images, etc.) are walked and content-indexed so keyword search still finds them — just no symbol-level granularity.
+| `graph_continue(query)` | The structured context pack — confidence label + files + signatures + top bodies. Call *before* Grep/Glob. |
+| `graph_read(target)` | Fetch source for `file.ts` or `file.ts::Symbol` (~50 tokens vs thousands). A symbol read also returns its dependency surface — callee signatures + caller names. |
+| `graph_register_edit(files)` | Tell Synthra you edited files — boosts ranking, avoids stale snapshots. |
+| `context_remember(text, kind)` | Persist a decision / task / next-step / fact / blocker, branch-aware, into git-tracked `.synthra/`. |
+| `context_recall(kind?)` | Read previously-stored entries (defaults to the current branch). |
+| `recent_activity(since_ms?)` | What the human just saved / branch-switched / changed. |
+| `count_tokens(text)` | Char/4 estimate for prompt budgeting. |
+| `blast_radius(target, depth?)` | What could break before an edit — dependent files, or the exact caller symbols + guarding tests for a `file::symbol` target. |
+| `dead_code(limit?)` | Files no other file imports and no test references (entry points excluded). |
+| `find_symbol(name)` | Find existing symbols by name *before* writing a new one — reuse beats re-implementing. |
+| `duplicate_symbols(limit?)` | Names defined in more than one file — consolidation candidates (advisory). |
+| `call_path(from, to, depth?)` | The shortest chain of calls from one symbol to another — trace control flow. |
+| `route_task(task)` | Which installed agent/skill fits a task, and which model to run it on — the Dispatcher, on demand. |
 
 ---
 
 ## Commands
 
 ```bash
-syn .                     # Default: scan + MCP + dashboard + hooks + claude mcp add.
-                          # Background-service; Ctrl+C to stop.
+syn .                     # Default: scan + MCP + dashboard + hooks + register MCP.
+                          # Background service; Ctrl+C to stop.
 syn . --launch-cli        # Also spawn the `claude` CLI in this terminal.
 syn . --resume <id>       # Resume a Claude session (requires --launch-cli).
-syn scan [path]           # Scan only — walk + parse + write graph.
-syn serve [path]          # Start the MCP server only.
-syn dashboard [path]      # Run only the token dashboard (standalone process).
+syn . --full              # Re-parse every file, ignoring the incremental cache.
+syn scan [path]           # Scan only — walk + parse + write graph. (--full available)
+syn serve [path]          # Start the HTTP MCP server only.
+syn dashboard [path]      # Run only the token dashboard (localhost:8901).
 syn doctor [path]         # Diagnose this project's Synthra setup + environment.
 syn doctor --report       # Copy-pasteable markdown diagnostic for GitHub issues
                           # (also available via the dashboard's Report button).
-syn remove [path]         # Uninstall Synthra from a project (accidental `syn .`?
-                          # This reverses it). Asks [y/N]; --yes to skip. Your own
-                          # gitignore lines / CLAUDE.md content / hooks survive.
+syn remove [path]         # Uninstall Synthra from a project — reverses the whole
+                          # bootstrap. Asks [y/N]; --yes to skip. Your own gitignore
+                          # lines / CLAUDE.md content / hooks always survive.
 ```
+
+---
+
+## How the Moat works
+
+The PreToolUse hook fires on every `Grep` / `Glob` (and observes `Bash` exploration commands). It POSTs the tool input to Synthra's local server, which runs the query through the graph and returns:
+
+- `allow` if the graph has no confident match (low confidence),
+- `allow` if you just edited a matching file (recent-activity relaxation),
+- `block` otherwise — **and the deny message carries the answer**: copy-pasteable `graph_read("file::symbol")` targets + one-line signatures.
+
+Claude Code honors the block and pivots to the MCP tool. The structured pack is cheaper, faster, and pre-ranked. Claude literally cannot disobey. (Bash searches like `rg foo src/` are never blocked — they're only *logged*, so the dashboard can show how often the terminal is used to route around the graph.)
+
+## How the Dispatcher works
+
+The UserPromptSubmit hook sends each prompt to `/route`, which scores it against **every installed agent and skill** (plus your project's language fingerprint and a difficulty estimate) and injects a one-line hint naming the best-fit agent, the model to run it on, and a relevant skill. Plan on your primary model, then delegate execution to the recommendation on a cheaper one.
+
+- Complex tasks (races, leaks, migrations, security…) are flagged to **stay on your primary model** rather than being cheaped-out.
+- `route_task(task)` gives the verbose, ranked report on demand.
+- `SYN_NO_ROUTE=1` silences it; `SYN_ROUTE_MIN_SCORE` (default 3) tunes how eager it is.
 
 ---
 
@@ -126,83 +238,68 @@ When `syn .` runs in a project:
 your-project/
 ├── .gitignore                   # appended: .synthra-graph/, .mcp.json (with comments)
 ├── .mcp.json                    # Synthra registers here at --scope project so the IDE sees it.
-│                                # Gitignored by default — remove the .gitignore line to share with teammates.
-├── CLAUDE.md                    # appended: <!-- synthra-policy v2 ... -->
+│                                # Gitignored by default — remove the line to share with teammates.
+├── CLAUDE.md                    # appended: <!-- synthra-policy v9 BEGIN/END --> markers
 ├── .claude/
-│   ├── settings.local.json      # hooks merged (tagged with meta: "synthra-hook=true")
-│   └── hooks/                   # synthra-prime.ps1, synthra-pre-tool-use.ps1, …
+│   ├── settings.local.json      # 5 hooks merged (tagged meta: "synthra-hook=true")
+│   └── hooks/                   # synthra-prime, -pre-tool-use, -pre-compact, -stop, -route (.ps1/.sh)
 ├── .synthra-graph/              # GITIGNORED — heavy machine-local state
 │   ├── info_graph.json
 │   ├── symbol_index.json
-│   ├── activity.jsonl
-│   ├── token_log.jsonl
-│   ├── gate_log.jsonl
+│   ├── activity.jsonl · token_log.jsonl · gate_log.jsonl · route_log.jsonl
 │   └── mcp_port
-└── .synthra/                    # GIT-TRACKED — team's shared memory
+└── .synthra/                    # GIT-TRACKED — the team's shared memory
     ├── context-store.json       # decisions, tasks, facts (default branch)
-    ├── CONTEXT.md               # narrative summary
+    ├── CONTEXT.md               # narrative summary (Stop hook re-renders this)
     └── branches/<sanitized>/    # per-branch overrides
 ```
 
-A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats across all of them.
+Five hooks are installed: **SessionStart** (inject the context pack), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens + refresh CONTEXT.md), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats.
 
 ---
 
 ## Coexistence
 
-Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries are preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v2 -->` markers. It tags hook entries with `meta: "synthra-hook=true"` so re-runs strip only its own entries from `settings.local.json`. If another tool also logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries on read so totals don't double-count.
+Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v9 -->` markers, and tags hook entries with `meta: "synthra-hook=true"` so re-runs strip only its own. Your content in shared files **always** survives — `syn remove` proves it, leaving your gitignore lines, CLAUDE.md prose, and other hooks intact. If another tool logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries so totals don't double-count.
 
 ---
 
 ## Configuration
 
-Environment variables (all optional):
+Everything works with zero config. Environment variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `SYN_MCP_PORT` | (auto 8080–8099) | Pin the MCP server port |
-| `SYN_DASHBOARD_PORT` | `8901` | Dashboard preferred port (falls back through 8901–8910) |
-| `SYN_HARD_MAX_READ_CHARS` | `4000` | Soft token budget for `graph_continue` packs |
+| `SYN_DASHBOARD_PORT` | `8901` | Dashboard preferred port (falls back 8901–8910) |
 | `SYN_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `SYN_CLAUDE_BIN` | `claude` | Override the `claude` binary location |
-| `SYN_NO_UPDATE_CHECK` | `0` | Set to `1` to disable the daily version-check ping |
+| `SYN_ROUTE_MIN_SCORE` | `3` | Minimum match score before a routing hint fires (higher = quieter) |
+| `SYN_NO_ROUTE` | _(unset)_ | Disable the Dispatcher's per-prompt hint (`route_task` still works) |
+| `SYN_NO_AUTOREINDEX` | _(unset)_ | Disable auto-reindex-on-edit |
+| `SYN_NO_BASH_OBSERVE` | _(unset)_ | Disable the observe-only Bash exploration logger |
+| `SYN_NO_UPDATE_CHECK` | `0` | Set to `1` to skip the daily version-check ping |
+| `SYN_DASHBOARD_DEDUPE` | `1` | Set to `0`/`off`/`false` to see every raw token-log entry |
 
----
-
-## How the moat works
-
-The PreToolUse hook fires on every `Grep` / `Glob` call. The hook POSTs the tool input to Synthra's local server. The server runs the query through the graph and returns:
-
-- `decision: "allow"` if the graph has no confident match (low confidence)
-- `decision: "allow"` if the user just edited a matching file (recent-activity relaxation)
-- `decision: "block"` otherwise, with a reason pointing Claude at `graph_continue`
-
-Claude Code honors the block and pivots to the MCP tool. The structured pack is cheaper, faster, and pre-ranked. The CLAUDE.md policy block (managed by Synthra inside its own `<!-- synthra-policy v2 -->` markers) tells Claude when to call `graph_continue` and — importantly — when to skip it, so follow-up turns don't pay the pack cost again.
+Advanced tuning knobs (read budgets, cache TTLs, gate-hint size, usage-learning decay) also exist as `SYN_*` vars — see `src/shared/config.ts` if you need to fine-tune retrieval.
 
 ---
 
 ## Self-update
 
-Every `syn .` checks the npm registry for a newer version (no cache — always fresh; 2s hard timeout; silent fallthrough on network failure). When you're on latest, the check stays silent and `syn .` proceeds. When you're outdated:
+Every `syn .` checks the npm registry for a newer version (no cache — always fresh; 2s hard timeout; silent on network failure). On latest, the check is silent and `syn .` proceeds. When you're behind:
 
-- **Interactive shell** (TTY) → you see `[syn] Synthra X.Y.Z is available (you have A.B.C). Update now? [y/N]:` *before* the scan starts. Type `y` to install; press Enter (or anything else) to skip and continue with the current version.
-- **Non-interactive** (CI, piped stdin) → silent one-line hint, no prompt.
-- **Disabled entirely** → set `SYN_NO_UPDATE_CHECK=1`.
+- **Interactive shell (TTY)** → `[syn] Synthra X.Y.Z is available (you have A.B.C). Update now? [y/N]:` *before* the scan. `y` installs; Enter skips and continues.
+- **Non-interactive (CI, piped stdin)** → a silent one-line hint, no prompt.
+- **Disabled** → `SYN_NO_UPDATE_CHECK=1`.
 
-On `y`, Synthra spawns `npm install -g @jefuriiij/synthra@latest` with stdio inherited (you see npm's progress), then **prints the new version's `CHANGELOG.md` section** (so you know what you just got), then exits with re-run instructions — the running Node process is still the old version and can't hot-swap its own code mid-run.
-
-If you upgrade via `npm install -g @jefuriiij/synthra@latest` directly (outside Synthra's prompt), the next `syn .` notices and prints the changelog anyway. It tracks the last-seen version at `~/.synthra/last-seen-version.json`.
+On `y`, Synthra runs `npm install -g @jefuriiij/synthra@latest` (you see npm's progress), **prints the new version's `CHANGELOG.md` section**, then exits with re-run instructions — the running Node process is still the old version and can't hot-swap itself mid-run. If you upgrade directly outside the prompt, the next `syn .` notices and prints the changelog anyway (tracked in `~/.synthra/last-seen-version.json`).
 
 ---
 
-## Platform support
+## Report a bug / request a feature
 
-| Platform | Status |
-|---|---|
-| **Windows** | ✅ Tested. PowerShell hook scripts; primary development target. |
-| **macOS / Linux** | ⚠️ Best-effort. Bash hook scripts ship and the installer selects them automatically, but the full `syn .` flow hasn't been verified on POSIX yet. The Stop hook (token logging) needs `jq` on PATH or it silently no-ops. |
-
-The platform-agnostic parts — `syn scan`, `syn serve`, `syn dashboard`, the MCP server, and the dashboard — are pure Node and run anywhere Node 18+ does. The hook integration is what's Windows-verified; POSIX is wired but untested. If you run it on macOS/Linux, [open an issue](https://github.com/jefuriiij/synthra/issues) with what you find.
+Open the dashboard's **Report** button or run **`syn doctor --report`**, copy the redacted diagnostic, and paste it into a [GitHub issue](https://github.com/jefuriiij/synthra/issues). The bug template asks for that diagnostic so every report arrives debuggable — no telemetry, just copy-and-paste on your terms.
 
 ---
 
@@ -219,7 +316,7 @@ npm test              # vitest
 npm run typecheck     # tsc --noEmit
 ```
 
-See [`ROADMAP.md`](./ROADMAP.md) for milestone history (M1 scanner → M6 dashboard) and the v0.2 backlog.
+See [`ROADMAP.md`](./ROADMAP.md) for milestone history and backlog.
 
 ---
 
