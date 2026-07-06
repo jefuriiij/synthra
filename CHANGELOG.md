@@ -25,6 +25,16 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   reduced-motion); the first load shows a skeleton grid instead of a blank
   page; cards get a subtle border highlight on hover; empty states now say
   what makes their data appear.
+- **Model usage is a real chart now.** The hand-drawn donut was replaced with
+  a LayerChart donut-with-text: animated arcs, a hover tooltip per model
+  family, and the turn total in the center. Same card, same legend, better
+  chart.
+
+### Security
+
+- Bumped `hono` to 4.12.28 — fixes a high-severity path-traversal advisory in
+  `serve-static` on Windows (Synthra never uses serve-static, so this is
+  defense-in-depth, but you shouldn't ship a known-vulnerable version).
 
 ---
 
