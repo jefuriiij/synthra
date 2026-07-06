@@ -16,6 +16,12 @@ export default defineConfig({
     },
   ],
   test: {
+    // Cold Windows CI runners are slow at fs-heavy temp-project setup and at
+    // spawn() probes for binaries that don't exist (doctor's jq/claude checks
+    // trigger a full PATH+PATHEXT scan). Locally the suite finishes in ~2s;
+    // the default 5s per-test limit only ever trips on shared runners.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
