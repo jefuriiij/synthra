@@ -6,7 +6,7 @@
 // the wrong-ecosystem penalty, and name dedupe.
 
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -406,5 +406,24 @@ describe("handleRoute", () => {
       },
     });
     expect(res.hint).toBe("");
+  });
+
+  it("logs the top recommendation (agent + model) alongside the difficulty (v0.19)", async () => {
+    const ctx = await ctxWithGraph();
+    await handleRoute({ prompt: "build a settings page with svelte components" }, ctx, deps);
+    await handleRoute({ prompt: "investigate the database migration failure" }, ctx, deps);
+
+    const lines = (await readFile(ctx.paths.routeLog, "utf8")).trim().split("\n");
+    expect(lines).toHaveLength(2);
+
+    const confident = JSON.parse(lines[0] as string);
+    expect(confident.agent).toBe("svelte-ui-builder");
+    expect(confident.model).toBe("sonnet");
+    expect(confident.difficulty).toBe("standard");
+    expect(confident.routed).toBe(true);
+
+    const silent = JSON.parse(lines[1] as string);
+    expect(silent.agent).toBeUndefined();
+    expect(silent.routed).toBe(false);
   });
 });

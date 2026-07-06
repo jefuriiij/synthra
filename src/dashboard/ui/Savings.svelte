@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from "$lib/components/Card.svelte";
+  import { CountUp } from "$lib/countup";
   import { store } from "$lib/store.svelte";
   import { fmt, fmtCost } from "$lib/format";
 
@@ -20,12 +21,15 @@
       paidWidth: baseline > 0 ? (paid / baseline) * 100 : 100,
     };
   });
+
+  const moneyCounter = new CountUp();
+  $effect(() => moneyCounter.set(s.money));
 </script>
 
 <Card title="Synthra savings" meta={`${s.pct.toFixed(1)}% off · floor`}>
   <div class="flex flex-col gap-3">
     <div>
-      <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(s.money)}</div>
+      <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(moneyCounter.value)}</div>
       <div class="font-mono text-sm text-muted-foreground">{fmt(s.tokens)} tokens avoided</div>
     </div>
     <div class="flex h-2 overflow-hidden rounded-full bg-border">

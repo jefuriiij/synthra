@@ -2,7 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 
-import { countToolCalls, topHotFiles } from "../src/dashboard/delta.js";
+import { countToolCalls, summarizeRoutes, topHotFiles } from "../src/dashboard/delta.js";
+import type { RouteLogEntry } from "../src/dashboard/delta.js";
 import { emptyStore, foldEvent } from "../src/learn/usage.js";
 
 describe("countToolCalls (#2)", () => {
@@ -19,6 +20,44 @@ describe("countToolCalls (#2)", () => {
 
   it("returns an empty object for no entries", () => {
     expect(countToolCalls([])).toEqual({});
+  });
+});
+
+describe("summarizeRoutes (dashboard Dispatcher card, v0.19)", () => {
+  const route = (over: Partial<RouteLogEntry>): RouteLogEntry => ({
+    ts: "2026-07-03T00:00:00.000Z",
+    prompt: "x",
+    routed: false,
+    hint_chars: 0,
+    difficulty: "standard",
+    ...over,
+  });
+
+  it("counts totals, hints, complex verdicts, and per-agent recommendations", () => {
+    const s = summarizeRoutes([
+      route({ routed: true, agent: "svelte-file-editor", model: "sonnet" }),
+      route({ routed: true, difficulty: "complex", agent: "socket-debugger", model: "opus" }),
+      route({ routed: true, agent: "svelte-file-editor", model: "sonnet" }),
+      route({}), // silent, standard, no agent
+    ]);
+    expect(s).toEqual({
+      total: 4,
+      hinted: 3,
+      complex: 1,
+      agents: { "svelte-file-editor": 2, "socket-debugger": 1 },
+    });
+  });
+
+  it("tolerates pre-v0.19 entries without agent/model fields", () => {
+    const s = summarizeRoutes([route({ routed: true }), route({ difficulty: "complex" })]);
+    expect(s.agents).toEqual({});
+    expect(s.total).toBe(2);
+    expect(s.hinted).toBe(1);
+    expect(s.complex).toBe(1);
+  });
+
+  it("returns zeros for an empty (or absent) log", () => {
+    expect(summarizeRoutes([])).toEqual({ total: 0, hinted: 0, complex: 0, agents: {} });
   });
 });
 

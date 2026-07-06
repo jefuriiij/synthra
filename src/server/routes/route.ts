@@ -12,7 +12,7 @@ import { computeArsenal, type ArsenalData } from "../../dashboard/arsenal.js";
 import type { FileNode } from "../../graph/types.js";
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
-import { renderHint, scoreArsenal, type Difficulty } from "./route-match.js";
+import { renderHint, scoreArsenal, type RouteMatch } from "./route-match.js";
 
 export interface RouteRequest {
   prompt?: string;
@@ -45,10 +45,11 @@ async function logRoute(
   ctx: ServerContext,
   prompt: string,
   hint: string,
-  difficulty: Difficulty,
+  match: RouteMatch,
 ): Promise<void> {
   try {
     await mkdir(dirname(ctx.paths.routeLog), { recursive: true });
+    const top = match.confident ? match.agents[0] : undefined;
     const entry = {
       ts: new Date().toISOString(),
       prompt: prompt.length > PROMPT_LOG_MAX ? `${prompt.slice(0, PROMPT_LOG_MAX)}…` : prompt,
@@ -56,7 +57,10 @@ async function logRoute(
       hint_chars: hint.length,
       // Grade the v0.18 difficulty heuristic from the field: this trail is how
       // we learn whether ≥2 hard-signal words is the right bar.
-      difficulty,
+      difficulty: match.difficulty,
+      // Which recommendation actually fired (v0.19, feeds the dashboard's
+      // Dispatcher card). Omitted when no agent cleared the confidence bar.
+      ...(top ? { agent: top.name, model: top.model } : {}),
     };
     await appendFile(ctx.paths.routeLog, JSON.stringify(entry) + "\n", "utf8");
   } catch {
@@ -78,7 +82,7 @@ export async function handleRoute(
     const arsenal = await deps.arsenal(ctx.paths.projectRoot);
     const match = scoreArsenal(prompt, arsenal, graphExtCounts(ctx), cfg.routeMinScore);
     const hint = renderHint(match);
-    await logRoute(ctx, prompt, hint, match.difficulty);
+    await logRoute(ctx, prompt, hint, match);
     return { hint };
   } catch {
     return { hint: "" };

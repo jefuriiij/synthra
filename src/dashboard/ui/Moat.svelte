@@ -1,10 +1,13 @@
 <script lang="ts">
   import Card from "$lib/components/Card.svelte";
+  import { CountUp } from "$lib/countup";
   import { store } from "$lib/store.svelte";
   import { fmt, fmtTs } from "$lib/format";
 
   const gates = $derived((store.data?.recent_gates ?? []).slice(0, 50));
   const blocks = $derived(store.data?.global?.blocked_count ?? 0);
+  const blocksCounter = new CountUp();
+  $effect(() => blocksCounter.set(blocks));
 
   // Observe-only: the terminal bypass of the Moat (rg/cat/find via Bash).
   const bashTotal = $derived(store.data?.global?.bash_explorations ?? 0);
@@ -13,7 +16,7 @@
 </script>
 
 <Card title="The Moat" meta="PreToolUse">
-  <div class="font-mono text-2xl text-foreground">{fmt(blocks)} <span class="text-sm text-muted-foreground">blocks</span></div>
+  <div class="font-mono text-2xl text-foreground">{fmt(blocksCounter.value)} <span class="text-sm text-muted-foreground">blocks</span></div>
   {#if bashTotal > 0}
     <div class="font-mono text-xs text-muted-foreground" title="Codebase exploration via the terminal (rg / cat / find) — observe-only, not yet blocked">
       ↳ {fmt(bashTotal)} terminal hunts ·
@@ -31,7 +34,7 @@
         <span class="truncate text-foreground/80" title={g.query ?? ""}>{g.query ?? "—"}</span>
       </div>
     {:else}
-      <div class="text-sm text-muted-foreground">No gate decisions yet.</div>
+      <div class="text-sm text-muted-foreground">No gate decisions yet — they land here as the agent searches.</div>
     {/each}
 
     {#if recentBash.length > 0}

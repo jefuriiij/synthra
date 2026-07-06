@@ -21,7 +21,7 @@
         <span class="tabular-nums text-foreground">{n}</span>
       </div>
     {:else}
-      <div class="text-sm text-muted-foreground">No graph-tool calls yet.</div>
+      <div class="text-sm text-muted-foreground">No graph-tool calls yet — counts appear as the agent uses Synthra's tools.</div>
     {/each}
   </div>
 </Card>

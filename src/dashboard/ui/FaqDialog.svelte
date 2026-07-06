@@ -20,6 +20,10 @@
       a: "A PreToolUse hook that intercepts Grep/Glob and, when the graph has confident context, blocks them and hands back the exact graph_read targets + signatures — so the agent reads ~50-token slices instead of whole files.",
     },
     {
+      q: "What is the Dispatcher?",
+      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and injects a one-line hint: best-fit agent, recommended model, relevant skill. Complex tasks (races, leaks, migrations…) are flagged to stay on your primary model; the rest delegate to cheaper models. The card shows every decision from route_log.jsonl.",
+    },
+    {
       q: "What is the Arsenal view?",
       a: "A scan of every skill, subagent, and MCP server available to you — project, personal (~/.claude), and plugin — with descriptions, so you never have to drop to the CLI to recall what's installed. MCP entries show name/type/url only; auth tokens are never read.",
     },

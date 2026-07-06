@@ -47,7 +47,7 @@
             <td class="py-1.5 text-right tabular-nums text-[var(--money)]">{fmtCost(t.cost_usd)}</td>
           </tr>
         {:else}
-          <tr><td colspan="7" class="py-6 text-center text-muted-foreground">No turns recorded yet.</td></tr>
+          <tr><td colspan="7" class="py-6 text-center text-muted-foreground">No turns recorded yet — finish a Claude Code turn and it lands here.</td></tr>
         {/each}
       </tbody>
     </table>

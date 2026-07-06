@@ -56,6 +56,39 @@ export interface BashLogEntry {
   command?: string;
 }
 
+/** A Dispatcher routing decision (UserPromptSubmit → /route), one per prompt. */
+export interface RouteLogEntry {
+  ts: string;
+  prompt: string;
+  /** True when a hint was actually injected into the conversation. */
+  routed: boolean;
+  hint_chars: number;
+  difficulty: "standard" | "complex";
+  /** Top recommended agent + its model (v0.19+; absent in older logs and when
+   *  no agent cleared the confidence bar). */
+  agent?: string;
+  model?: string;
+}
+
+/** Aggregate routing decisions for the dashboard's Dispatcher card. Pure —
+ *  agent counts only come from entries that carry the v0.19 `agent` field. */
+export function summarizeRoutes(entries: RouteLogEntry[]): {
+  total: number;
+  hinted: number;
+  complex: number;
+  agents: Record<string, number>;
+} {
+  const agents: Record<string, number> = {};
+  let hinted = 0;
+  let complex = 0;
+  for (const e of entries) {
+    if (e.routed) hinted += 1;
+    if (e.difficulty === "complex") complex += 1;
+    if (e.agent) agents[e.agent] = (agents[e.agent] ?? 0) + 1;
+  }
+  return { total: entries.length, hinted, complex, agents };
+}
+
 /** Count Synthra MCP tool calls by tool name. (#2) */
 export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -100,6 +133,10 @@ export interface ProjectStats {
   bash_explorations: number;
   /** Of those, how many the graph could have served (a would-be Moat block). */
   bash_avoidable: number;
+  /** Dispatcher: prompts scored / hints injected / complex verdicts. */
+  routes_total: number;
+  routes_hinted: number;
+  routes_complex: number;
   hot_files: HotFile[];
   hot_files_total: number;
   models: Record<string, number>;
@@ -137,6 +174,17 @@ export interface RecentBash {
   avoidable: boolean;
 }
 
+export interface RecentRoute {
+  ts: string;
+  project_name: string;
+  project_path: string;
+  prompt: string;
+  routed: boolean;
+  difficulty: "standard" | "complex";
+  agent?: string;
+  model?: string;
+}
+
 export interface DashboardData {
   active: {
     project_root: string;
@@ -159,11 +207,17 @@ export interface DashboardData {
     tool_calls: Record<string, number>;
     bash_explorations: number;
     bash_avoidable: number;
+    routes_total: number;
+    routes_hinted: number;
+    routes_complex: number;
+    /** Times each agent was the top recommendation (v0.19+ log entries only). */
+    route_agents: Record<string, number>;
   };
   projects: ProjectStats[];
   recent_turns: RecentTurn[];
   recent_gates: RecentGate[];
   recent_bash: RecentBash[];
+  recent_routes: RecentRoute[];
 }
 
 async function readJsonl<T>(path: string): Promise<T[]> {
@@ -198,6 +252,7 @@ interface ProjectFiles {
   gates: GateLogEntry[];
   tools: ToolLogEntry[];
   bash: BashLogEntry[];
+  routes: RouteLogEntry[];
   learn: LearnStore;
 }
 
@@ -220,6 +275,7 @@ function summarize(p: ProjectFiles): ProjectStats {
 
   const blocked = p.gates.filter((g) => g.decision === "block").length;
   const saved = blocked * AVG_TOKENS_PER_BLOCKED_GREP;
+  const routes = summarizeRoutes(p.routes);
   const now = Date.now();
 
   return {
@@ -239,6 +295,9 @@ function summarize(p: ProjectFiles): ProjectStats {
     tool_calls: countToolCalls(p.tools),
     bash_explorations: p.bash.length,
     bash_avoidable: p.bash.filter((b) => b.avoidable).length,
+    routes_total: routes.total,
+    routes_hinted: routes.hinted,
+    routes_complex: routes.complex,
     hot_files: topHotFiles(p.learn, now),
     hot_files_total: effectiveScores(p.learn, now).size,
     models,
@@ -259,15 +318,16 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates, tools, bash, learn] = await Promise.all([
+  const [rawTokens, gates, tools, bash, routes, learn] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
     readJsonl<ToolLogEntry>(paths.toolLog),
     readJsonl<BashLogEntry>(paths.bashLog),
+    readJsonl<RouteLogEntry>(paths.routeLog),
     readLearnStore(paths.learnStore),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
-  return { path, name, last_seen: lastSeen, tokens, gates, tools, bash, learn };
+  return { path, name, last_seen: lastSeen, tokens, gates, tools, bash, routes, learn };
 }
 
 /**
@@ -363,6 +423,7 @@ export async function computeDashboardData(
     gates: [],
     tools: [],
     bash: [],
+    routes: [],
     learn: emptyStore(),
   };
   const activeStats = summarize(activeFiles);
@@ -378,7 +439,10 @@ export async function computeDashboardData(
     g_turns = 0,
     g_tools = 0,
     g_bash = 0,
-    g_bash_avoid = 0;
+    g_bash_avoid = 0,
+    g_routes = 0,
+    g_routes_hinted = 0,
+    g_routes_complex = 0;
   const g_tool_calls: Record<string, number> = {};
   for (const s of projects) {
     g_turns += s.total_turns;
@@ -392,7 +456,16 @@ export async function computeDashboardData(
     g_tools += s.total_tool_calls;
     g_bash += s.bash_explorations;
     g_bash_avoid += s.bash_avoidable;
+    g_routes += s.routes_total;
+    g_routes_hinted += s.routes_hinted;
+    g_routes_complex += s.routes_complex;
     for (const [k, v] of Object.entries(s.tool_calls)) g_tool_calls[k] = (g_tool_calls[k] ?? 0) + v;
+  }
+  const g_route_agents: Record<string, number> = {};
+  for (const p of loaded) {
+    for (const [k, v] of Object.entries(summarizeRoutes(p.routes).agents)) {
+      g_route_agents[k] = (g_route_agents[k] ?? 0) + v;
+    }
   }
   const g_saved = g_block * AVG_TOKENS_PER_BLOCKED_GREP;
   const g_used = g_in + g_out + g_cc;
@@ -402,7 +475,20 @@ export async function computeDashboardData(
   const allTurns: RecentTurn[] = [];
   const allGates: RecentGate[] = [];
   const allBash: RecentBash[] = [];
+  const allRoutes: RecentRoute[] = [];
   for (const p of loaded) {
+    for (const r of p.routes) {
+      allRoutes.push({
+        ts: r.ts,
+        project_name: p.name,
+        project_path: p.path,
+        prompt: r.prompt,
+        routed: r.routed,
+        difficulty: r.difficulty,
+        ...(r.agent ? { agent: r.agent } : {}),
+        ...(r.model ? { model: r.model } : {}),
+      });
+    }
     for (const b of p.bash) {
       allBash.push({
         ts: b.ts,
@@ -444,6 +530,7 @@ export async function computeDashboardData(
   allTurns.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
   allGates.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
   allBash.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  allRoutes.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
 
   return {
     active: {
@@ -467,11 +554,16 @@ export async function computeDashboardData(
       tool_calls: g_tool_calls,
       bash_explorations: g_bash,
       bash_avoidable: g_bash_avoid,
+      routes_total: g_routes,
+      routes_hinted: g_routes_hinted,
+      routes_complex: g_routes_complex,
+      route_agents: g_route_agents,
     },
     projects,
     recent_turns: allTurns.slice(0, recentN),
     recent_gates: allGates.slice(0, recentN),
     recent_bash: allBash.slice(0, recentN),
+    recent_routes: allRoutes.slice(0, recentN),
   };
 }
 
