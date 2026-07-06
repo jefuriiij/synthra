@@ -7,6 +7,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.19.0] — 2026-07-06
+
+### Added
+
+- **The dashboard now shows the Dispatcher at work.** A new full-width Overview
+  card reads `route_log.jsonl`: how many prompts were scored vs actually hinted,
+  the standard/complex difficulty split, your most-recommended agents, and a
+  live feed of recent routing decisions (with the recommended agent when one
+  fired). The route log itself now records the top agent + model per decision,
+  so the card gets richer as you use it.
+
+### Changed
+
+- **Dashboard polish:** hero numbers (spend, savings, Moat blocks, routes)
+  animate to their new values on each refresh (and snap instantly under
+  reduced-motion); the first load shows a skeleton grid instead of a blank
+  page; cards get a subtle border highlight on hover; empty states now say
+  what makes their data appear.
+
+---
+
 ## [0.18.0] — 2026-07-03
 
 ### Added
