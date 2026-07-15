@@ -1,7 +1,9 @@
 # Stop hook — Windows PowerShell.
 # Reads Claude's transcript JSONL from $hookInput.transcript_path, sums
 # usage.* token counts across all assistant turns since the last offset, and
-# POSTs the totals to /log. Uses a per-transcript .stopoffset file to avoid
+# POSTs the totals to /log. Since v0.20 the same pass also collects Task/Agent
+# tool_use events (subagent delegations) so the dashboard can compute the
+# Dispatcher follow-rate. Uses a per-transcript .stopoffset file to avoid
 # double-counting on session resume.
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -25,14 +27,33 @@ if (Test-Path $offsetFile) {
     if ($val -match '^\d+$') { $startOffset = [int]$val }
 }
 
+$sessionId = [IO.Path]::GetFileNameWithoutExtension($transcript)
+
 $lines = Get-Content -Path $transcript
 $inT = 0; $outT = 0; $cc = 0; $cr = 0; $model = ""
+$delegations = New-Object System.Collections.ArrayList
 $lineNum = 0
 foreach ($line in $lines) {
     $lineNum++
     if ($lineNum -le $startOffset) { continue }
     if (-not $line) { continue }
     try { $e = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+
+    # Subagent delegations: assistant content blocks calling Task/Agent.
+    foreach ($blk in @($e.message.content)) {
+        if (-not $blk -or $blk.type -ne "tool_use") { continue }
+        if ($blk.name -ne "Task" -and $blk.name -ne "Agent") { continue }
+        $ts = $e.timestamp
+        if ($ts -is [DateTime]) { $ts = $ts.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
+        if (-not $ts) { $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
+        [void]$delegations.Add(@{
+            ts         = "$ts"
+            agent      = $blk.input.subagent_type
+            model      = $blk.input.model
+            session_id = $sessionId
+        })
+    }
+
     $usage = $e.message.usage
     if (-not $usage) { continue }
     $inT  += [int]($usage.input_tokens               | ForEach-Object { if ($_) { $_ } else { 0 } })
@@ -44,9 +65,9 @@ foreach ($line in $lines) {
 
 Set-Content -Path $offsetFile -Value $lineNum -Encoding ASCII
 
-if ($inT -eq 0 -and $outT -eq 0) { exit 0 }
+if ($inT -eq 0 -and $outT -eq 0 -and $delegations.Count -eq 0) { exit 0 }
 
-$payload = @{
+$payloadMap = @{
     input_tokens                = $inT
     output_tokens               = $outT
     cache_creation_input_tokens = $cc
@@ -54,7 +75,9 @@ $payload = @{
     model                       = $model
     description                 = "synthra-stop-hook"
     project                     = $PWD.Path
-} | ConvertTo-Json -Compress
+}
+if ($delegations.Count -gt 0) { $payloadMap.delegations = $delegations }
+$payload = $payloadMap | ConvertTo-Json -Compress -Depth 5
 
 try {
     Invoke-RestMethod -Uri "http://127.0.0.1:$port/log" -Method POST `

@@ -2,8 +2,19 @@
 
 import { describe, it, expect } from "vitest";
 
-import { countToolCalls, summarizeRoutes, topHotFiles } from "../src/dashboard/delta.js";
-import type { RouteLogEntry } from "../src/dashboard/delta.js";
+import {
+  correlateFollows,
+  countBypassedBlocks,
+  countToolCalls,
+  summarizeRoutes,
+  topHotFiles,
+} from "../src/dashboard/delta.js";
+import type {
+  BashLogEntry,
+  DelegationLogEntry,
+  GateLogEntry,
+  RouteLogEntry,
+} from "../src/dashboard/delta.js";
 import { emptyStore, foldEvent } from "../src/learn/usage.js";
 
 describe("countToolCalls (#2)", () => {
@@ -58,6 +69,118 @@ describe("summarizeRoutes (dashboard Dispatcher card, v0.19)", () => {
 
   it("returns zeros for an empty (or absent) log", () => {
     expect(summarizeRoutes([])).toEqual({ total: 0, hinted: 0, complex: 0, agents: {} });
+  });
+});
+
+describe("correlateFollows (Dispatcher follow-rate, v0.20)", () => {
+  const T = (min: number) => new Date(Date.UTC(2026, 6, 15, 10, min)).toISOString();
+  const hint = (min: number, agent?: string): RouteLogEntry => ({
+    ts: T(min),
+    prompt: "x",
+    routed: true,
+    hint_chars: 100,
+    difficulty: "standard",
+    ...(agent ? { agent, model: "sonnet" } : {}),
+  });
+  const dele = (min: number, agent?: string): DelegationLogEntry => ({
+    ts: T(min),
+    agent: agent ?? null,
+  });
+
+  it("counts a delegation inside the 30-min window as followed; exact when agents match", () => {
+    const r = correlateFollows([hint(0, "svelte-file-editor")], [dele(10, "svelte-file-editor")]);
+    expect(r).toEqual({ hints: 1, followed: 1, followed_agent: 1 });
+  });
+
+  it("a delegation outside the window, or before the hint, does not count", () => {
+    expect(correlateFollows([hint(0)], [dele(45)]).followed).toBe(0);
+    expect(correlateFollows([hint(30)], [dele(10)]).followed).toBe(0);
+  });
+
+  it("the next hint cuts the window short", () => {
+    // Delegation at minute 20 falls after hint #2 (minute 15), so it belongs
+    // to hint #2 — hint #1's window ended at 15.
+    const r = correlateFollows([hint(0, "a"), hint(15, "b")], [dele(20, "b")]);
+    expect(r).toEqual({ hints: 2, followed: 1, followed_agent: 1 });
+  });
+
+  it("a different agent still counts as followed, not exact", () => {
+    const r = correlateFollows([hint(0, "svelte-file-editor")], [dele(5, "general-purpose")]);
+    expect(r).toEqual({ hints: 1, followed: 1, followed_agent: 0 });
+  });
+
+  it("silent routes and empty logs yield zeros", () => {
+    const silent: RouteLogEntry = {
+      ts: T(0),
+      prompt: "x",
+      routed: false,
+      hint_chars: 0,
+      difficulty: "standard",
+    };
+    expect(correlateFollows([silent], [dele(1)])).toEqual({
+      hints: 0,
+      followed: 0,
+      followed_agent: 0,
+    });
+    expect(correlateFollows([], [])).toEqual({ hints: 0, followed: 0, followed_agent: 0 });
+  });
+});
+
+describe("countBypassedBlocks (Moat false-block signal, v0.20)", () => {
+  const T = (sec: number) => new Date(Date.UTC(2026, 6, 15, 10, 0, sec)).toISOString();
+  const block = (sec: number, query: string): GateLogEntry => ({
+    ts: T(sec),
+    tool: "Grep",
+    decision: "block",
+    query,
+  });
+  const search = (sec: number, query: string, command = ""): BashLogEntry => ({
+    ts: T(sec),
+    kind: "search",
+    tool: "rg",
+    query,
+    confidence: "medium",
+    avoidable: false,
+    ...(command ? { command } : {}),
+  });
+
+  it("counts a token-overlapping terminal search within 120s as a bypass", () => {
+    const r = countBypassedBlocks(
+      [block(0, "activeStep = |STEP_MS")],
+      [search(30, "activeStep", "rg 'activeStep' src/")],
+    );
+    expect(r).toEqual({ blocks: 1, bypassed: 1 });
+  });
+
+  it("no bypass when the search is late or shares no tokens", () => {
+    expect(
+      countBypassedBlocks([block(0, "activeStep")], [search(180, "activeStep")]).bypassed,
+    ).toBe(0);
+    expect(countBypassedBlocks([block(0, "activeStep")], [search(30, "menuOpen")]).bypassed).toBe(
+      0,
+    );
+  });
+
+  it("matches on the raw command text too, and ignores non-search bash entries", () => {
+    const read: BashLogEntry = {
+      ts: T(10),
+      kind: "read",
+      tool: "cat",
+      query: "src/activeStep.ts",
+      confidence: null,
+      avoidable: false,
+    };
+    expect(
+      countBypassedBlocks(
+        [block(0, "dispatchLessonPatch")],
+        [read, search(20, null as unknown as string, "rg dispatchLessonPatch src")],
+      ),
+    ).toEqual({ blocks: 1, bypassed: 1 });
+  });
+
+  it("allow decisions are never counted", () => {
+    const allow: GateLogEntry = { ts: T(0), tool: "Grep", decision: "allow", query: "x" };
+    expect(countBypassedBlocks([allow], [search(5, "x")])).toEqual({ blocks: 0, bypassed: 0 });
   });
 });
 

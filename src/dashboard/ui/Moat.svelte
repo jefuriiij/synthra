@@ -9,6 +9,9 @@
   const blocksCounter = new CountUp();
   $effect(() => blocksCounter.set(blocks));
 
+  // Suspected false blocks: blocked, then bypassed via a terminal search (v0.20).
+  const bypassed = $derived(store.data?.global?.blocks_bypassed ?? 0);
+
   // Observe-only: the terminal bypass of the Moat (rg/cat/find via Bash).
   const bashTotal = $derived(store.data?.global?.bash_explorations ?? 0);
   const bashAvoidable = $derived(store.data?.global?.bash_avoidable ?? 0);
@@ -21,6 +24,14 @@
     <div class="font-mono text-xs text-muted-foreground" title="Codebase exploration via the terminal (rg / cat / find) — observe-only, not yet blocked">
       ↳ {fmt(bashTotal)} terminal hunts ·
       <span class={bashAvoidable > 0 ? "text-destructive" : ""}>{fmt(bashAvoidable)} the graph could answer</span>
+    </div>
+  {/if}
+  {#if blocks > 0}
+    <div
+      class="font-mono text-xs text-muted-foreground"
+      title="A block followed within 2 minutes by a terminal search sharing its query terms — the agent likely routed around a wrong block"
+    >
+      ↳ <span class={bypassed > 0 ? "text-destructive" : ""}>{fmt(bypassed)} bypassed via terminal</span> — suspected false blocks
     </div>
   {/if}
   <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

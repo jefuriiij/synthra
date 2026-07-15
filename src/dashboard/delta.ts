@@ -5,6 +5,7 @@
 
 import { readFile } from "node:fs/promises";
 
+import { tokenizeQuery } from "../graph/rank.js";
 import { readLearnStore } from "../learn/store.js";
 import { effectiveScores, emptyStore, type LearnStore } from "../learn/usage.js";
 import { resolvePaths, type SynthraPaths } from "../shared/paths.js";
@@ -89,6 +90,81 @@ export function summarizeRoutes(entries: RouteLogEntry[]): {
   return { total: entries.length, hinted, complex, agents };
 }
 
+/** A subagent dispatch the Stop hook spotted in the transcript (v0.20). */
+export interface DelegationLogEntry {
+  ts: string;
+  agent?: string | null;
+  model?: string | null;
+  session_id?: string;
+}
+
+/** A hinted route counts as followed when a delegation lands within this
+ *  window (cut short by the next hint). Crude but honest — logs carry no
+ *  session ids, so time is the only join key. */
+const FOLLOW_WINDOW_MS = 30 * 60 * 1000;
+
+/** Did the routing hints actually change behavior? Pure — feeds the
+ *  Dispatcher card's follow-rate line. */
+export function correlateFollows(
+  routes: RouteLogEntry[],
+  delegations: DelegationLogEntry[],
+): { hints: number; followed: number; followed_agent: number } {
+  const hints = routes
+    .filter((r) => r.routed)
+    .map((r) => ({ t: Date.parse(r.ts), agent: r.agent }))
+    .filter((h) => Number.isFinite(h.t))
+    .sort((a, b) => a.t - b.t);
+  const events = delegations
+    .map((d) => ({ t: Date.parse(d.ts), agent: d.agent ?? null }))
+    .filter((e) => Number.isFinite(e.t))
+    .sort((a, b) => a.t - b.t);
+
+  let followed = 0;
+  let followedAgent = 0;
+  for (let i = 0; i < hints.length; i++) {
+    const hint = hints[i] as { t: number; agent?: string };
+    const next = hints[i + 1];
+    const end = Math.min(hint.t + FOLLOW_WINDOW_MS, next ? next.t : Number.POSITIVE_INFINITY);
+    const within = events.filter((e) => e.t > hint.t && e.t <= end);
+    if (within.length === 0) continue;
+    followed += 1;
+    if (hint.agent && within.some((e) => e.agent === hint.agent)) followedAgent += 1;
+  }
+  return { hints: hints.length, followed, followed_agent: followedAgent };
+}
+
+/** A Moat block is "bypassed" when a terminal search lands soon after it and
+ *  shares a token with the blocked query — the strongest false-block signal
+ *  we can measure without asking the user. Pure. */
+const BYPASS_WINDOW_MS = 120_000;
+
+export function countBypassedBlocks(
+  gates: GateLogEntry[],
+  bash: BashLogEntry[],
+): { blocks: number; bypassed: number } {
+  const blocks = gates.filter((g) => g.decision === "block");
+  const searches = bash
+    .filter((b) => b.kind === "search")
+    .map((b) => ({
+      t: Date.parse(b.ts),
+      tokens: tokenizeQuery(`${b.query ?? ""} ${b.command ?? ""}`),
+    }))
+    .filter((b) => Number.isFinite(b.t));
+
+  let bypassed = 0;
+  for (const g of blocks) {
+    const gt = Date.parse(g.ts);
+    if (!Number.isFinite(gt)) continue;
+    const gTokens = new Set(tokenizeQuery(g.query ?? ""));
+    if (gTokens.size === 0) continue;
+    const hit = searches.some(
+      (b) => b.t > gt && b.t - gt <= BYPASS_WINDOW_MS && b.tokens.some((t) => gTokens.has(t)),
+    );
+    if (hit) bypassed += 1;
+  }
+  return { blocks: blocks.length, bypassed };
+}
+
 /** Count Synthra MCP tool calls by tool name. (#2) */
 export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -137,6 +213,12 @@ export interface ProjectStats {
   routes_total: number;
   routes_hinted: number;
   routes_complex: number;
+  /** Hints followed by an actual subagent delegation (v0.20). */
+  routes_followed: number;
+  /** Of those, delegations to the exact recommended agent. */
+  routes_followed_agent: number;
+  /** Moat blocks bypassed via a terminal search soon after (v0.20). */
+  blocks_bypassed: number;
   hot_files: HotFile[];
   hot_files_total: number;
   models: Record<string, number>;
@@ -210,6 +292,9 @@ export interface DashboardData {
     routes_total: number;
     routes_hinted: number;
     routes_complex: number;
+    routes_followed: number;
+    routes_followed_agent: number;
+    blocks_bypassed: number;
     /** Times each agent was the top recommendation (v0.19+ log entries only). */
     route_agents: Record<string, number>;
   };
@@ -253,6 +338,7 @@ interface ProjectFiles {
   tools: ToolLogEntry[];
   bash: BashLogEntry[];
   routes: RouteLogEntry[];
+  delegations: DelegationLogEntry[];
   learn: LearnStore;
 }
 
@@ -276,6 +362,8 @@ function summarize(p: ProjectFiles): ProjectStats {
   const blocked = p.gates.filter((g) => g.decision === "block").length;
   const saved = blocked * AVG_TOKENS_PER_BLOCKED_GREP;
   const routes = summarizeRoutes(p.routes);
+  const follows = correlateFollows(p.routes, p.delegations);
+  const bypass = countBypassedBlocks(p.gates, p.bash);
   const now = Date.now();
 
   return {
@@ -298,6 +386,9 @@ function summarize(p: ProjectFiles): ProjectStats {
     routes_total: routes.total,
     routes_hinted: routes.hinted,
     routes_complex: routes.complex,
+    routes_followed: follows.followed,
+    routes_followed_agent: follows.followed_agent,
+    blocks_bypassed: bypass.bypassed,
     hot_files: topHotFiles(p.learn, now),
     hot_files_total: effectiveScores(p.learn, now).size,
     models,
@@ -318,16 +409,28 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates, tools, bash, routes, learn] = await Promise.all([
+  const [rawTokens, gates, tools, bash, routes, delegations, learn] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
     readJsonl<ToolLogEntry>(paths.toolLog),
     readJsonl<BashLogEntry>(paths.bashLog),
     readJsonl<RouteLogEntry>(paths.routeLog),
+    readJsonl<DelegationLogEntry>(paths.delegationLog),
     readLearnStore(paths.learnStore),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
-  return { path, name, last_seen: lastSeen, tokens, gates, tools, bash, routes, learn };
+  return {
+    path,
+    name,
+    last_seen: lastSeen,
+    tokens,
+    gates,
+    tools,
+    bash,
+    routes,
+    delegations,
+    learn,
+  };
 }
 
 /**
@@ -424,6 +527,7 @@ export async function computeDashboardData(
     tools: [],
     bash: [],
     routes: [],
+    delegations: [],
     learn: emptyStore(),
   };
   const activeStats = summarize(activeFiles);
@@ -442,7 +546,10 @@ export async function computeDashboardData(
     g_bash_avoid = 0,
     g_routes = 0,
     g_routes_hinted = 0,
-    g_routes_complex = 0;
+    g_routes_complex = 0,
+    g_routes_followed = 0,
+    g_routes_followed_agent = 0,
+    g_blocks_bypassed = 0;
   const g_tool_calls: Record<string, number> = {};
   for (const s of projects) {
     g_turns += s.total_turns;
@@ -459,6 +566,9 @@ export async function computeDashboardData(
     g_routes += s.routes_total;
     g_routes_hinted += s.routes_hinted;
     g_routes_complex += s.routes_complex;
+    g_routes_followed += s.routes_followed;
+    g_routes_followed_agent += s.routes_followed_agent;
+    g_blocks_bypassed += s.blocks_bypassed;
     for (const [k, v] of Object.entries(s.tool_calls)) g_tool_calls[k] = (g_tool_calls[k] ?? 0) + v;
   }
   const g_route_agents: Record<string, number> = {};
@@ -557,6 +667,9 @@ export async function computeDashboardData(
       routes_total: g_routes,
       routes_hinted: g_routes_hinted,
       routes_complex: g_routes_complex,
+      routes_followed: g_routes_followed,
+      routes_followed_agent: g_routes_followed_agent,
+      blocks_bypassed: g_blocks_bypassed,
       route_agents: g_route_agents,
     },
     projects,

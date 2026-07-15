@@ -7,6 +7,7 @@
 // a symbol-hit requirement (only block when an exact symbol name matched).
 
 import { describe, it, expect } from "vitest";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -333,5 +334,74 @@ describe("gate — guard lets styling/markup searches through (v0.5.0)", () => {
   it("still blocks a real symbol query that merely contains a regex char-class range", async () => {
     // "[A-Z]" must be stripped before the kebab check, else "A-Z" reads as kebab.
     expect(await grep("fetchWith429Retry|[A-Z]x")).toBe("block");
+  });
+});
+
+describe("gate - test-file guard (v0.20)", () => {
+  const TEST_ONLY_GRAPH = buildGraph([
+    {
+      path: "web/src/lib/WorkflowRunner.test.ts",
+      keywords: ["workflow", "runner", "step"],
+      symbols: ["activeStep", "STEP_MS"],
+    },
+    {
+      path: "web/tests/runner.spec.ts",
+      keywords: ["runner", "step"],
+      symbols: ["stepFixture"],
+    },
+  ]);
+  const MIXED_GRAPH = buildGraph([
+    {
+      path: "web/src/lib/WorkflowRunner.test.ts",
+      keywords: ["workflow", "runner"],
+      symbols: ["activeStep"],
+    },
+    {
+      path: "web/src/lib/runner.ts",
+      keywords: ["runner", "step"],
+      symbols: ["activeStep", "advanceStep"],
+    },
+  ]);
+
+  function tctx(graph: GraphSchema, gateLog?: string): ServerContext {
+    return {
+      paths: { gateLog: gateLog ?? join(tmpdir(), "syn-gate-test.log") },
+      graph,
+      symbolIndex: {},
+      activity: { recentFilePaths: () => [] },
+    } as unknown as ServerContext;
+  }
+
+  it("allows when every top match is a test file and the query is not test-ish", async () => {
+    const res = await handleGate(
+      { tool_name: "Grep", tool_input: { pattern: "activeStep|STEP_MS" } },
+      tctx(TEST_ONLY_GRAPH),
+    );
+    expect(res.decision).toBe("allow");
+    expect(res.reason).toContain("test file");
+  });
+
+  it("still blocks when a non-test file also matches, and logs the matched files", async () => {
+    const logPath = join(
+      tmpdir(),
+      `syn-gate-files-${process.pid}-${Math.random().toString(36).slice(2)}.log`,
+    );
+    const res = await handleGate(
+      { tool_name: "Grep", tool_input: { pattern: "advanceStep" } },
+      tctx(MIXED_GRAPH, logPath),
+    );
+    expect(res.decision).toBe("block");
+    const line = (await readFile(logPath, "utf8")).trim().split("\n").pop() as string;
+    const entry = JSON.parse(line);
+    expect(entry.decision).toBe("block");
+    expect(entry.files).toContain("web/src/lib/runner.ts");
+  });
+
+  it("a genuinely test-ish query against test files still blocks", async () => {
+    const res = await handleGate(
+      { tool_name: "Grep", tool_input: { pattern: "stepFixture test" } },
+      tctx(TEST_ONLY_GRAPH),
+    );
+    expect(res.decision).toBe("block");
   });
 });

@@ -103,6 +103,7 @@ async function logDecision(
   decision: "allow" | "block",
   reason: string | undefined,
   hintChars?: number,
+  files?: string[],
 ): Promise<void> {
   try {
     await mkdir(dirname(ctx.paths.gateLog), { recursive: true });
@@ -116,11 +117,28 @@ async function logDecision(
           ? `${reason.slice(0, LOG_REASON_MAX_CHARS)}…`
           : reason,
       ...(hintChars === undefined ? {} : { hint_chars: hintChars }),
+      // Top matched paths on blocks (v0.20) — lets false blocks be graded
+      // from the log alone.
+      ...(files && files.length > 0 ? { files } : {}),
     };
     await appendFile(ctx.paths.gateLog, JSON.stringify(entry) + "\n", "utf8");
   } catch {
     // Durability is best-effort; an unwritable disk shouldn't fail the gate.
   }
+}
+
+// Test-file guard (v0.20, from the 07-14 dogfood miss): a landing-page query
+// blocked because its only symbol matches lived in test files. When every top
+// match is a test file and the query itself isn't about tests, the block
+// payload can only mislead — let the search through.
+const TEST_PATH_RE = /\.(test|spec)\.[cm]?[jt]sx?$|[\\/]__tests__[\\/]|[\\/]tests?[\\/]/i;
+const TESTISH_QUERY_RE = /\b(test|tests|spec|specs|mock|mocks|fixture|fixtures|stub|stubs)\b/i;
+
+export function matchesOnlyTestFiles(query: string, files: { path: string }[]): boolean {
+  const top = files.slice(0, 5);
+  if (top.length === 0) return false;
+  if (TESTISH_QUERY_RE.test(query)) return false;
+  return top.every((f) => TEST_PATH_RE.test(f.path));
 }
 
 const SIG_LINE_MAX_CHARS = 140;
@@ -299,8 +317,30 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
+  // Guard 3 — every top match is a test file but the query isn't about tests.
+  // (Dogfood 07-14: a landing-page state query blocked into WorkflowRunner
+  // test symbols; the agent just bypassed via Bash grep.)
+  if (matchesOnlyTestFiles(query, retrieval.files)) {
+    const res: GateResponse = {
+      decision: "allow",
+      reason:
+        `confidence=${retrieval.confidence} but every top match is a test file and ` +
+        `"${query}" isn't a test query — likely unrelated, letting ${req.tool_name} through.`,
+    };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
+  }
+
   const hint = buildBlockHint(query, retrieval, ctx.graph, req.tool_name);
   const res: GateResponse = { decision: "block", reason: hint };
-  await logDecision(ctx, req.tool_name, query, res.decision, hint, hint.length);
+  await logDecision(
+    ctx,
+    req.tool_name,
+    query,
+    res.decision,
+    hint,
+    hint.length,
+    retrieval.files.slice(0, 3).map((f) => f.path),
+  );
   return res;
 }

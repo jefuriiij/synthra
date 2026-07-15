@@ -9,6 +9,8 @@
   const hinted = $derived(g?.routes_hinted ?? 0);
   const complex = $derived(g?.routes_complex ?? 0);
   const standard = $derived(total - complex);
+  const followed = $derived(g?.routes_followed ?? 0);
+  const followedAgent = $derived(g?.routes_followed_agent ?? 0);
   const topAgents = $derived(
     Object.entries(g?.route_agents ?? {})
       .sort((a, b) => b[1] - a[1])
@@ -32,6 +34,14 @@
         standard <span class="text-foreground">{fmt(standard)}</span>
         <span class="mx-1">·</span>
         complex <span class={complex > 0 ? "text-[var(--c-opus)]" : "text-foreground"}>{fmt(complex)}</span>
+      </div>
+      <div
+        class="font-mono text-xs text-muted-foreground"
+        title="Hints followed by an actual subagent delegation within 30 minutes (exact = delegated to the recommended agent). Needs the v0.20 hooks — rerun syn ."
+      >
+        followed <span class={followed > 0 ? "text-[var(--c-fable)]" : "text-foreground"}>{fmt(followed)}</span>
+        of {fmt(hinted)} hints
+        {#if followedAgent > 0}<span class="text-muted-foreground/70">({fmt(followedAgent)} exact)</span>{/if}
       </div>
     </div>
 

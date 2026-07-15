@@ -21,7 +21,7 @@
     },
     {
       q: "What is the Dispatcher?",
-      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and injects a one-line hint: best-fit agent, recommended model, relevant skill. Complex tasks (races, leaks, migrations…) are flagged to stay on your primary model; the rest delegate to cheaper models. The card shows every decision from route_log.jsonl.",
+      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and injects a one-line hint: best-fit agent, recommended model, relevant skill. Complex tasks (races, leaks, migrations…) are flagged to stay on your primary model; the rest delegate to cheaper models. The card shows every decision from route_log.jsonl — including the follow rate: how many hints were actually followed by a subagent delegation within 30 minutes ('exact' means the recommended agent was the one dispatched).",
     },
     {
       q: "What is the Arsenal view?",

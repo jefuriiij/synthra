@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Stop hook — bash. Reads transcript JSONL, sums usage.* across new lines,
-# POSTs totals to /log. Uses a .stopoffset file to avoid double-counting.
+# POSTs totals to /log. Since v0.20 the same window is also scanned for
+# Task/Agent tool_use events (subagent delegations) feeding the dashboard's
+# Dispatcher follow-rate. Uses a .stopoffset file to avoid double-counting.
 # Requires `jq` for robust JSON parsing; falls back to silent no-op if absent.
 
 set +e
@@ -34,6 +36,8 @@ TOTAL_LINES=${TOTAL_LINES:-0}
 
 if [ "$TOTAL_LINES" -le "$START_OFFSET" ]; then exit 0; fi
 
+SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
+
 USAGE=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
   | jq -s '
       map(select(.message.usage != null) | .message)
@@ -47,6 +51,22 @@ USAGE=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
         )
     ' 2>/dev/null)
 
+# Subagent delegations in the same window: Task/Agent tool_use content blocks.
+DELEG=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+  | jq -c --arg s "$SESSION_ID" '
+      . as $e
+      | ($e.message.content // [])
+      | if type == "array" then .[] else empty end
+      | select(.type == "tool_use" and (.name == "Task" or .name == "Agent"))
+      | { ts: ($e.timestamp // ""),
+          agent: (.input.subagent_type // null),
+          model: (.input.model // null),
+          session_id: $s }
+    ' 2>/dev/null | jq -s '.' 2>/dev/null)
+DELEG=${DELEG:-[]}
+DELEG_N=$(printf '%s' "$DELEG" | jq 'length' 2>/dev/null)
+DELEG_N=${DELEG_N:-0}
+
 printf '%s' "$TOTAL_LINES" > "$OFFSET_FILE"
 
 IN=$(printf '%s' "$USAGE" | jq -r '.in // 0')
@@ -55,11 +75,12 @@ CC=$(printf '%s' "$USAGE" | jq -r '.cc // 0')
 CR=$(printf '%s' "$USAGE" | jq -r '.cr // 0')
 MODEL=$(printf '%s' "$USAGE" | jq -r '.model // ""')
 
-if [ "$IN" = "0" ] && [ "$OUT" = "0" ]; then exit 0; fi
+if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then exit 0; fi
 
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$PWD" \
-    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p}')" \
+  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$PWD" --argjson d "$DELEG" \
+    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p}
+     + (if ($d | length) > 0 then {delegations:$d} else {} end)')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 
 # Refresh CONTEXT.md from the branch-scoped store.
