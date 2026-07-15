@@ -7,6 +7,30 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.20.0] — 2026-07-15
+
+### Added
+
+- **Dispatcher follow-rate.** The Stop hook now spots actual subagent
+  delegations (Task/Agent calls) in the transcript and logs them to
+  `delegation_log.jsonl`; the dashboard's Dispatcher card correlates them with
+  routing hints and shows `followed X of Y hints (Z exact)` — the honest
+  measure of whether the router changes behavior. Hook update lands on your
+  next `syn .`.
+- **Suspected-false-block metric.** A Moat block followed within 2 minutes by
+  a terminal search sharing its query terms is counted as a bypass — the Moat
+  card now shows `N bypassed via terminal — suspected false blocks`. Block log
+  entries also record their top matched files for later grading.
+
+### Changed
+
+- **The Moat no longer blocks test-file-only matches.** When every top match
+  for a query lives in test files and the query isn't about tests, the search
+  is allowed — this was the most common false block in the field (a UI-state
+  query matching test symbols).
+
+---
+
 ## [0.19.0] — 2026-07-06
 
 ### Added
