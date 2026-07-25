@@ -16,6 +16,8 @@ import type { FileNode, GraphSchema } from "../src/graph/types.js";
 import type { ServerContext } from "../src/server/context.js";
 import {
   fingerprintKeywords,
+  isSystemPrompt,
+  normalizePaths,
   renderHint,
   renderRouteReport,
   scoreArsenal,
@@ -276,6 +278,92 @@ describe("scoring noise fixes (v0.18)", () => {
   });
 });
 
+describe("input hygiene (v0.21) — the field failures", () => {
+  // Every fixture below is a real prompt shape from route_log.jsonl, where the
+  // first field window put 112 of 166 hints on harness noise and let directory
+  // names pick the agent.
+  it("isSystemPrompt catches IDE notices, task notifications, and reminders", () => {
+    expect(
+      isSystemPrompt("<ide_opened_file>The user opened the file c:\\x</ide_opened_file>"),
+    ).toBe(true);
+    expect(
+      isSystemPrompt("<ide_selection>The user selected the lines 81 to 81</ide_selection>"),
+    ).toBe(true);
+    expect(isSystemPrompt("<task-notification>\n<task-id>bhigip0gc</task-id>")).toBe(true);
+    expect(isSystemPrompt("<system-reminder>do the thing</system-reminder>")).toBe(true);
+    expect(isSystemPrompt("<local-command-stdout>ok</local-command-stdout>")).toBe(true);
+  });
+
+  it("isSystemPrompt leaves real prompts alone, including pasted markup", () => {
+    expect(isSystemPrompt("build a settings page with svelte components")).toBe(false);
+    expect(isSystemPrompt("  fix the reconnect races  ")).toBe(false);
+    expect(isSystemPrompt("<div class='hero'> needs a dark variant")).toBe(false);
+  });
+
+  it("normalizePaths keeps the basename and drops the directories", () => {
+    expect(normalizePaths("i tried in /data/horses block")).toBe("i tried in horses block");
+    expect(normalizePaths("fix src/lib/socket.ts please")).toBe("fix socket please");
+    expect(normalizePaths("update Documents\\Windsor Project")).toBe("update Windsor Project");
+    // A 10-segment IDE path collapses to its two basenames (the space in
+    // "custom modules" makes it two words) instead of ~10 voting tokens.
+    expect(normalizePaths("c:\\Users\\Jeff\\hs-wwd\\custom modules\\X.module\\module.html")).toBe(
+      "custom module",
+    );
+    expect(normalizePaths("no paths here at all")).toBe("no paths here at all");
+  });
+
+  it("a URL path no longer routes to data-analyst (the /data/horses miss)", () => {
+    const dataAnalyst = item({
+      name: "data-analyst",
+      description: "Extract insights from business data, dashboards and reports.",
+    });
+    const m = scoreArsenal(
+      'i tried in /data/horses block and the toast says "Could not save"',
+      arsenal([dataAnalyst]),
+      noExts,
+      3,
+    );
+    expect(m.agents).toEqual([]);
+  });
+
+  it("a role word alone never wins (the test-automator / project-manager misses)", () => {
+    const testAutomator = item({
+      name: "test-automator",
+      description: "Build automated test frameworks and CI pipelines.",
+    });
+    const projectManager = item({
+      name: "project-manager",
+      description: "Establish plans, track progress, manage risks and stakeholders.",
+    });
+    const easy = scoreArsenal(
+      "before i deploy it, i want to test them locally",
+      arsenal([testAutomator]),
+      noExts,
+      3,
+    );
+    expect(easy.agents).toEqual([]);
+
+    const pathy = scoreArsenal(
+      "before you update the Documents\\Windsor Project - Phases doc",
+      arsenal([projectManager]),
+      noExts,
+      3,
+    );
+    expect(pathy.agents).toEqual([]);
+  });
+
+  it("a strong domain name hit still ranks (the fix must not silence everything)", () => {
+    const m = scoreArsenal(
+      "build a settings page with svelte components",
+      arsenal([svelteAgent], [svelteSkill]),
+      noExts,
+      5,
+    );
+    expect(m.confident).toBe(true);
+    expect(m.agents[0]?.name).toBe("svelte-ui-builder");
+  });
+});
+
 describe("renderHint / renderRouteReport", () => {
   it("hint names agent + model + top skill, stays compact; '' when unconfident", () => {
     const m = scoreArsenal(
@@ -345,6 +433,7 @@ describe("renderHint / renderRouteReport", () => {
 describe("handleRoute", () => {
   afterEach(() => {
     delete process.env.SYN_NO_ROUTE;
+    delete process.env.SYN_ROUTE_HINTS;
   });
 
   async function ctxWithGraph(): Promise<ServerContext> {
@@ -376,7 +465,8 @@ describe("handleRoute", () => {
   }
   const deps = { arsenal: async () => arsenal([svelteAgent], [svelteSkill]) };
 
-  it("returns a hint for a confident match and logs it", async () => {
+  it("returns a hint for a confident match when injection is enabled", async () => {
+    process.env.SYN_ROUTE_HINTS = "1";
     const ctx = await ctxWithGraph();
     const res = await handleRoute(
       { prompt: "build a settings page with svelte components" },
@@ -384,6 +474,36 @@ describe("handleRoute", () => {
       deps,
     );
     expect(res.hint).toContain("ui-builder");
+  });
+
+  it("shadow mode (the v0.21 default) injects nothing but still logs the verdict", async () => {
+    const ctx = await ctxWithGraph();
+    const res = await handleRoute(
+      { prompt: "build a settings page with svelte components" },
+      ctx,
+      deps,
+    );
+    expect(res.hint).toBe("");
+
+    const entry = JSON.parse((await readFile(ctx.paths.routeLog, "utf8")).trim());
+    expect(entry.matched).toBe(true); // the scorer WAS confident
+    expect(entry.routed).toBe(false); // …it just wasn't allowed to speak
+    expect(entry.agent).toBe("svelte-ui-builder");
+  });
+
+  it("skips harness-injected pseudo-prompts entirely — no hint, no log line", async () => {
+    process.env.SYN_ROUTE_HINTS = "1";
+    const ctx = await ctxWithGraph();
+    for (const prompt of [
+      "<ide_opened_file>The user opened the file c:\\proj\\src\\lib\\svelte\\settings.svelte</ide_opened_file>",
+      "<ide_selection>The user selected lines 1 to 9 from c:\\proj\\components\\page.svelte</ide_selection>",
+      "<task-notification>\n<task-id>abc</task-id>\nsvelte settings components page\n</task-notification>",
+      "<system-reminder>svelte settings page components</system-reminder>",
+    ]) {
+      expect((await handleRoute({ prompt }, ctx, deps)).hint).toBe("");
+    }
+    // Nothing logged at all — these aren't prompts the human typed.
+    await expect(readFile(ctx.paths.routeLog, "utf8")).rejects.toThrow();
   });
 
   it("stays silent on weak prompts, empty prompts, and when disabled", async () => {
@@ -409,6 +529,7 @@ describe("handleRoute", () => {
   });
 
   it("logs the top recommendation (agent + model) alongside the difficulty (v0.19)", async () => {
+    process.env.SYN_ROUTE_HINTS = "1";
     const ctx = await ctxWithGraph();
     await handleRoute({ prompt: "build a settings page with svelte components" }, ctx, deps);
     await handleRoute({ prompt: "investigate the database migration failure" }, ctx, deps);

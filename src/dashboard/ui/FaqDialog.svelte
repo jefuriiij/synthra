@@ -21,7 +21,7 @@
     },
     {
       q: "What is the Dispatcher?",
-      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and injects a one-line hint: best-fit agent, recommended model, relevant skill. Complex tasks (races, leaks, migrations…) are flagged to stay on your primary model; the rest delegate to cheaper models. The card shows every decision from route_log.jsonl — including the follow rate: how many hints were actually followed by a subagent delegation within 30 minutes ('exact' means the recommended agent was the one dispatched).",
+      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and picks a best-fit agent, model, and skill. Since v0.21 it runs in shadow mode by default: it records what it would have recommended but injects nothing, because the first field window measured a 1.2% follow-rate on injected hints — they have to earn the right to speak again. The card shows both numbers ('would have hinted' vs actually followed). Set SYN_ROUTE_HINTS=1 to re-enable injection; route_task(task) always answers on demand.",
     },
     {
       q: "What is the Arsenal view?",

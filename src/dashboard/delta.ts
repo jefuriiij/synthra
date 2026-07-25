@@ -63,6 +63,10 @@ export interface RouteLogEntry {
   prompt: string;
   /** True when a hint was actually injected into the conversation. */
   routed: boolean;
+  /** True when the scorer was confident, whether or not it was allowed to
+   *  speak (v0.21 shadow mode). Absent on older entries — fall back to
+   *  `routed`, which meant the same thing back when injection was always on. */
+  matched?: boolean;
   hint_chars: number;
   difficulty: "standard" | "complex";
   /** Top recommended agent + its model (v0.19+; absent in older logs and when
@@ -76,18 +80,23 @@ export interface RouteLogEntry {
 export function summarizeRoutes(entries: RouteLogEntry[]): {
   total: number;
   hinted: number;
+  matched: number;
   complex: number;
   agents: Record<string, number>;
 } {
   const agents: Record<string, number> = {};
   let hinted = 0;
+  let matched = 0;
   let complex = 0;
   for (const e of entries) {
     if (e.routed) hinted += 1;
+    // Pre-v0.21 entries have no `matched` — back then a confident verdict was
+    // always injected, so `routed` carries the same meaning.
+    if (e.matched ?? e.routed) matched += 1;
     if (e.difficulty === "complex") complex += 1;
     if (e.agent) agents[e.agent] = (agents[e.agent] ?? 0) + 1;
   }
-  return { total: entries.length, hinted, complex, agents };
+  return { total: entries.length, hinted, matched, complex, agents };
 }
 
 /** A subagent dispatch the Stop hook spotted in the transcript (v0.20). */
@@ -212,6 +221,8 @@ export interface ProjectStats {
   /** Dispatcher: prompts scored / hints injected / complex verdicts. */
   routes_total: number;
   routes_hinted: number;
+  /** Confident verdicts, including ones shadow mode kept quiet (v0.21). */
+  routes_matched: number;
   routes_complex: number;
   /** Hints followed by an actual subagent delegation (v0.20). */
   routes_followed: number;
@@ -291,6 +302,7 @@ export interface DashboardData {
     bash_avoidable: number;
     routes_total: number;
     routes_hinted: number;
+    routes_matched: number;
     routes_complex: number;
     routes_followed: number;
     routes_followed_agent: number;
@@ -385,6 +397,7 @@ function summarize(p: ProjectFiles): ProjectStats {
     bash_avoidable: p.bash.filter((b) => b.avoidable).length,
     routes_total: routes.total,
     routes_hinted: routes.hinted,
+    routes_matched: routes.matched,
     routes_complex: routes.complex,
     routes_followed: follows.followed,
     routes_followed_agent: follows.followed_agent,
@@ -546,6 +559,7 @@ export async function computeDashboardData(
     g_bash_avoid = 0,
     g_routes = 0,
     g_routes_hinted = 0,
+    g_routes_matched = 0,
     g_routes_complex = 0,
     g_routes_followed = 0,
     g_routes_followed_agent = 0,
@@ -565,6 +579,7 @@ export async function computeDashboardData(
     g_bash_avoid += s.bash_avoidable;
     g_routes += s.routes_total;
     g_routes_hinted += s.routes_hinted;
+    g_routes_matched += s.routes_matched;
     g_routes_complex += s.routes_complex;
     g_routes_followed += s.routes_followed;
     g_routes_followed_agent += s.routes_followed_agent;
@@ -666,6 +681,7 @@ export async function computeDashboardData(
       bash_avoidable: g_bash_avoid,
       routes_total: g_routes,
       routes_hinted: g_routes_hinted,
+      routes_matched: g_routes_matched,
       routes_complex: g_routes_complex,
       routes_followed: g_routes_followed,
       routes_followed_agent: g_routes_followed_agent,

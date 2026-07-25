@@ -54,9 +54,27 @@ describe("summarizeRoutes (dashboard Dispatcher card, v0.19)", () => {
     expect(s).toEqual({
       total: 4,
       hinted: 3,
+      // pre-v0.21 entries have no `matched` — `routed` stands in for it
+      matched: 3,
       complex: 1,
       agents: { "svelte-file-editor": 2, "socket-debugger": 1 },
     });
+  });
+
+  it("separates shadow verdicts (matched) from injected ones (routed) — v0.21", () => {
+    const s = summarizeRoutes([
+      // shadow mode: scorer confident, nothing injected
+      route({ routed: false, matched: true, agent: "svelte-file-editor" }),
+      route({ routed: false, matched: true, agent: "socket-debugger" }),
+      // no match at all
+      route({ routed: false, matched: false }),
+      // injection re-enabled for this one
+      route({ routed: true, matched: true, agent: "svelte-file-editor" }),
+    ]);
+    expect(s.total).toBe(4);
+    expect(s.matched).toBe(3);
+    expect(s.hinted).toBe(1);
+    expect(s.agents).toEqual({ "svelte-file-editor": 2, "socket-debugger": 1 });
   });
 
   it("tolerates pre-v0.19 entries without agent/model fields", () => {
@@ -68,7 +86,13 @@ describe("summarizeRoutes (dashboard Dispatcher card, v0.19)", () => {
   });
 
   it("returns zeros for an empty (or absent) log", () => {
-    expect(summarizeRoutes([])).toEqual({ total: 0, hinted: 0, complex: 0, agents: {} });
+    expect(summarizeRoutes([])).toEqual({
+      total: 0,
+      hinted: 0,
+      matched: 0,
+      complex: 0,
+      agents: {},
+    });
   });
 });
 

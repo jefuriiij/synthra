@@ -4,6 +4,12 @@
 // the thin, best-effort wiring: config gate, arsenal fetch (15s-cached),
 // project fingerprint from the graph, and a route_log.jsonl trail for the
 // dogfood. A failure anywhere returns an empty hint — never break a prompt.
+//
+// v0.21: injection is off by default ("shadow mode") — the verdict is still
+// scored and logged (`matched`), but nothing is returned unless
+// SYN_ROUTE_HINTS=1. Harness-injected pseudo-prompts (IDE notices, task
+// notifications) are skipped outright and never logged: they were two-thirds
+// of all hints in the first field window.
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -12,7 +18,7 @@ import { computeArsenal, type ArsenalData } from "../../dashboard/arsenal.js";
 import type { FileNode } from "../../graph/types.js";
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
-import { renderHint, scoreArsenal, type RouteMatch } from "./route-match.js";
+import { isSystemPrompt, renderHint, scoreArsenal, type RouteMatch } from "./route-match.js";
 
 export interface RouteRequest {
   prompt?: string;
@@ -46,6 +52,7 @@ async function logRoute(
   prompt: string,
   hint: string,
   match: RouteMatch,
+  injected: boolean,
 ): Promise<void> {
   try {
     await mkdir(dirname(ctx.paths.routeLog), { recursive: true });
@@ -53,7 +60,10 @@ async function logRoute(
     const entry = {
       ts: new Date().toISOString(),
       prompt: prompt.length > PROMPT_LOG_MAX ? `${prompt.slice(0, PROMPT_LOG_MAX)}…` : prompt,
-      routed: hint.length > 0,
+      // `routed` = we actually spoke into the conversation. `matched` = the
+      // scorer was confident, whether or not injection is enabled (shadow).
+      routed: injected,
+      matched: hint.length > 0,
       hint_chars: hint.length,
       // Grade the v0.18 difficulty heuristic from the field: this trail is how
       // we learn whether ≥2 hard-signal words is the right bar.
@@ -77,13 +87,18 @@ export async function handleRoute(
   if (!cfg.route) return { hint: "" };
   const prompt = typeof req?.prompt === "string" ? req.prompt.trim() : "";
   if (!prompt) return { hint: "" };
+  // Harness noise (<ide_opened_file>, <task-notification>, …) isn't a task —
+  // don't score it, and don't log it either, so route_log's denominator stays
+  // "prompts the human actually typed".
+  if (isSystemPrompt(prompt)) return { hint: "" };
 
   try {
     const arsenal = await deps.arsenal(ctx.paths.projectRoot);
     const match = scoreArsenal(prompt, arsenal, graphExtCounts(ctx), cfg.routeMinScore);
     const hint = renderHint(match);
-    await logRoute(ctx, prompt, hint, match);
-    return { hint };
+    const injected = cfg.routeHints && hint.length > 0;
+    await logRoute(ctx, prompt, hint, match, injected);
+    return { hint: injected ? hint : "" };
   } catch {
     return { hint: "" };
   }

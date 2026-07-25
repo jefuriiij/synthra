@@ -12,6 +12,7 @@ export interface SynthraConfig {
   autoReindex: boolean;
   bashObserve: boolean;
   route: boolean;
+  routeHints: boolean;
   routeMinScore: number;
   mcpPort: number | null;
   dashboardPort: number;
@@ -47,10 +48,18 @@ export function loadConfig(): SynthraConfig {
     // the terminal bypass of the Moat can be measured. Never blocks. Opt out
     // with SYN_NO_BASH_OBSERVE.
     bashObserve: !process.env.SYN_NO_BASH_OBSERVE,
-    // The Dispatcher: per-prompt routing hints (best-fit agent/skill/model).
-    // Silent unless the top agent clears routeMinScore. SYN_NO_ROUTE disables.
+    // The Dispatcher: scores every prompt against the installed Arsenal and
+    // logs the verdict. SYN_NO_ROUTE turns the whole thing off.
     route: !process.env.SYN_NO_ROUTE,
-    routeMinScore: num("SYN_ROUTE_MIN_SCORE", 3),
+    // Injection is OFF by default (v0.21) — "shadow mode": Synthra records what
+    // it would have recommended so precision can be graded from route_log,
+    // without spending a line of your context on it. The first field window
+    // measured a 1.2% follow-rate on injected hints, so they have to earn the
+    // right to speak again. SYN_ROUTE_HINTS=1 re-enables injection.
+    routeHints: process.env.SYN_ROUTE_HINTS === "1",
+    // A strong name hit (3) plus two description hits, or five description
+    // hits. Raised from 3 in v0.21 alongside the precision fixes.
+    routeMinScore: num("SYN_ROUTE_MIN_SCORE", 5),
     mcpPort: process.env.SYN_MCP_PORT ? num("SYN_MCP_PORT", 0) : null,
     dashboardPort: num("SYN_DASHBOARD_PORT", 8901),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),

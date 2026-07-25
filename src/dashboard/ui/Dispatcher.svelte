@@ -11,6 +11,10 @@
   const standard = $derived(total - complex);
   const followed = $derived(g?.routes_followed ?? 0);
   const followedAgent = $derived(g?.routes_followed_agent ?? 0);
+  // v0.21: injection is off by default, so the scorer's confident verdicts
+  // ("matched") outnumber the ones actually spoken ("hinted").
+  const matched = $derived(g?.routes_matched ?? 0);
+  const shadow = $derived(matched > hinted);
   const topAgents = $derived(
     Object.entries(g?.route_agents ?? {})
       .sort((a, b) => b[1] - a[1])
@@ -22,7 +26,7 @@
   $effect(() => hintedCounter.set(hinted));
 </script>
 
-<Card title="The Dispatcher" meta="UserPromptSubmit">
+<Card title="The Dispatcher" meta={shadow ? "shadow mode" : "UserPromptSubmit"}>
   <div class="flex min-h-0 flex-col gap-4 lg:flex-row">
     <!-- counters -->
     <div class="flex shrink-0 flex-col gap-1 lg:w-52">
@@ -35,6 +39,14 @@
         <span class="mx-1">·</span>
         complex <span class={complex > 0 ? "text-[var(--c-opus)]" : "text-foreground"}>{fmt(complex)}</span>
       </div>
+      {#if shadow}
+        <div
+          class="font-mono text-xs text-muted-foreground"
+          title="Injection is off by default since v0.21 — Synthra records what it would have recommended so precision can be graded without spending your context. Set SYN_ROUTE_HINTS=1 to let it speak again."
+        >
+          shadow: would have hinted <span class="text-foreground">{fmt(matched)}</span>
+        </div>
+      {/if}
       <div
         class="font-mono text-xs text-muted-foreground"
         title="Hints followed by an actual subagent delegation within 30 minutes (exact = delegated to the recommended agent). Needs the v0.20 hooks — rerun syn ."

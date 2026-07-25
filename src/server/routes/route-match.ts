@@ -92,8 +92,115 @@ const ROUTE_STOPWORDS = new Set([
   "checking",
 ]);
 
+// Role/ultra-generic words that appear in half the agent names on a big
+// install ("...-manager", "...-developer", "data-...", "project-..."). A hit on
+// one of these must never earn the ×3 name weight — that's how, in the field,
+// `/data/horses` routed to data-analyst, a Desktop\Project\... path routed to
+// project-manager, and "i want to test them locally" routed to test-automator.
+// They still count as ordinary description-weight hits, so they can contribute
+// to a score but never win on their own.
+const WEAK_NAME_TOKENS = new Set([
+  // role suffixes
+  "manager",
+  "engineer",
+  "developer",
+  "expert",
+  "architect",
+  "specialist",
+  "analyst",
+  "tester",
+  "designer",
+  "reviewer",
+  "coordinator",
+  "master",
+  "pro",
+  "builder",
+  "writer",
+  "editor",
+  "assistant",
+  "agent",
+  "helper",
+  "generator",
+  "installer",
+  "optimizer",
+  "auditor",
+  "advisor",
+  // ultra-generic domains
+  "data",
+  "project",
+  "content",
+  "app",
+  "api",
+  "ui",
+  "ux",
+  "web",
+  "code",
+  "file",
+  "test",
+  "tests",
+  "design",
+  "build",
+  "tool",
+  "tools",
+  "system",
+  "service",
+  "general",
+  "purpose",
+]);
+
+// System-injected pseudo-prompts. Claude Code pipes IDE notices and background
+// task notifications through UserPromptSubmit, so the Dispatcher was scoring
+// them as if they were tasks — 112 of 166 hints in the first field window.
+// They aren't prompts; they get skipped before scoring (and never logged).
+const SYSTEM_PROMPT_TAGS = new Set([
+  "ide_opened_file",
+  "ide_selection",
+  "ide_diagnostics",
+  "task-notification",
+  "system-reminder",
+  "command-name",
+  "command-message",
+  "command-args",
+  "user-prompt-submit-hook",
+]);
+
+/** True when the "prompt" is really a harness-injected notice, not something
+ *  the human typed. Matches a known tag, any `ide_*`/`local-command-*` tag, or
+ *  any `*-notification` tag at the very start of the text. */
+export function isSystemPrompt(prompt: string): boolean {
+  const m = /^\s*<\/?([a-z][a-z0-9_-]*)/i.exec(prompt);
+  if (!m) return false;
+  const tag = (m[1] as string).toLowerCase();
+  return (
+    SYSTEM_PROMPT_TAGS.has(tag) ||
+    tag.startsWith("ide_") ||
+    tag.startsWith("local-command") ||
+    tag.endsWith("-notification")
+  );
+}
+
+const PATH_EXT_RE = /\.[a-z0-9]{1,6}$/i;
+
+/** Collapse path-ish words to their final basename before tokenizing, so
+ *  directory names stop voting. `/data/horses` → `horses` (kills the "data"
+ *  false hit), `src/lib/socket.ts` → `socket` (keeps the real signal),
+ *  `Documents\Windsor` → `Windsor`. Any whitespace-delimited word containing
+ *  a slash or backslash is treated as a path. */
+export function normalizePaths(text: string): string {
+  return text
+    .split(/(\s+)/)
+    .map((word) => {
+      if (!/[/\\]/.test(word)) return word;
+      const segments = word.split(/[/\\]+/).filter(Boolean);
+      const last = segments[segments.length - 1];
+      if (!last) return " ";
+      return last.replace(PATH_EXT_RE, "");
+    })
+    .join("");
+}
+
 function routeTokens(text: string): string[] {
-  return tokenizeQuery(text).filter((t) => !ROUTE_STOPWORDS.has(t));
+  return tokenizeQuery(normalizePaths(text)).filter((t) => !ROUTE_STOPWORDS.has(t));
 }
 
 // Signals that a task is complex enough to keep on the primary model. Crude
@@ -216,19 +323,22 @@ interface Scored {
   item: ArsenalItem;
   score: number;
   hits: string[];
-  nameHits: number;
+  /** Name-token hits on words that actually identify a domain (weak role words
+   *  like "manager"/"data" are excluded — see WEAK_NAME_TOKENS). */
+  strongNameHits: number;
 }
 
 function scoreItem(item: ArsenalItem, qTokens: Set<string>, fingerprint: Set<string>): Scored {
   const nameTokens = new Set(routeTokens(item.name));
   const descTokens = new Set(routeTokens(item.description));
   let score = 0;
-  let nameHits = 0;
+  let strongNameHits = 0;
   const hits: string[] = [];
   for (const t of qTokens) {
     if (nameTokens.has(t)) {
-      score += NAME_HIT_WEIGHT;
-      nameHits += 1;
+      const weak = WEAK_NAME_TOKENS.has(t);
+      score += weak ? 1 : NAME_HIT_WEIGHT;
+      if (!weak) strongNameHits += 1;
       hits.push(t);
     } else if (descTokens.has(t)) {
       score += 1;
@@ -252,7 +362,7 @@ function scoreItem(item: ArsenalItem, qTokens: Set<string>, fingerprint: Set<str
       }
     }
   }
-  return { item, score, hits, nameHits };
+  return { item, score, hits, strongNameHits };
 }
 
 /**
@@ -277,9 +387,10 @@ export function scoreArsenal(
     const scored = items
       .filter((i) => i.enabled !== false)
       .map((i) => scoreItem(i, qTokens, fingerprint))
-      // Min-signal rule: a name hit, or at least two distinct token hits —
-      // one generic description word is noise, not a route.
-      .filter((s) => s.score > 0 && (s.nameHits > 0 || s.hits.length >= 2))
+      // Min-signal rule: a STRONG name hit (a word that identifies a domain,
+      // not a role suffix), or at least two distinct token hits — one generic
+      // word is noise, not a route.
+      .filter((s) => s.score > 0 && (s.strongNameHits > 0 || s.hits.length >= 2))
       .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
     // Dedupe by name — the same skill can be installed twice (personal copy +
     // plugin); keep the strongest.

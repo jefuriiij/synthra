@@ -35,7 +35,7 @@ Synthra fixes all four — locally, with zero config.
 
 - **Reads slices, not whole files.** Synthra parses your project into a symbol graph, so Claude fetches a single function (`graph_read("file.ts::Symbol")`, ~50 tokens) instead of a 2,000-token whole file.
 - **The Moat blocks redundant searches.** A hook intercepts every Grep/Glob; if the graph already has the answer, the search is denied and Claude is handed the answer instead. It literally cannot burn tokens re-searching.
-- **The Dispatcher picks the right-priced model.** For each task it recommends the best-fit agent *and* a model — plan on your premium model, execute on a cheaper one (**Sonnet is ≈ 5× cheaper than Opus**).
+- **The Dispatcher suggests the right-priced model** — on demand. Ask `route_task("…")` and it names the best-fit agent from your installed toolkit plus a model to run it on: plan on your premium model, execute on a cheaper one (**Sonnet is ≈ 5× cheaper than Opus**). It no longer volunteers hints unprompted — see [How the Dispatcher works](#how-the-dispatcher-works).
 
 ### 🧠 Get smarter answers
 
@@ -68,7 +68,7 @@ The newer, bigger lever is **model routing**: on heavy usage the assistant can d
 |---|---|---|
 | **Graph context pack** | Pre-injects signatures + top bodies + linked tests at session start | Claude starts oriented, without reading whole files |
 | **The Moat** | PreToolUse hook deterministically blocks Grep/Glob the graph can already answer | Kills redundant, expensive searching |
-| **The Dispatcher** | Scores each prompt against your installed agents/skills + language and suggests the best-fit agent + model | Right tool, right-priced model, every task |
+| **The Dispatcher** | `route_task` scores a task against your installed agents/skills + project language and names the best fit + model. Runs in shadow mode passively (records, doesn't interrupt) | Right tool, right-priced model — when you ask |
 | **Difficulty escalation** | Flags complex tasks (races, leaks, security…) to stay on your primary model | Cheap where safe, powerful where it matters |
 | **Branch-aware memory** | `context_remember` / `context_recall` persist decisions per git branch in `.synthra/` (git-tracked) | Teammates inherit context; it merges naturally |
 | **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
@@ -222,11 +222,13 @@ Claude Code honors the block and pivots to the MCP tool. The structured pack is 
 
 ## How the Dispatcher works
 
-The UserPromptSubmit hook sends each prompt to `/route`, which scores it against **every installed agent and skill** (plus your project's language fingerprint and a difficulty estimate) and injects a one-line hint naming the best-fit agent, the model to run it on, and a relevant skill. Plan on your primary model, then delegate execution to the recommendation on a cheaper one.
+The UserPromptSubmit hook sends each prompt to `/route`, which scores it against **every installed agent and skill** (plus your project's language fingerprint and a difficulty estimate) and picks a best-fit agent, model, and skill.
 
+**Since v0.21 it runs in shadow mode by default: it records its verdict and injects nothing.** Synthra's own instrumentation is the reason — across 390 real prompts, injected hints were followed **2 times (1.2%)**, and two-thirds of them had fired on IDE notices rather than anything a human typed. Rather than keep spending your context on that, the Dispatcher stays quiet and logs what it *would* have said; the dashboard reports it as "would have hinted N". It gets to speak again when the numbers say it earned it.
+
+- **`route_task(task)`** always answers on demand — the verbose, ranked report with the model recommendation. This is the intended way to use it today.
 - Complex tasks (races, leaks, migrations, security…) are flagged to **stay on your primary model** rather than being cheaped-out.
-- `route_task(task)` gives the verbose, ranked report on demand.
-- `SYN_NO_ROUTE=1` silences it; `SYN_ROUTE_MIN_SCORE` (default 3) tunes how eager it is.
+- `SYN_ROUTE_HINTS=1` re-enables passive injection; `SYN_ROUTE_MIN_SCORE` (default 5) tunes how eager it is; `SYN_NO_ROUTE=1` turns the whole thing off, scoring and logging included.
 
 ---
 
@@ -274,8 +276,9 @@ Everything works with zero config. Environment variables (all optional):
 | `SYN_DASHBOARD_PORT` | `8901` | Dashboard preferred port (falls back 8901–8910) |
 | `SYN_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `SYN_CLAUDE_BIN` | `claude` | Override the `claude` binary location |
-| `SYN_ROUTE_MIN_SCORE` | `3` | Minimum match score before a routing hint fires (higher = quieter) |
-| `SYN_NO_ROUTE` | _(unset)_ | Disable the Dispatcher's per-prompt hint (`route_task` still works) |
+| `SYN_ROUTE_HINTS` | _(unset)_ | Set to `1` to let the Dispatcher inject per-prompt hints again (off by default since v0.21 — see [How the Dispatcher works](#how-the-dispatcher-works)) |
+| `SYN_ROUTE_MIN_SCORE` | `5` | Minimum match score before a routing verdict counts (higher = quieter) |
+| `SYN_NO_ROUTE` | _(unset)_ | Disable the Dispatcher entirely, including its shadow logging (`route_task` still works) |
 | `SYN_NO_AUTOREINDEX` | _(unset)_ | Disable auto-reindex-on-edit |
 | `SYN_NO_BASH_OBSERVE` | _(unset)_ | Disable the observe-only Bash exploration logger |
 | `SYN_NO_UPDATE_CHECK` | `0` | Set to `1` to skip the daily version-check ping |
