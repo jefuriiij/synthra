@@ -7,6 +7,43 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.21.0] — 2026-07-24
+
+### Changed
+
+- **Routing hints are now silent by default ("shadow mode").** v0.20's
+  instrumentation measured the Dispatcher over 390 real prompts: hints were
+  followed **2 times (1.2%)**, and none went to the recommended agent. So it
+  stops interrupting. Synthra still scores every prompt and records the verdict
+  — the dashboard reports it as *"would have hinted N"* — but injects nothing
+  until the numbers say it earned the right to speak. Set **`SYN_ROUTE_HINTS=1`**
+  to re-enable injection. `route_task(task)` is unaffected and remains the
+  intended way to ask for a recommendation. No hook reinstall needed; updating
+  the package is enough.
+- **`SYN_ROUTE_MIN_SCORE` default 3 → 5** — a stronger match is required before
+  a verdict counts.
+
+### Fixed
+
+- **The Dispatcher stops routing on things you never typed.** Two-thirds of all
+  hints (112 of 166) had fired on harness-injected notices — `<ide_opened_file>`,
+  `<task-notification>`, `<ide_selection>`. These are now skipped outright and
+  never logged, so the route log finally counts only real prompts.
+- **File and URL paths no longer pick the agent.** Path-ish words collapse to
+  their basename before scoring, which ends a whole family of misroutes:
+  `/data/horses` no longer routes to `data-analyst`, a `…\custom modules\x.module`
+  path no longer routes to `powershell-module-architect`, and
+  `Documents\Windsor Project` no longer routes to `project-manager`.
+- **Role words in agent names stop matching casual prose.** Generic tokens
+  (manager, developer, tester, data, project, content, api…) no longer earn a
+  full name-match, so "i want to test them locally" stops summoning
+  `test-automator`.
+
+Replayed against every prompt Synthra had ever logged, these fixes take it from
+**166 hints to 1** — and the three misroutes above to zero.
+
+---
+
 ## [0.20.0] — 2026-07-15
 
 ### Added
