@@ -7,6 +7,30 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.22.0] — 2026-07-25
+
+### Added
+
+- **The Arsenal is a browser now.** With 100+ skills and 100+ agents installed,
+  one long scroll wasn't cutting it. A left panel lists every source — `All`,
+  `In this project`, `Personal`, then each plugin (`Marketing Skills`, `Figma`,
+  `Voltagent Lang`…) with its item count — and clicking one shows just that
+  group on the right. Works on all three tabs, the search box filters both
+  panes at once (group counts follow along, empty groups disappear), and each
+  pane scrolls independently so the page itself stays put.
+
+### Changed
+
+- Layout elements across the dashboard carry `syn-*` class hooks
+  (`syn-arsenal-item-grid`, `syn-card-moat`, `syn-sidebar`…) so a region can be
+  found by grep or in devtools while editing. They're inert — nothing styles
+  them.
+- Inside a selected group every card shares the same scope, so the redundant
+  scope/plugin badge is hidden there (it still shows under `All`, and a
+  disabled item is still marked `off`).
+
+---
+
 ## [0.21.0] — 2026-07-24
 
 ### Changed
