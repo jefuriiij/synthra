@@ -7,6 +7,47 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.23.0] — 2026-07-28
+
+### Added
+
+- **Command packs get their own group.** Impeccable v4 collapsed 17 separate
+  skills into one skill whose 23 commands live inside it as reference files —
+  which made `/impeccable polish` unfindable in the Arsenal. Such a skill now
+  expands into browsable cards under its own left-panel row (`Impeccable 24`),
+  sorted after `Personal` and before the plugins, with the pack's own skill
+  leading the row. Searching `polish` finds the command; searching the pack name
+  finds all of them. Membership comes from the pack's own command manifest, not
+  from globbing its folder — impeccable ships 34 reference files of which only
+  23 are commands. A missing or malformed manifest degrades to the parent skill
+  alone. One narrow table entry per pack; nothing else is affected.
+- **Cards open a detail modal.** Clicking any Arsenal card used to un-clamp two
+  lines of description; the file body never left the server. A new
+  `GET /arsenal/item` serves one item's full source, and a centered modal shows
+  the unclipped description, every frontmatter key, and the complete file text
+  as scrollable monospace with a line count and a copy button. Skills and agents
+  show their file; MCP entries show type/url (they have no file). The client
+  sends only the identity it already has — the server re-resolves name → file
+  through its own scan index, so no path ever crosses the wire.
+
+### Fixed
+
+- **Block-scalar frontmatter values were read as `|`.** A skill or agent written
+  as `description: |` followed by indented lines showed a bare pipe on its card,
+  and the Dispatcher scored it with zero description tokens. Both now read the
+  real text. Note for anyone comparing routing logs across this version: newly
+  legible descriptions can shift a prompt's routing score.
+
+### Changed
+
+- `counts.skills` now includes expanded pack members, so the Skills tab count
+  can exceed the number of `SKILL.md` files on disk.
+- The Dispatcher skips pack members — it recommends skills to load, not
+  sub-invocations of one, and 23 keyword-dense design commands from a single
+  vendor would swamp the shadow-mode follow-rate baseline.
+
+---
+
 ## [0.22.0] — 2026-07-25
 
 ### Added
