@@ -6,8 +6,10 @@ import { describe, it, expect } from "vitest";
 import type { ArsenalItem } from "../src/dashboard/arsenal.js";
 import {
   buildGroups,
+  favoriteKey,
   filterItems,
   GROUP_ALL,
+  GROUP_FAVORITES,
   itemBadge,
   itemKey,
   itemKind,
@@ -161,8 +163,12 @@ describe("pack groups", () => {
     const byKey = Object.fromEntries(g.map((x) => [x.key, x.items.length]));
     expect(byKey.personal).toBe(1); // dogfood only
     expect(byKey["pack:impeccable"]).toBe(3);
-    // All still equals the sum of the other rows
-    const rest = g.slice(1).reduce((n, x) => n + x.items.length, 0);
+    // All equals the sum of the PARTITION rows. Favorites is a cross-cut — its
+    // items are counted in their home rows too — so it never joins this sum.
+    const rest = g
+      .slice(1)
+      .filter((x) => x.scope !== "favorites")
+      .reduce((n, x) => n + x.items.length, 0);
     expect(byKey[GROUP_ALL]).toBe(rest);
   });
 
@@ -274,8 +280,139 @@ describe("itemKey / itemKind / itemBadge / scopeColor", () => {
   });
 
   it("gives every kind its own color", () => {
-    const colors = ["all", "project", "personal", "pack", "plugin"].map(scopeColor);
-    expect(new Set(colors).size).toBe(5);
+    const colors = ["all", "project", "personal", "pack", "plugin", "favorites"].map(scopeColor);
+    expect(new Set(colors).size).toBe(6);
     expect(scopeColor("pack")).toBe("var(--c-haiku)");
+    expect(scopeColor("favorites")).toBe("var(--c-opus)");
+  });
+});
+
+describe("favorites row", () => {
+  const skillFav = favoriteKey({ kind: "skills", scope: "personal", name: "dogfood" });
+  const packFav = favoriteKey({ kind: "skills", scope: "personal", name: "impeccable polish" });
+  const pluginFav = favoriteKey({
+    kind: "skills",
+    scope: "plugin",
+    source: "figma",
+    name: "figma-use",
+  });
+
+  // Regression: the panel must look exactly as it did before this feature for
+  // anyone who has never favorited anything.
+  it("adds nothing when there are no favorites", () => {
+    expect(buildGroups(PACK_ITEMS, {})).toEqual(buildGroups(PACK_ITEMS));
+    expect(buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set() })).toEqual(
+      buildGroups(PACK_ITEMS),
+    );
+    expect(buildGroups(PACK_ITEMS).some((g) => g.key === GROUP_FAVORITES)).toBe(false);
+  });
+
+  it("sits directly under All, with its own key, label, and kind", () => {
+    const g = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set([skillFav]) });
+    expect(g[0]?.key).toBe(GROUP_ALL);
+    expect(g[1]?.key).toBe(GROUP_FAVORITES);
+    expect(g[1]?.label).toBe("Favorites");
+    expect(g[1]?.scope).toBe("favorites");
+    expect(g[1]?.items.map((i) => i.name)).toEqual(["dogfood"]);
+  });
+
+  it("is a cross-cut: a favorite stays in its home row too", () => {
+    const g = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set([skillFav, packFav]) });
+    const byKey = Object.fromEntries(g.map((x) => [x.key, x.items.map((i) => i.name)]));
+    expect(byKey[GROUP_FAVORITES]).toEqual(["dogfood", "impeccable polish"]);
+    expect(byKey.personal).toContain("dogfood"); // not moved out
+    expect(byKey["pack:impeccable"]).toContain("impeccable polish");
+  });
+
+  it("keeps All as the sum of the partition rows, with Favorites a subset of All", () => {
+    const g = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set([skillFav, packFav]) });
+    const all = g[0]?.items ?? [];
+    const partitions = g.filter((x) => x.key !== GROUP_ALL && x.scope !== "favorites");
+    expect(partitions.reduce((n, x) => n + x.items.length, 0)).toBe(all.length);
+    const favs = g.find((x) => x.key === GROUP_FAVORITES)?.items ?? [];
+    expect(favs.every((f) => all.includes(f))).toBe(true);
+  });
+
+  it("never appears on the MCP tab, even if the file names an mcp item", () => {
+    const mcpItems = [item({ name: "figma", scope: "plugin", source: "figma" })];
+    const favorites = new Set([
+      favoriteKey({ kind: "mcp", scope: "plugin", source: "figma", name: "figma" }),
+    ]);
+    const g = buildGroups(mcpItems, { kind: "mcp", favorites });
+    expect(g.some((x) => x.key === GROUP_FAVORITES)).toBe(false);
+  });
+
+  it("needs the kind, since the key is kind-scoped", () => {
+    // the same identity favorited as a skill must not light up the agents tab
+    const g = buildGroups(PACK_ITEMS, { kind: "agents", favorites: new Set([skillFav]) });
+    expect(g.some((x) => x.key === GROUP_FAVORITES)).toBe(false);
+  });
+
+  it("disappears when the filter excludes every favorite", () => {
+    const opts = { kind: "skills" as const, favorites: new Set([skillFav]) };
+    expect(buildGroups(filterItems(PACK_ITEMS, "dogfood"), opts)[1]?.key).toBe(GROUP_FAVORITES);
+    expect(
+      buildGroups(filterItems(PACK_ITEMS, "impeccable"), opts).some(
+        (x) => x.key === GROUP_FAVORITES,
+      ),
+    ).toBe(false);
+  });
+
+  it("follows the item order, not the order things were favorited", () => {
+    // set built in reverse of the item order
+    const favorites = new Set([pluginFav, packFav, skillFav]);
+    const items = [...PACK_ITEMS, item({ name: "figma-use", scope: "plugin", source: "figma" })];
+    const g = buildGroups(items, { kind: "skills", favorites });
+    const favRow = g.find((x) => x.key === GROUP_FAVORITES)?.items.map((i) => i.name);
+    const allOrder = (g[0]?.items ?? []).map((i) => i.name).filter((n) => favRow?.includes(n));
+    expect(favRow).toEqual(allOrder);
+  });
+
+  // Inside its own row the pack's parent is hoisted to the top. Favorites is
+  // not that row: a favorited member has no special relationship to its parent
+  // there, so item order wins. PACK_ITEMS lists "impeccable adapt" BEFORE
+  // "impeccable", which is what makes this assertion meaningful.
+  it("does not hoist a pack parent inside Favorites", () => {
+    const parentFav = favoriteKey({ kind: "skills", scope: "personal", name: "impeccable" });
+    const adaptFav = favoriteKey({ kind: "skills", scope: "personal", name: "impeccable adapt" });
+    const g = buildGroups(PACK_ITEMS, {
+      kind: "skills",
+      favorites: new Set([adaptFav, parentFav]),
+    });
+    expect(g.find((x) => x.key === GROUP_FAVORITES)?.items.map((i) => i.name)).toEqual([
+      "impeccable adapt",
+      "impeccable",
+    ]);
+    // ...whereas the pack's own row still leads with the parent
+    expect(g.find((x) => x.key === "pack:impeccable")?.items[0]?.name).toBe("impeccable");
+  });
+
+  it("draws no new divider around the Favorites row", () => {
+    const g = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set([skillFav]) });
+    // all, favorites, personal, pack:impeccable, plugin:figma
+    expect(g.map((_, i) => startsNewBand(g, i))).toEqual([false, false, false, true, true]);
+  });
+
+  it("keeps a Favorites selection while it exists, else falls back to All", () => {
+    const withRow = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set([skillFav]) });
+    expect(resolveSelection(withRow, GROUP_FAVORITES)).toBe(GROUP_FAVORITES);
+    // unfavoriting the last one removes the row — selection must not dangle
+    const without = buildGroups(PACK_ITEMS, { kind: "skills", favorites: new Set() });
+    expect(resolveSelection(without, GROUP_FAVORITES)).toBe(GROUP_ALL);
+  });
+
+  it("keys favorites distinctly across kind, scope, and source", () => {
+    const keys = [
+      favoriteKey({ kind: "skills", scope: "personal", name: "x" }),
+      favoriteKey({ kind: "agents", scope: "personal", name: "x" }),
+      favoriteKey({ kind: "skills", scope: "project", name: "x" }),
+      favoriteKey({ kind: "skills", scope: "plugin", source: "a", name: "x" }),
+      favoriteKey({ kind: "skills", scope: "plugin", source: "b", name: "x" }),
+    ];
+    expect(new Set(keys).size).toBe(5);
+    // an item without a source must key the same as one with an empty source
+    expect(favoriteKey({ kind: "skills", scope: "personal", name: "x" })).toBe(
+      favoriteKey({ kind: "skills", scope: "personal", source: "", name: "x" }),
+    );
   });
 });

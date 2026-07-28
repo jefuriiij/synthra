@@ -11,8 +11,9 @@
   import { Dialog } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
+  import Heart from "@lucide/svelte/icons/heart";
   import { bodyStats, detailRows, detailSubtitle } from "$lib/arsenal-detail";
-  import { itemKind, scopeColor } from "$lib/arsenal-groups";
+  import { favoriteKey, itemKind, scopeColor } from "$lib/arsenal-groups";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import { store } from "$lib/store.svelte";
   import type { ArsenalItem, ArsenalKind } from "$lib/types";
@@ -141,6 +142,26 @@
         </div>
 
         <div class="syn-arsenal-detail-foot mt-4 flex shrink-0 items-center gap-2">
+          {#if kind !== "mcp"}
+            <!-- Having just read the body is exactly when you decide something is
+                 worth keeping — don't make the user close this and find the card. -->
+            {@const favorited = store.favorites.has(favoriteKey({ ...item, kind }))}
+            <button
+              onclick={() => store.toggleFavorite(kind, item)}
+              aria-pressed={favorited}
+              aria-label={`Favorite "${item.name}"`}
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent"
+              class:text-foreground={favorited}
+              class:text-muted-foreground={!favorited}
+            >
+              <Heart
+                class="size-3.5"
+                fill={favorited ? "currentColor" : "none"}
+                style={favorited ? "color: var(--c-opus)" : undefined}
+              />
+              {favorited ? "Favorited" : "Favorite"}
+            </button>
+          {/if}
           {#if detail?.body}
             <button
               onclick={copySource}

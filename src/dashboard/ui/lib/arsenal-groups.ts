@@ -2,14 +2,17 @@
 // has no component-test harness, so keeping this logic out of the .svelte file
 // is the only way it gets covered (same pattern as delta.ts's summarizeRoutes).
 
-import type { ArsenalItem, ArsenalScope } from "./types";
+import type { ArsenalItem, ArsenalKind, ArsenalScope } from "./types";
 
 /** Key of the always-present "everything" row in the group panel. */
 export const GROUP_ALL = "all";
+/** Key of the cross-cutting "favorited" row, shown under All when non-empty. */
+export const GROUP_FAVORITES = "favorites";
 
 /** A group row's kind. NOT the same thing as an item's disk scope: a `pack`
- *  row's items are personal-scope files, but the row stands on its own. */
-export type ArsenalGroupKind = ArsenalScope | "all" | "pack";
+ *  row's items are personal-scope files, but the row stands on its own, and
+ *  `favorites` mixes every scope. */
+export type ArsenalGroupKind = ArsenalScope | "all" | "pack" | "favorites";
 
 export interface ArsenalGroup {
   /** Stable identity: "all" | "project" | "personal" | "pack:<pack>" | "plugin:<source>". */
@@ -42,6 +45,18 @@ export function prettyPluginLabel(source: string): string {
     .join(" ");
 }
 
+/** Cross-tab identity for the favorites set. `itemKey` is per-tab and omits the
+ *  kind; favorites live in ONE machine-wide file, so a skill and an agent of the
+ *  same name must not collide. Matches the tuple the server persists. */
+export function favoriteKey(id: {
+  kind: ArsenalKind;
+  scope: ArsenalScope;
+  source?: string;
+  name: string;
+}): string {
+  return `${id.kind}|${id.scope}|${id.source ?? ""}|${id.name}`;
+}
+
 /** Stable identity of an item within a tab — the `{#each}` key and the base of
  *  the detail cache key. Separator-delimited on purpose: plain concatenation
  *  collides (source "a" + name "b-c" === source "a-b" + name "c"), and a
@@ -71,6 +86,8 @@ export function scopeColor(kind: ArsenalGroupKind | string): string {
       return "var(--c-sonnet)";
     case "pack":
       return "var(--c-haiku)";
+    case "favorites":
+      return "var(--c-opus)"; // warm red — reads as a heart
     case "all":
       return "var(--muted-foreground)";
     default:
@@ -101,8 +118,11 @@ function groupLabel(item: ArsenalItem): string {
   return item.scope === "plugin" ? prettyPluginLabel(item.source ?? "plugin") : SCOPE_LABEL[item.scope];
 }
 
+// `all` and `favorites` never reach this sort — both rows are placed by hand at
+// the top of the returned array. They're listed only to satisfy the Record type.
 const KIND_ORDER: Record<ArsenalGroupKind, number> = {
   all: -1,
+  favorites: -1,
   project: 0,
   personal: 1,
   pack: 2,
@@ -116,14 +136,27 @@ function isPackParent(item: ArsenalItem): boolean {
 }
 
 /**
- * Build the group panel's rows: an "All" row, then project / personal, then
- * packs, then one row per plugin alphabetically. Only non-empty groups are
- * returned, so a filtered-to-nothing plugin simply disappears from the panel.
+ * Build the group panel's rows: "All", then "Favorites" when there are any,
+ * then project / personal, then packs, then one row per plugin alphabetically.
+ * Only non-empty groups are returned, so a filtered-to-nothing plugin simply
+ * disappears from the panel.
  *
- * Every item lands in exactly ONE row (a pack member is not also Personal),
- * which is what keeps All's count equal to the sum of the others.
+ * Two kinds of row, and the difference matters:
+ *   - PARTITION rows (project | personal | pack:* | plugin:*) — every item lands
+ *     in exactly one of them, so `All` is their union and its count is their sum.
+ *   - CROSS-CUT rows (`Favorites`) — a subset of `All` whose items ALSO appear in
+ *     their home partition row. Favoriting a personal skill doesn't move it out
+ *     of `Personal`. So `Favorites ⊆ All`, and it must be excluded from any
+ *     "does All equal the sum of the rows" check.
+ *
+ * `opts.favorites` holds `favoriteKey()` strings; `opts.kind` is the active tab,
+ * needed because that key includes the kind and because MCP items are never
+ * favoritable.
  */
-export function buildGroups(items: ArsenalItem[]): ArsenalGroup[] {
+export function buildGroups(
+  items: ArsenalItem[],
+  opts: { kind?: ArsenalKind; favorites?: ReadonlySet<string> } = {},
+): ArsenalGroup[] {
   const map = new Map<string, ArsenalGroup>();
   for (const it of items) {
     const key = groupKey(it);
@@ -149,11 +182,37 @@ export function buildGroups(items: ArsenalItem[]): ArsenalGroup[] {
     g.items = [...g.items.filter(isPackParent), ...g.items.filter((i) => !isPackParent(i))];
   }
 
-  return [{ key: GROUP_ALL, label: "All", scope: "all", items }, ...rest];
+  // MCP is excluded here, in the tested function, rather than by the UI simply
+  // not offering hearts — otherwise a hand-edited `mcp` entry in favorites.json
+  // would materialize this row on the MCP tab.
+  const favorites =
+    opts.kind && opts.kind !== "mcp" && opts.favorites?.size
+      ? items.filter((it) =>
+          opts.favorites?.has(favoriteKey({ ...it, kind: opts.kind as ArsenalKind })),
+        )
+      : [];
+
+  return [
+    { key: GROUP_ALL, label: "All", scope: "all", items },
+    // Omitted entirely when empty, so a no-favorites panel is identical to
+    // before this feature existed — including its dividers.
+    ...(favorites.length
+      ? [
+          {
+            key: GROUP_FAVORITES,
+            label: "Favorites",
+            scope: "favorites" as const,
+            items: favorites,
+          },
+        ]
+      : []),
+    ...rest,
+  ];
 }
 
-/** Visual bands in the group panel: [All + own scopes] | [packs] | [plugins].
- *  A divider is drawn wherever the band changes. */
+/** Visual bands in the group panel: [All + Favorites + own scopes] | [packs] |
+ *  [plugins]. A divider is drawn wherever the band changes — so Favorites, being
+ *  in the first band, adds no divider of its own. */
 function band(kind: ArsenalGroupKind): number {
   return kind === "pack" ? 1 : kind === "plugin" ? 2 : 0;
 }

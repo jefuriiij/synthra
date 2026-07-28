@@ -17,6 +17,16 @@ export type {
   ArsenalScope,
 } from "../../arsenal.js";
 export type { DoctorCheck } from "../../../cli/doctor-command.js";
+export type { FavoriteEntry } from "../../../shared/favorites.js";
+
+import type { FavoriteEntry as Fav } from "../../../shared/favorites.js";
+/** Payload of GET /favorites, and of a successful POST /favorites. */
+export interface FavoritesResponse {
+  ok?: boolean;
+  favorite?: boolean;
+  favorites: Fav[];
+  error?: string;
+}
 
 import type { DoctorCheck as Check } from "../../../cli/doctor-command.js";
 /** Payload of GET /report — doctor checks + system info + prebuilt markdown. */

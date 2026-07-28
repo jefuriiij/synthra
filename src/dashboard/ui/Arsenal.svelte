@@ -7,8 +7,10 @@
   // these; they exist so a region can be found by grep or in devtools.
   import {
     buildGroups,
+    favoriteKey,
     filterItems,
     GROUP_ALL,
+    GROUP_FAVORITES,
     itemKey,
     itemsForSelection,
     resolveSelection,
@@ -40,7 +42,13 @@
     { id: "mcp", label: "MCP" },
   ];
 
-  const groups = $derived(buildGroups(filterItems(a ? a[tab] : [], q)));
+  const groups = $derived(
+    buildGroups(filterItems(a ? a[tab] : [], q), { kind: tab, favorites: store.favorites }),
+  );
+  // One stable reference for the whole grid rather than a closure per card.
+  function toggleFav(it: Item) {
+    void store.toggleFavorite(tab, it);
+  }
   // A selection goes stale when the tab changes, a filter empties a group, or a
   // rescan drops a plugin — fall back to All rather than rendering nothing.
   const active = $derived(resolveSelection(groups, selected));
@@ -55,6 +63,13 @@
   <div class="syn-arsenal-header flex flex-wrap items-center justify-between gap-3">
     <h1 class="font-serif text-2xl text-foreground">⚔ Arsenal</h1>
     <div class="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+      {#if store.favoriteError}
+        <!-- No toast system in this dashboard; a quiet inline line is the whole
+             failure surface for a favorite that didn't save. -->
+        <span class="syn-arsenal-fav-error" role="status" aria-live="polite" style="color: var(--c-opus)"
+          >{store.favoriteError}</span
+        >
+      {/if}
       {#if a}<span>{a.counts.plugins} plugins · scanned {scanned}</span>{/if}
       <button
         onclick={() => store.loadArsenal(true)}
@@ -121,7 +136,15 @@
         {#if shown.length}
           <div class="syn-arsenal-item-grid grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
             {#each shown as it (itemKey(it))}
-              <ArsenalItem item={it} showBadge={active === GROUP_ALL} onOpen={openDetail} />
+              <!-- The Favorites row mixes scopes and plugins, so keep the badge
+                   there — unlike a plugin row, where every card is identical. -->
+              <ArsenalItem
+                item={it}
+                showBadge={active === GROUP_ALL || active === GROUP_FAVORITES}
+                favorite={store.favorites.has(favoriteKey({ ...it, kind: tab }))}
+                onOpen={openDetail}
+                onToggleFavorite={tab === "mcp" ? undefined : toggleFav}
+              />
             {/each}
           </div>
         {:else}

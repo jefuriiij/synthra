@@ -3,12 +3,15 @@
 // so the sidebar and main area stay in sync.
 
 import { detailKey } from "./arsenal-detail";
+import { favoriteKey } from "./arsenal-groups";
 import type {
   ArsenalData,
   ArsenalDetail,
   ArsenalItem,
   ArsenalKind,
   DashboardData,
+  FavoriteEntry,
+  FavoritesResponse,
   ReportData,
   View,
 } from "./types";
@@ -68,16 +71,84 @@ class DashStore {
     // while the modal keeps serving the pre-edit source of a skill.
     if (force) this.#detailCache.clear();
     try {
-      const r = await fetch("/arsenal");
-      if (r.ok) {
-        this.arsenal = (await r.json()) as ArsenalData;
+      // Both together, so the panel never paints a frame with items but no
+      // hearts. Guarded independently: a favorites failure must not blank the
+      // arsenal, and vice versa.
+      const [items, favorites] = await Promise.all([
+        fetch("/arsenal").catch(() => null),
+        fetch("/favorites").catch(() => null),
+      ]);
+      if (items?.ok) {
+        this.arsenal = (await items.json()) as ArsenalData;
         this.#arsenalLoaded = true;
+      }
+      if (favorites?.ok) {
+        this.#applyFavorites(((await favorites.json()) as FavoritesResponse).favorites);
       }
     } catch {
       // leave arsenal as-is; the view shows an error/empty state
     } finally {
       this.arsenalLoading = false;
     }
+  }
+
+  favorites = $state<ReadonlySet<string>>(new Set());
+  favoriteError = $state<string | null>(null);
+  // Monotonic, like #detailSeq: a slow response for card A must not stomp the
+  // state a later toggle of card B already established.
+  #favSeq = 0;
+  #favErrorTimer: ReturnType<typeof setTimeout> | undefined;
+
+  #applyFavorites(list: FavoriteEntry[] | undefined): void {
+    this.favorites = new Set((list ?? []).map(favoriteKey));
+  }
+
+  /**
+   * Favorite or unfavorite one item. Optimistic, then reconciled against the
+   * server's echoed list; reverts if the write failed, because a heart that
+   * silently lies until the next reload is worse than a visible error.
+   */
+  async toggleFavorite(kind: ArsenalKind, item: ArsenalItem): Promise<void> {
+    if (kind === "mcp") return; // no file, nothing to bookmark
+    const key = favoriteKey({ ...item, kind });
+    const previous = this.favorites;
+    const next = !previous.has(key);
+    const seq = ++this.#favSeq;
+
+    // Reassign — Svelte 5's $state proxy does not track Set mutations, so
+    // `favorites.add(key)` would update nothing.
+    const optimistic = new Set(previous);
+    if (next) optimistic.add(key);
+    else optimistic.delete(key);
+    this.favorites = optimistic;
+    this.#clearFavoriteError();
+
+    try {
+      const r = await fetch("/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          scope: item.scope,
+          source: item.source ?? null,
+          name: item.name,
+          favorite: next,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const body = (await r.json()) as FavoritesResponse;
+      if (seq === this.#favSeq) this.#applyFavorites(body.favorites);
+    } catch {
+      if (seq !== this.#favSeq) return; // a newer toggle owns the state now
+      this.favorites = previous;
+      this.favoriteError = next ? "Couldn't save that favorite." : "Couldn't remove that favorite.";
+      this.#favErrorTimer = setTimeout(() => (this.favoriteError = null), 4000);
+    }
+  }
+
+  #clearFavoriteError(): void {
+    clearTimeout(this.#favErrorTimer);
+    this.favoriteError = null;
   }
 
   arsenalDetail = $state<ArsenalDetail | null>(null);

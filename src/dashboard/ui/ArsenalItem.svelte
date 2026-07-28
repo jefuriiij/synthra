@@ -1,15 +1,27 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
+  import Heart from "@lucide/svelte/icons/heart";
   import { itemBadge, itemKind, scopeColor } from "$lib/arsenal-groups";
   import type { ArsenalItem } from "$lib/types";
   // showBadge: redundant once a specific group is selected in the left panel —
   // every card there shares the same scope/plugin/pack.
+  //
+  // onToggleFavorite absent = no heart. That's how the MCP tab opts out: it
+  // simply doesn't pass a handler, so there's no per-kind branch in here.
   let {
     item,
     showBadge = true,
+    favorite = false,
     onOpen,
-  }: { item: ArsenalItem; showBadge?: boolean; onOpen: (item: ArsenalItem) => void } = $props();
+    onToggleFavorite,
+  }: {
+    item: ArsenalItem;
+    showBadge?: boolean;
+    favorite?: boolean;
+    onOpen: (item: ArsenalItem) => void;
+    onToggleFavorite?: (item: ArsenalItem) => void;
+  } = $props();
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -62,6 +74,29 @@
         <Copy class="size-3.5" />
       {/if}
     </button>
+    {#if onToggleFavorite}
+      <!-- Before the badge, not after: the badge is conditional, so a heart to
+           its right would sit at a different x on every card. -->
+      <button
+        type="button"
+        onclick={(e) => {
+          e.stopPropagation(); // don't open the detail modal
+          onToggleFavorite?.(item);
+        }}
+        aria-pressed={favorite}
+        aria-label={`Favorite "${item.name}"`}
+        title={favorite ? "Unfavorite" : "Favorite"}
+        class="syn-arsenal-card-fav inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
+        class:text-muted-foreground={!favorite}
+        class:opacity-60={!favorite}
+      >
+        <Heart
+          class="size-3.5"
+          fill={favorite ? "currentColor" : "none"}
+          style={favorite ? "color: var(--c-opus)" : undefined}
+        />
+      </button>
+    {/if}
     {#if showBadge || item.enabled === false}
       <span
         class="syn-arsenal-card-badge ml-auto shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide"
