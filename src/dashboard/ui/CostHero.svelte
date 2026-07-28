@@ -19,7 +19,7 @@
   $effect(() => costCounter.set(c.cost));
 </script>
 
-<Card title="Total spend" meta="all time">
+<Card title="Total spend" meta="all time" class="syn-card-cost">
   <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(costCounter.value)}</div>
   <div class="mt-1 flex flex-col gap-1 font-mono text-sm text-muted-foreground">
     <div class="flex justify-between"><span>Tokens (in+out)</span><span class="text-foreground">{fmt(c.tokens)}</span></div>

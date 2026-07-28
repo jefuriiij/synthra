@@ -26,7 +26,7 @@
   $effect(() => moneyCounter.set(s.money));
 </script>
 
-<Card title="Synthra savings" meta={`${s.pct.toFixed(1)}% off · floor`}>
+<Card title="Synthra savings" meta={`${s.pct.toFixed(1)}% off · floor`} class="syn-card-savings">
   <div class="flex flex-col gap-3">
     <div>
       <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(moneyCounter.value)}</div>

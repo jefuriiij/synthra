@@ -18,7 +18,7 @@
   const recentBash = $derived((store.data?.recent_bash ?? []).slice(0, 12));
 </script>
 
-<Card title="The Moat" meta="PreToolUse">
+<Card title="The Moat" meta="PreToolUse" class="syn-card-moat">
   <div class="font-mono text-2xl text-foreground">{fmt(blocksCounter.value)} <span class="text-sm text-muted-foreground">blocks</span></div>
   {#if bashTotal > 0}
     <div class="font-mono text-xs text-muted-foreground" title="Codebase exploration via the terminal (rg / cat / find) — observe-only, not yet blocked">

@@ -12,7 +12,7 @@
   const total = $derived(store.data?.global?.total_tool_calls ?? 0);
 </script>
 
-<Card title="Graph tools used" meta="all projects">
+<Card title="Graph tools used" meta="all projects" class="syn-card-tools">
   <div class="font-mono text-2xl text-foreground">{fmt(total)} <span class="text-sm text-muted-foreground">calls</span></div>
   <div class="flex flex-col gap-1.5">
     {#each rows as [name, n] (name)}

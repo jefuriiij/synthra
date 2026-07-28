@@ -16,7 +16,7 @@
   const to = $derived(Math.min(page * PER, turns.length));
 </script>
 
-<Card title="Recent turns" meta={`showing ${from}–${to} of ${turns.length}`}>
+<Card title="Recent turns" meta={`showing ${from}–${to} of ${turns.length}`} class="syn-card-turns">
   <div class="min-h-0 flex-1 overflow-x-auto">
     <table class="w-full border-collapse font-mono text-sm">
       <thead>

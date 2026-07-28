@@ -34,7 +34,9 @@
     <Skeleton class="h-36 lg:col-span-3" />
   </div>
 {:else}
-  <div class="grid grid-cols-1 gap-4 p-5 duration-500 animate-in fade-in lg:grid-cols-3">
+  <div
+    class="syn-overview grid grid-cols-1 gap-4 p-5 duration-500 animate-in fade-in lg:grid-cols-3"
+  >
     <div class="lg:col-span-3 lg:row-start-1"><MetricStrip /></div>
 
     <div class="lg:col-start-1 lg:row-start-2"><Savings /></div>

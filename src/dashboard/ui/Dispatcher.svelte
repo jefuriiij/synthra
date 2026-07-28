@@ -26,7 +26,11 @@
   $effect(() => hintedCounter.set(hinted));
 </script>
 
-<Card title="The Dispatcher" meta={shadow ? "shadow mode" : "UserPromptSubmit"}>
+<Card
+  title="The Dispatcher"
+  meta={shadow ? "shadow mode" : "UserPromptSubmit"}
+  class="syn-card-dispatcher"
+>
   <div class="flex min-h-0 flex-col gap-4 lg:flex-row">
     <!-- counters -->
     <div class="flex shrink-0 flex-col gap-1 lg:w-52">

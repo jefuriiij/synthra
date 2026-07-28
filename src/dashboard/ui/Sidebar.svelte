@@ -21,7 +21,7 @@
 </script>
 
 <aside
-  class={"flex h-screen shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 " +
+  class={"syn-sidebar flex h-screen shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 " +
     (collapsed ? "w-[64px] items-center" : "w-[248px]")}
 >
   <!-- Brand -->

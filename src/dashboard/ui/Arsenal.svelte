@@ -1,10 +1,24 @@
 <script lang="ts">
+  // Arsenal browser: pick a source on the left, see its items on the right.
+  //
+  // Class-name convention (dashboard-wide): layout elements carry a `syn-`
+  // prefixed semantic class FIRST, then Tailwind utilities — e.g.
+  // `class="syn-arsenal-items min-h-0 flex-1 overflow-y-auto"`. Nothing styles
+  // these; they exist so a region can be found by grep or in devtools.
+  import {
+    buildGroups,
+    filterItems,
+    GROUP_ALL,
+    itemsForSelection,
+    resolveSelection,
+  } from "$lib/arsenal-groups";
   import { store } from "$lib/store.svelte";
   import ArsenalItem from "./ArsenalItem.svelte";
 
   type Tab = "skills" | "agents" | "mcp";
   let tab = $state<Tab>("skills");
   let q = $state("");
+  let selected = $state<string>(GROUP_ALL);
 
   const a = $derived(store.arsenal);
   const tabs: { id: Tab; label: string }[] = [
@@ -12,107 +26,111 @@
     { id: "agents", label: "Agents" },
     { id: "mcp", label: "MCP" },
   ];
-  const items = $derived.by(() => {
-    const list = a ? a[tab] : [];
-    const needle = q.toLowerCase().trim();
-    if (!needle) return list;
-    return list.filter(
-      (it) =>
-        it.name.toLowerCase().includes(needle) ||
-        (it.description ?? "").toLowerCase().includes(needle) ||
-        (it.source ?? "").toLowerCase().includes(needle),
-    );
-  });
 
-  // Group the (already project→personal→plugin-by-source sorted) list into
-  // labeled sections. Map preserves insertion order, so section order is right.
-  const groups = $derived.by(() => {
-    const map = new Map<string, { label: string; scope: string; items: typeof items }>();
-    for (const it of items) {
-      const key = it.scope === "plugin" ? `plugin:${it.source ?? "plugin"}` : it.scope;
-      let g = map.get(key);
-      if (!g) {
-        g = {
-          label:
-            it.scope === "plugin"
-              ? (it.source ?? "plugin")
-              : it.scope === "project"
-                ? "In this project"
-                : "Personal · this machine",
-          scope: it.scope,
-          items: [],
-        };
-        map.set(key, g);
-      }
-      g.items.push(it);
-    }
-    return [...map.values()];
-  });
+  const groups = $derived(buildGroups(filterItems(a ? a[tab] : [], q)));
+  // A selection goes stale when the tab changes, a filter empties a group, or a
+  // rescan drops a plugin — fall back to All rather than rendering nothing.
+  const active = $derived(resolveSelection(groups, selected));
+  const shown = $derived(itemsForSelection(groups, active));
 
   function scopeColor(scope: string): string {
     return scope === "project"
       ? "var(--c-fable)"
       : scope === "personal"
         ? "var(--c-sonnet)"
-        : "#9bc2ef";
+        : scope === "all"
+          ? "var(--muted-foreground)"
+          : "#9bc2ef";
   }
+
   const scanned = $derived(
     a ? new Date(a.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
   );
 </script>
 
-<div class="flex h-full flex-col gap-4 p-5">
-  <div class="flex flex-wrap items-center justify-between gap-3">
+<div class="syn-arsenal flex h-full min-h-0 flex-col gap-4 overflow-hidden p-5">
+  <div class="syn-arsenal-header flex flex-wrap items-center justify-between gap-3">
     <h1 class="font-serif text-2xl text-foreground">⚔ Arsenal</h1>
     <div class="flex items-center gap-2 font-mono text-xs text-muted-foreground">
       {#if a}<span>{a.counts.plugins} plugins · scanned {scanned}</span>{/if}
-      <button onclick={() => store.loadArsenal(true)} class="rounded border px-2 py-1 transition-colors hover:text-foreground">↻ Rescan</button>
+      <button
+        onclick={() => store.loadArsenal(true)}
+        class="rounded border px-2 py-1 transition-colors hover:text-foreground">↻ Rescan</button
+      >
     </div>
   </div>
 
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="syn-arsenal-toolbar flex flex-wrap items-center gap-2">
     {#each tabs as t (t.id)}
       <button
         onclick={() => (tab = t.id)}
-        class={"rounded-lg px-3 py-1.5 font-mono text-xs transition-colors " +
-          (tab === t.id ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground")}
+        class={"syn-arsenal-tab rounded-lg px-3 py-1.5 font-mono text-xs transition-colors " +
+          (tab === t.id
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:text-foreground")}
       >
         {t.label} <span class="opacity-60">{a?.counts?.[t.id] ?? 0}</span>
       </button>
     {/each}
     <input
       bind:value={q}
+      name="arsenal-filter"
+      aria-label="Filter the arsenal by name or description"
       placeholder="Filter by name or description…"
       autocomplete="off"
-      class="ml-auto w-full max-w-72 rounded-md border bg-card/60 px-3 py-1.5 text-sm outline-none transition-colors focus:border-ring"
+      class="syn-arsenal-search ml-auto w-full max-w-72 rounded-md border bg-card/60 px-3 py-1.5 text-sm outline-none transition-colors focus:border-ring"
     />
   </div>
 
   {#if store.arsenalLoading && !a}
     <div class="text-sm text-muted-foreground">Scanning your arsenal…</div>
-  {:else if !groups.length}
-    <div class="text-sm text-muted-foreground">{q ? "No matches." : "Nothing installed in this category."}</div>
   {:else}
-    <div class="flex flex-col gap-6">
-      {#each groups as g (g.label + g.scope)}
-        <section class="flex flex-col gap-2">
-          <div class="flex items-center gap-3 border-b border-border pb-1.5">
-            <span class="size-1.5 shrink-0 rounded-sm" style={`background:${scopeColor(g.scope)}`}></span>
-            <span
-              class="font-mono text-xs uppercase tracking-[0.14em]"
-              style={`color:${scopeColor(g.scope)}`}
-            >{g.label}</span>
-            <span class="font-mono text-xs tracking-[0.1em] text-muted-foreground">{g.items.length}</span>
-          </div>
+    <div class="syn-arsenal-body flex min-h-0 flex-1 gap-4">
+      <!-- Left: one row per source; counts follow the active filter. -->
+      <div
+        class="syn-arsenal-groups flex w-56 shrink-0 flex-col gap-1 overflow-y-auto pr-1"
+        aria-label="Arsenal groups"
+      >
+        {#each groups as g, i (g.key)}
+          {#if g.scope === "plugin" && groups[i - 1]?.scope !== "plugin"}
+            <div class="syn-arsenal-groups-divider my-1 h-px shrink-0 bg-border"></div>
+          {/if}
+          <button
+            onclick={() => (selected = g.key)}
+            title={g.label}
+            class={"syn-arsenal-group flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors " +
+              (active === g.key
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:text-foreground")}
+          >
+            <span class="size-1.5 shrink-0 rounded-sm" style={`background:${scopeColor(g.scope)}`}
+            ></span>
+            <span class="min-w-0 truncate">{g.label}</span>
+            <span class="ml-auto shrink-0 font-mono text-xs opacity-60">{g.items.length}</span>
+          </button>
+        {:else}
+          <div class="text-sm text-muted-foreground">No matches.</div>
+        {/each}
+      </div>
+
+      <!-- Right: the selected group's items. -->
+      <div class="syn-arsenal-items min-h-0 flex-1 overflow-y-auto pr-1">
+        {#if shown.length}
           <!-- items-start: an expanded card must not stretch its row-mates (they'd
                look open while still clamped) — neighbors keep their compact height. -->
-          <div class="grid grid-cols-1 items-start gap-2 md:grid-cols-2 2xl:grid-cols-3">
-            {#each g.items as it (it.scope + (it.source ?? "") + it.name)}
-              <ArsenalItem item={it} />
+          <div
+            class="syn-arsenal-item-grid grid grid-cols-1 items-start gap-2 md:grid-cols-2 2xl:grid-cols-3"
+          >
+            {#each shown as it (it.scope + (it.source ?? "") + it.name)}
+              <ArsenalItem item={it} showBadge={active === GROUP_ALL} />
             {/each}
           </div>
-        </section>
-      {/each}
+        {:else}
+          <div class="text-sm text-muted-foreground">
+            {q ? "No matches." : "Nothing installed in this category."}
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>

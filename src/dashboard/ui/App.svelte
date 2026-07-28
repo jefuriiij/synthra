@@ -17,9 +17,9 @@
   });
 </script>
 
-<div class="flex h-screen w-screen overflow-hidden">
+<div class="syn-app flex h-screen w-screen overflow-hidden">
   <Sidebar onFaq={() => (faqOpen = true)} onReport={() => (reportOpen = true)} />
-  <main class="min-w-0 flex-1 overflow-y-auto">
+  <main class="syn-main min-w-0 flex-1 overflow-y-auto">
     {#if store.view === "overview"}
       <Overview />
     {:else if store.view === "commands"}

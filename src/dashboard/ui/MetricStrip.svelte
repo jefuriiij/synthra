@@ -14,7 +14,9 @@
   });
 </script>
 
-<div class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-5">
+<div
+  class="syn-metric-strip grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-5"
+>
   {#each items as it (it.label)}
     <div class="flex flex-col gap-1 bg-card/70 p-4">
       <span class="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">{it.label}</span>

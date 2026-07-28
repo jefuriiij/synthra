@@ -2,7 +2,9 @@
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
   import type { ArsenalItem } from "$lib/types";
-  let { item }: { item: ArsenalItem } = $props();
+  // showBadge: redundant once a specific group is selected in the left panel —
+  // every card there shares the same scope/plugin.
+  let { item, showBadge = true }: { item: ArsenalItem; showBadge?: boolean } = $props();
   let open = $state(false);
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -46,9 +48,9 @@
   tabindex="0"
   onclick={toggle}
   onkeydown={onKeydown}
-  class="flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card/55 p-3 text-left transition-colors hover:bg-card/85"
+  class="syn-arsenal-card flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card/55 p-3 text-left transition-colors hover:bg-card/85"
 >
-  <div class="flex items-center gap-1.5">
+  <div class="syn-arsenal-card-head flex items-center gap-1.5">
     <span class="min-w-0 truncate font-mono text-sm text-foreground">{item.name}</span>
     <button
       type="button"
@@ -63,13 +65,15 @@
         <Copy class="size-3.5" />
       {/if}
     </button>
-    <span
-      class="ml-auto shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide"
-      style={`color:${color}; border-color:color-mix(in oklab, ${color} 35%, transparent)`}
-      class:opacity-50={item.enabled === false}
-    >
-      {badge}{item.enabled === false ? " · off" : ""}
-    </span>
+    {#if showBadge || item.enabled === false}
+      <span
+        class="syn-arsenal-card-badge ml-auto shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide"
+        style={`color:${color}; border-color:color-mix(in oklab, ${color} 35%, transparent)`}
+        class:opacity-50={item.enabled === false}
+      >
+        {showBadge ? badge : "off"}{showBadge && item.enabled === false ? " · off" : ""}
+      </span>
+    {/if}
   </div>
   {#if item.description}
     <p class={"text-sm leading-snug text-muted-foreground " + (open ? "" : "line-clamp-2")}>

@@ -51,7 +51,7 @@
   ];
 </script>
 
-<div class="flex h-full flex-col gap-4 p-5">
+<div class="syn-commands flex h-full flex-col gap-4 p-5">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <h1 class="font-serif text-2xl text-foreground">❯ Commands</h1>
     <span class="font-mono text-xs text-muted-foreground">all paths default to the current directory</span>

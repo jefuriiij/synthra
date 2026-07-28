@@ -30,7 +30,7 @@
   }
 </script>
 
-<Card title="Projects" meta="by turns">
+<Card title="Projects" meta="by turns" class="syn-card-projects">
   <div class="flex max-h-[260px] flex-col gap-2 overflow-y-auto pr-1">
     {#each projects as p (p.path)}
       <button onclick={() => { sel = p; open = true; }} class="flex flex-col gap-1 text-left">

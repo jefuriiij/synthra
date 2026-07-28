@@ -26,7 +26,7 @@
   });
 </script>
 
-<Card title="Model usage" meta="by turns">
+<Card title="Model usage" meta="by turns" class="syn-card-models">
   <div class="flex items-center gap-4">
     {#if view.total > 0}
       <div class="size-[130px] shrink-0">

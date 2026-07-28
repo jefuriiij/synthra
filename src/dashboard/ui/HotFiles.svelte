@@ -7,7 +7,7 @@
   const files = $derived(active?.stats?.hot_files ?? []);
 </script>
 
-<Card title="Hot files" meta={active?.project_name ?? "active project"}>
+<Card title="Hot files" meta={active?.project_name ?? "active project"} class="syn-card-hotfiles">
   <div class="font-mono text-2xl text-foreground">{fmt(active?.stats?.hot_files_total ?? 0)} <span class="text-sm text-muted-foreground">tracked</span></div>
   <div class="flex max-h-[190px] flex-col gap-1.5 overflow-y-auto">
     {#each files as f (f.path)}
