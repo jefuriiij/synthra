@@ -7,6 +7,33 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.24.0] — 2026-07-28
+
+### Added
+
+- **Favorite the skills and agents you actually use.** With 100+ of each
+  installed, the ones you reach for daily are buried in an alphabetical wall. A
+  heart on every skill and agent card now pins it to a **Favorites** row that
+  sits directly under `All` in the group panel. Favoriting doesn't move anything
+  — a favorited personal skill still shows under `Personal` too, so the row is a
+  shortcut rather than a filing decision, and it only appears once you have one.
+  MCP servers have no heart: they're config entries with nothing to bookmark.
+- Favorites are stored **machine-wide** at `~/.synthra/favorites.json`, next to
+  `projects.json`, because skills and agents are installed per-machine rather
+  than per-project. Heart something in one project and it's hearted everywhere.
+  The file is plain JSON and safe to hand-edit or delete; entries for skills you
+  later uninstall are kept rather than pruned, since a "missing" skill is usually
+  just a disabled plugin or a project you don't have open.
+- New routes `GET /favorites` and `POST /favorites` — the dashboard's first
+  write endpoints. The POST takes an explicit boolean rather than toggling, so a
+  double-clicked heart is idempotent instead of a coin flip, and it requires
+  `content-type: application/json` from a same-origin caller, which is what stops
+  a random web page from firing a no-preflight write at your localhost server.
+  Favorites are deliberately **browsing-only**: nothing in the routing path reads
+  them, so a favorite can never change which agent Claude gets pointed at.
+
+---
+
 ## [0.23.0] — 2026-07-28
 
 ### Added
