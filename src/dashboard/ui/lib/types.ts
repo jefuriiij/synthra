@@ -9,7 +9,13 @@ export type {
   RecentRoute,
   HotFile,
 } from "../../delta.js";
-export type { ArsenalData, ArsenalItem, ArsenalScope } from "../../arsenal.js";
+export type {
+  ArsenalData,
+  ArsenalDetail,
+  ArsenalItem,
+  ArsenalKind,
+  ArsenalScope,
+} from "../../arsenal.js";
 export type { DoctorCheck } from "../../../cli/doctor-command.js";
 
 import type { DoctorCheck as Check } from "../../../cli/doctor-command.js";

@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   fmt,
+  fmtBytes,
   fmtCost,
   fmtTs,
   modelFamily,
@@ -28,6 +29,19 @@ describe("fmtCost", () => {
   it("formats USD with separators + 2 decimals", () => {
     expect(fmtCost(1234.5)).toBe("$1,234.50");
     expect(fmtCost(0)).toBe("$0.00");
+  });
+});
+
+describe("fmtBytes", () => {
+  it("scales B → KB → MB", () => {
+    expect(fmtBytes(0)).toBe("0 B");
+    expect(fmtBytes(812)).toBe("812 B");
+    expect(fmtBytes(12_698)).toBe("12.4 KB");
+    expect(fmtBytes(1_500_000)).toBe("1.4 MB");
+  });
+  it("guards non-finite and negatives", () => {
+    expect(fmtBytes(Number.NaN)).toBe("0 B");
+    expect(fmtBytes(-5)).toBe("0 B");
   });
 });
 

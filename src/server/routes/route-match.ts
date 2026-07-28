@@ -385,7 +385,12 @@ export function scoreArsenal(
 
   const rank = (items: ArsenalItem[]): Scored[] => {
     const scored = items
-      .filter((i) => i.enabled !== false)
+      // Pack members (`impeccable polish`) are browsable, not routable: the
+      // Dispatcher recommends a skill to load, not a sub-invocation of one.
+      // Dropping them also keeps the shadow-mode follow-rate baseline
+      // comparable — 23 keyword-dense design commands from one vendor would
+      // swamp it. Delete this clause to make them routable.
+      .filter((i) => i.enabled !== false && !i.pack_command)
       .map((i) => scoreItem(i, qTokens, fingerprint))
       // Min-signal rule: a STRONG name hit (a word that identifies a domain,
       // not a role suffix), or at least two distinct token hits — one generic

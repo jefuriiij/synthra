@@ -2,7 +2,16 @@
 // /arsenal the first time the Arsenal view opens. The view selector lives here
 // so the sidebar and main area stay in sync.
 
-import type { ArsenalData, DashboardData, ReportData, View } from "./types";
+import { detailKey } from "./arsenal-detail";
+import type {
+  ArsenalData,
+  ArsenalDetail,
+  ArsenalItem,
+  ArsenalKind,
+  DashboardData,
+  ReportData,
+  View,
+} from "./types";
 
 class DashStore {
   data = $state<DashboardData | null>(null);
@@ -55,6 +64,9 @@ class DashStore {
   async loadArsenal(force = false): Promise<void> {
     if (this.#arsenalLoaded && !force) return;
     this.arsenalLoading = true;
+    // A rescan must also drop cached bodies, or ↻ Rescan refreshes the list
+    // while the modal keeps serving the pre-edit source of a skill.
+    if (force) this.#detailCache.clear();
     try {
       const r = await fetch("/arsenal");
       if (r.ok) {
@@ -66,6 +78,52 @@ class DashStore {
     } finally {
       this.arsenalLoading = false;
     }
+  }
+
+  arsenalDetail = $state<ArsenalDetail | null>(null);
+  arsenalDetailLoading = $state(false);
+  arsenalDetailError = $state(false);
+  #detailCache = new Map<string, ArsenalDetail>();
+  // Monotonic request id: clicking card B while A is still in flight must not
+  // let A's response paint over B. Only the newest request may write state.
+  #detailSeq = 0;
+
+  /** Full source for one item — backs the detail modal. */
+  async loadArsenalDetail(kind: ArsenalKind, item: ArsenalItem): Promise<void> {
+    const key = detailKey(kind, item);
+    const seq = ++this.#detailSeq;
+    this.arsenalDetailError = false;
+
+    const hit = this.#detailCache.get(key);
+    if (hit) {
+      this.arsenalDetail = hit;
+      this.arsenalDetailLoading = false;
+      return;
+    }
+    this.arsenalDetail = null;
+    this.arsenalDetailLoading = true;
+    try {
+      const qs = new URLSearchParams({ kind, scope: item.scope, name: item.name });
+      if (item.source) qs.set("source", item.source);
+      const r = await fetch(`/arsenal/item?${qs}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = (await r.json()) as ArsenalDetail;
+      this.#detailCache.set(key, d); // cache even if this request lost the race
+      if (seq !== this.#detailSeq) return;
+      this.arsenalDetail = d;
+    } catch {
+      if (seq === this.#detailSeq) this.arsenalDetailError = true;
+    } finally {
+      if (seq === this.#detailSeq) this.arsenalDetailLoading = false;
+    }
+  }
+
+  /** Modal closed — bump the seq so a late response can't repopulate it. */
+  clearArsenalDetail(): void {
+    this.#detailSeq += 1;
+    this.arsenalDetail = null;
+    this.arsenalDetailLoading = false;
+    this.arsenalDetailError = false;
   }
 
   go(view: View): void {

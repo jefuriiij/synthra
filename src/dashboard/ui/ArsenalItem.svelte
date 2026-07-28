@@ -1,35 +1,31 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
+  import { itemBadge, itemKind, scopeColor } from "$lib/arsenal-groups";
   import type { ArsenalItem } from "$lib/types";
   // showBadge: redundant once a specific group is selected in the left panel —
-  // every card there shares the same scope/plugin.
-  let { item, showBadge = true }: { item: ArsenalItem; showBadge?: boolean } = $props();
-  let open = $state(false);
+  // every card there shares the same scope/plugin/pack.
+  let {
+    item,
+    showBadge = true,
+    onOpen,
+  }: { item: ArsenalItem; showBadge?: boolean; onOpen: (item: ArsenalItem) => void } = $props();
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const badge = $derived(item.scope === "plugin" ? (item.source ?? "plugin") : item.scope);
-  const color = $derived(
-    item.scope === "project"
-      ? "var(--c-fable)"
-      : item.scope === "personal"
-        ? "var(--c-sonnet)"
-        : "#9bc2ef",
-  );
-  const meta = $derived(Object.entries(item.meta ?? {}));
+  const badge = $derived(itemBadge(item));
+  const color = $derived(scopeColor(itemKind(item)));
 
-  function toggle() {
-    open = !open;
-  }
   function onKeydown(e: KeyboardEvent) {
+    // Enter on the nested copy button must copy, not also open the modal.
+    if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      toggle();
+      onOpen(item);
     }
   }
   async function copyName(e: MouseEvent) {
-    e.stopPropagation(); // don't toggle the card
+    e.stopPropagation(); // don't open the detail modal
     try {
       await navigator.clipboard.writeText(item.name);
       copied = true;
@@ -46,7 +42,8 @@
 <div
   role="button"
   tabindex="0"
-  onclick={toggle}
+  aria-haspopup="dialog"
+  onclick={() => onOpen(item)}
   onkeydown={onKeydown}
   class="syn-arsenal-card flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card/55 p-3 text-left transition-colors hover:bg-card/85"
 >
@@ -76,15 +73,10 @@
     {/if}
   </div>
   {#if item.description}
-    <p class={"text-sm leading-snug text-muted-foreground " + (open ? "" : "line-clamp-2")}>
+    <!-- Always clamped: the full text lives in the modal, and uniform card
+         heights are the point of a browsable grid. -->
+    <p class="line-clamp-2 text-sm leading-snug text-muted-foreground">
       {item.description}
     </p>
-  {/if}
-  {#if open && meta.length}
-    <div class="mt-1 flex flex-col gap-0.5 font-mono text-xs text-muted-foreground/80">
-      {#each meta as [k, v] (k)}
-        <div class="break-all"><span class="text-foreground/70">{k}:</span> {v}</div>
-      {/each}
-    </div>
   {/if}
 </div>

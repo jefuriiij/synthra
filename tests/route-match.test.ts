@@ -129,6 +129,30 @@ describe("scoreArsenal", () => {
     expect(m.agents.map((a) => a.name)).not.toContain("svelte-off");
     expect(m.skills.length).toBe(2);
   });
+
+  // Pack members are browsable in the Arsenal but never routed: the Dispatcher
+  // recommends a skill to load, not a sub-invocation of one.
+  it("skips pack members and still routes their parent skill", () => {
+    const parent = item({
+      name: "impeccable",
+      description: "design language for frontend interfaces",
+      pack: "impeccable",
+    });
+    const member = item({
+      name: "impeccable polish",
+      description: "design pass fixing alignment and spacing before shipping",
+      pack: "impeccable",
+      pack_command: "polish",
+    });
+    const m = scoreArsenal(
+      "design pass on the dashboard interfaces before shipping",
+      arsenal([], [member, parent]),
+      noExts,
+      1,
+    );
+    expect(m.skills.map((s) => s.name)).toContain("impeccable");
+    expect(m.skills.map((s) => s.name)).not.toContain("impeccable polish");
+  });
 });
 
 describe("scoreDifficulty (v0.18)", () => {

@@ -9,19 +9,32 @@
     buildGroups,
     filterItems,
     GROUP_ALL,
+    itemKey,
     itemsForSelection,
     resolveSelection,
+    scopeColor,
+    startsNewBand,
   } from "$lib/arsenal-groups";
   import { store } from "$lib/store.svelte";
+  import type { ArsenalItem as Item, ArsenalKind } from "$lib/types";
+  import ArsenalDetail from "./ArsenalDetail.svelte";
   import ArsenalItem from "./ArsenalItem.svelte";
 
-  type Tab = "skills" | "agents" | "mcp";
-  let tab = $state<Tab>("skills");
+  let tab = $state<ArsenalKind>("skills");
   let q = $state("");
   let selected = $state<string>(GROUP_ALL);
 
+  // One modal for the whole grid, following whichever card was clicked.
+  let detailItem = $state<Item | null>(null);
+  let detailOpen = $state(false);
+
+  function openDetail(it: Item) {
+    detailItem = it;
+    detailOpen = true;
+  }
+
   const a = $derived(store.arsenal);
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs: { id: ArsenalKind; label: string }[] = [
     { id: "skills", label: "Skills" },
     { id: "agents", label: "Agents" },
     { id: "mcp", label: "MCP" },
@@ -32,16 +45,6 @@
   // rescan drops a plugin — fall back to All rather than rendering nothing.
   const active = $derived(resolveSelection(groups, selected));
   const shown = $derived(itemsForSelection(groups, active));
-
-  function scopeColor(scope: string): string {
-    return scope === "project"
-      ? "var(--c-fable)"
-      : scope === "personal"
-        ? "var(--c-sonnet)"
-        : scope === "all"
-          ? "var(--muted-foreground)"
-          : "#9bc2ef";
-  }
 
   const scanned = $derived(
     a ? new Date(a.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
@@ -92,7 +95,7 @@
         aria-label="Arsenal groups"
       >
         {#each groups as g, i (g.key)}
-          {#if g.scope === "plugin" && groups[i - 1]?.scope !== "plugin"}
+          {#if startsNewBand(groups, i)}
             <div class="syn-arsenal-groups-divider my-1 h-px shrink-0 bg-border"></div>
           {/if}
           <button
@@ -116,13 +119,9 @@
       <!-- Right: the selected group's items. -->
       <div class="syn-arsenal-items min-h-0 flex-1 overflow-y-auto pr-1">
         {#if shown.length}
-          <!-- items-start: an expanded card must not stretch its row-mates (they'd
-               look open while still clamped) — neighbors keep their compact height. -->
-          <div
-            class="syn-arsenal-item-grid grid grid-cols-1 items-start gap-2 md:grid-cols-2 2xl:grid-cols-3"
-          >
-            {#each shown as it (it.scope + (it.source ?? "") + it.name)}
-              <ArsenalItem item={it} showBadge={active === GROUP_ALL} />
+          <div class="syn-arsenal-item-grid grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+            {#each shown as it (itemKey(it))}
+              <ArsenalItem item={it} showBadge={active === GROUP_ALL} onOpen={openDetail} />
             {/each}
           </div>
         {:else}
@@ -134,3 +133,6 @@
     </div>
   {/if}
 </div>
+
+<ArsenalDetail bind:open={detailOpen} item={detailItem} kind={tab} />
+

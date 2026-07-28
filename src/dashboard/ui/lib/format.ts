@@ -17,6 +17,14 @@ export function fmtCost(usd: number): string {
   return `$${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Byte count for display: 0 → "0 B", 812 → "812 B", 12_698 → "12.4 KB". */
+export function fmtBytes(n: number): string {
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** ISO timestamp → "HH:MM" if today, else "Mon D". */
 export function fmtTs(iso: string): string {
   if (!iso) return "—";

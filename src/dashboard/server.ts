@@ -18,7 +18,7 @@ import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
-import { computeArsenal } from "./arsenal.js";
+import { computeArsenal, computeArsenalDetail, isArsenalKind, isArsenalScope } from "./arsenal.js";
 import { computeDashboardData } from "./delta.js";
 
 // The dashboard UI is built by Vite (svelte + tailwind) into a single
@@ -65,6 +65,23 @@ export async function startDashboard(
   // Installed skills / agents / MCP servers (project · personal · plugin).
   // Fetched lazily when the Arsenal drawer opens — not on the /data poll.
   app.get("/arsenal", async (c) => c.json(await computeArsenal(paths.projectRoot)));
+
+  // Full source for ONE arsenal item — backs the detail modal. The client sends
+  // only the identity it already holds from /arsenal, never a filesystem path;
+  // the server re-resolves name → file through its own scan index, so there is
+  // no traversal surface here. Query params (not path segments) because item
+  // names legitimately contain ":" and spaces.
+  app.get("/arsenal/item", async (c) => {
+    const kind = c.req.query("kind");
+    const scope = c.req.query("scope");
+    const name = c.req.query("name") ?? "";
+    const source = c.req.query("source") || undefined;
+    if (!isArsenalKind(kind) || !isArsenalScope(scope) || !name) {
+      return c.json({ error: "kind, scope and name are required" }, 400);
+    }
+    const detail = await computeArsenalDetail(paths.projectRoot, { kind, scope, name, source });
+    return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
+  });
 
   // Diagnostic for the Report dialog: runs the doctor checks and prebuilds the
   // redacted markdown so the UI copies exactly what `syn doctor --report` emits.
