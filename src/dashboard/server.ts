@@ -18,8 +18,10 @@ import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
+import { parseFavoriteRequest, readFavorites, setFavorite } from "../shared/favorites.js";
 import { computeArsenal, computeArsenalDetail, isArsenalKind, isArsenalScope } from "./arsenal.js";
 import { computeDashboardData } from "./delta.js";
+import { checkLocalJsonPost } from "./origin-guard.js";
 
 // The dashboard UI is built by Vite (svelte + tailwind) into a single
 // self-contained HTML (JS+CSS inlined) at ./built/index.html; tsup text-inlines
@@ -81,6 +83,33 @@ export async function startDashboard(
     }
     const detail = await computeArsenalDetail(paths.projectRoot, { kind, scope, name, source });
     return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
+  });
+
+  // Favorited skills/agents, machine-wide (~/.synthra/favorites.json). Browsing
+  // only — nothing in the routing path reads these, so a favorite can never
+  // change which agent Claude gets pointed at.
+  app.get("/favorites", async (c) => c.json({ favorites: (await readFavorites()).favorites }));
+
+  // The dashboard's only mutating route. `favorite` is an explicit boolean
+  // rather than a toggle, so a double-clicked heart is idempotent instead of a
+  // coin flip. Responds with the full list so the client reconciles against the
+  // server rather than guessing — which also heals two tabs drifting apart.
+  app.post("/favorites", async (c) => {
+    const guard = checkLocalJsonPost(c.req.header("content-type"), c.req.header("origin"), port);
+    if (!guard.ok) return c.json({ error: guard.error }, guard.status);
+
+    const parsed = parseFavoriteRequest(await c.req.json().catch(() => null));
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+
+    try {
+      return c.json({ ok: true, ...(await setFavorite(parsed.id, parsed.favorite)) });
+    } catch (err) {
+      // Deliberately NOT the house best-effort swallow: the user clicked a heart
+      // and is watching it, so a silent failure would leave the UI lying.
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn(`favorites write failed: ${message}`);
+      return c.json({ ok: false, error: message }, 500);
+    }
   });
 
   // Diagnostic for the Report dialog: runs the doctor checks and prebuilds the
