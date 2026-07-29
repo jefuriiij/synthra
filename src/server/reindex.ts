@@ -31,6 +31,12 @@ export async function rescanAndSwap(
       readGraph(paths.infoGraph),
       readSymbolIndex(paths.symbolIndex),
     ]);
+    if (graph === null || symbolIndex === null) {
+      // Keep serving the in-memory graph we already have. A mid-session reindex
+      // that can't read its own output is a warning, not a reason to go blind.
+      log.warn(`reindex (${label}) produced an unreadable graph — keeping the previous one.`);
+      return;
+    }
     ctx.graph = graph;
     ctx.symbolIndex = symbolIndex;
     log.info(`reindexed (${label}) — ${graph.symbol_count} symbols, ${graph.edge_count} edges.`);

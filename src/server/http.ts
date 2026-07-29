@@ -45,17 +45,35 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
       readGraph(paths.infoGraph),
       readSymbolIndex(paths.symbolIndex),
     ]);
-    // Schema-migration check (#8): a graph written by an older Synthra may have
-    // an incompatible on-disk shape. On a version mismatch, auto-rescan once and
-    // reload, rather than serving a stale/incompatible graph.
-    if (graph.schema_version !== SCHEMA_VERSION) {
-      log.info(`graph schema v${graph.schema_version} ≠ current v${SCHEMA_VERSION} — rescanning…`);
+
+    // Rescan when the graph can't be used as-is. Three causes, one remedy:
+    // it isn't there, it's damaged (already quarantined by the reader), or it
+    // was written by an older Synthra with an incompatible shape. The graph is
+    // derived from the filesystem, so rebuilding costs time and loses nothing —
+    // far better than the fatal "Run `syn scan` first" this used to throw, which
+    // refused to start over a file we could regenerate ourselves.
+    const why =
+      graph === null || symbolIndex === null
+        ? "graph missing or unreadable"
+        : graph.schema_version !== SCHEMA_VERSION
+          ? `graph schema v${graph.schema_version} ≠ current v${SCHEMA_VERSION}`
+          : null;
+
+    if (why) {
+      log.info(`${why} — rescanning…`);
       await scanProject(paths.projectRoot, { silent: true });
       [graph, symbolIndex] = await Promise.all([
         readGraph(paths.infoGraph),
         readSymbolIndex(paths.symbolIndex),
       ]);
     }
+
+    if (graph === null || symbolIndex === null) {
+      // A fresh scan still didn't produce a readable graph — that's a real
+      // failure worth stopping for, not something a retry fixes.
+      throw new Error(`graph at ${paths.infoGraph} is unreadable after a rescan`);
+    }
+
     const activity = new ActivityStore(paths.activityLog);
     // Usage-learning runtime: loads the decayed aggregate (replaying the raw
     // access log if the aggregate is cold). Best-effort — never blocks startup.
