@@ -119,6 +119,28 @@ describe("rememberEntry / refreshContextMd with a damaged store", () => {
     expect(await readFile(paths.contextMd, "utf8")).toBe(md);
   });
 
+  // Found by drilling a real 71-entry store: refusing on a corrupt READ isn't
+  // enough, because quarantining MOVES the file, so the next read is "missing" —
+  // which legitimately means empty — and the Stop hook published an empty
+  // narrative one step later. The guard is on the outcome, not the cause.
+  it("does not replace a real narrative with an empty one after quarantine", async () => {
+    const { paths, md } = await damagedProject();
+    await rememberEntry(paths, { text: "x", kind: "decision" }); // quarantines the store
+    // the store is now GONE, so this read is "missing", not "corrupt"
+    const second = await refreshContextMd(paths);
+    expect(second.unreadable).toBeUndefined();
+    expect(second.entriesSeen).toBe(0);
+    expect(await readFile(paths.contextMd, "utf8")).toBe(md); // still untouched
+  });
+
+  it("still writes the narrative on a genuine first run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-ctx-fresh-"));
+    const paths = resolvePaths(root);
+    const r = await refreshContextMd(paths); // no store, no CONTEXT.md
+    expect(r.entriesSeen).toBe(0);
+    expect((await readFile(paths.contextMd, "utf8")).length).toBeGreaterThan(0);
+  });
+
   it("tells recall the store is unreadable instead of implying it's empty", async () => {
     const { paths } = await damagedProject();
     const r = await recallEntries(paths);

@@ -9,7 +9,7 @@ import {
   resolveBranchPaths,
   type BranchScopedPaths,
 } from "./branches.js";
-import { deriveContextMd, writeContextMd } from "./context-md.js";
+import { deriveContextMd, readContextMd, writeContextMd } from "./context-md.js";
 import {
   appendEntry,
   readStore,
@@ -36,6 +36,38 @@ export async function resolveActiveBranch(
     isDefault,
     paths: resolveBranchPaths(paths.contextDir, branch, isDefault),
   };
+}
+
+/**
+ * Write CONTEXT.md from the store — unless that would replace a real narrative
+ * with an empty one.
+ *
+ * Refusing on a corrupt read isn't enough on its own: quarantining the damaged
+ * store MOVES it, which turns "corrupt" into "missing" on the very next read, and
+ * missing legitimately means empty. The Stop hook then published "no context
+ * entries yet" over a git-tracked file one step later. Guarding on the outcome
+ * instead of the cause also covers a deleted store and a mis-resolved branch.
+ *
+ * The trade: someone who deliberately empties their store keeps a stale
+ * CONTEXT.md until the next real entry. That's visible and recoverable, unlike
+ * silently committing the loss of the narrative.
+ */
+async function publishContextMd(
+  path: string,
+  entries: ContextEntry[],
+  branch: string,
+): Promise<boolean> {
+  if (entries.length === 0) {
+    const existing = await readContextMd(path);
+    if (existing && existing.trim().length > 0) {
+      log.warn(
+        `${path} already has content and the store is empty — leaving it alone rather than replacing it with an empty narrative.`,
+      );
+      return false;
+    }
+  }
+  await writeContextMd(path, deriveContextMd(entries, branch));
+  return true;
 }
 
 export interface RememberInput {
@@ -89,11 +121,11 @@ export async function rememberEntry(
   }
 
   // Refresh CONTEXT.md so the narrative stays in sync with the structured store.
-  const md = deriveContextMd(
+  await publishContextMd(
+    active.paths.contextMd,
     written.status === "written" ? written.data.entries : [],
     active.branch,
   );
-  await writeContextMd(active.paths.contextMd, md);
 
   return {
     entry,
@@ -163,8 +195,7 @@ export async function refreshContextMd(paths: SynthraPaths, branchOverride?: str
     };
   }
 
-  const md = deriveContextMd(read.entries, active.branch);
-  await writeContextMd(active.paths.contextMd, md);
+  await publishContextMd(active.paths.contextMd, read.entries, active.branch);
   return {
     branch: active.branch,
     path: active.paths.contextMd,
