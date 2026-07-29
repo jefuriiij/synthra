@@ -18,6 +18,12 @@ async function regFile(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), "syn-reg-")), "projects.json");
 }
 
+/** A project root whose basename resolves the same on both platforms.
+ *  Hardcoding proj("alpha") made these tests pass on Windows and fail on
+ *  Linux, where a backslash is an ordinary filename character — so basename()
+ *  returned the entire string. join() keeps the separator native. */
+const proj = (name: string) => join("/proj", name);
+
 describe("registryPath", () => {
   it("resolves under the given home rather than the real one", () => {
     expect(registryPath("/fake/home").replace(/\\/g, "/")).toBe(
@@ -29,7 +35,7 @@ describe("registryPath", () => {
 describe("recordProject", () => {
   it("creates the registry on a first run", async () => {
     const p = await regFile();
-    await recordProject("C:\\proj\\alpha", p);
+    await recordProject(proj("alpha"), p);
     const reg = JSON.parse(await readFile(p, "utf8"));
     expect(reg.schema_version).toBe(1);
     expect(reg.projects).toHaveLength(1);
@@ -39,10 +45,10 @@ describe("recordProject", () => {
 
   it("updates last_seen but preserves first_seen on a repeat run", async () => {
     const p = await regFile();
-    await recordProject("C:\\proj\\alpha", p);
+    await recordProject(proj("alpha"), p);
     const first = JSON.parse(await readFile(p, "utf8")).projects[0];
     await new Promise((r) => setTimeout(r, 5));
-    await recordProject("C:\\proj\\alpha", p);
+    await recordProject(proj("alpha"), p);
     const again = JSON.parse(await readFile(p, "utf8"));
     expect(again.projects).toHaveLength(1);
     expect(again.projects[0].first_seen).toBe(first.first_seen);
@@ -51,8 +57,8 @@ describe("recordProject", () => {
 
   it("keeps entries for other projects", async () => {
     const p = await regFile();
-    await recordProject("C:\\proj\\alpha", p);
-    await recordProject("C:\\proj\\beta", p);
+    await recordProject(proj("alpha"), p);
+    await recordProject(proj("beta"), p);
     const names = JSON.parse(await readFile(p, "utf8")).projects.map(
       (e: { name: string }) => e.name,
     );
@@ -64,9 +70,9 @@ describe("recordProject", () => {
   it("does not lose an entry when two projects register at once", async () => {
     const p = await regFile();
     await Promise.all([
-      recordProject("C:\\proj\\alpha", p),
-      recordProject("C:\\proj\\beta", p),
-      recordProject("C:\\proj\\gamma", p),
+      recordProject(proj("alpha"), p),
+      recordProject(proj("beta"), p),
+      recordProject(proj("gamma"), p),
     ]);
     const names = JSON.parse(await readFile(p, "utf8")).projects.map(
       (e: { name: string }) => e.name,
@@ -85,7 +91,7 @@ describe("recordProject", () => {
     });
     await writeFile(p, realish.slice(0, -20), "utf8"); // truncated
 
-    await recordProject("C:\\proj\\new", p);
+    await recordProject(proj("new"), p);
 
     // no 1-entry replacement, and the original is recoverable
     const dir = join(p, "..");
@@ -129,21 +135,21 @@ describe("listProjects", () => {
 describe("forgetProject", () => {
   it("removes an exact-path match and reports it", async () => {
     const p = await regFile();
-    await recordProject("C:\\proj\\alpha", p);
-    await recordProject("C:\\proj\\beta", p);
-    expect(await forgetProject("C:\\proj\\alpha", p)).toBe(true);
+    await recordProject(proj("alpha"), p);
+    await recordProject(proj("beta"), p);
+    expect(await forgetProject(proj("alpha"), p)).toBe(true);
     expect((await listProjects(p)).map((e) => e.name)).toEqual(["beta"]);
   });
 
   it("reports false when there's nothing to remove, and writes nothing", async () => {
     const p = await regFile();
-    await recordProject("C:\\proj\\alpha", p);
+    await recordProject(proj("alpha"), p);
     const before = await readFile(p, "utf8");
-    expect(await forgetProject("C:\\proj\\nope", p)).toBe(false);
+    expect(await forgetProject(proj("nope"), p)).toBe(false);
     expect(await readFile(p, "utf8")).toBe(before);
   });
 
   it("reports false for a missing registry", async () => {
-    expect(await forgetProject("C:\\proj\\alpha", await regFile())).toBe(false);
+    expect(await forgetProject(proj("alpha"), await regFile())).toBe(false);
   });
 });
