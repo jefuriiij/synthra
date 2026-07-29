@@ -9,15 +9,14 @@
 // which agent Claude gets pointed at.
 //
 // NOTE ON THE `path` PARAMETERS: every function takes an overridable path and
-// `favoritesPath()` is a FUNCTION, not a module-scope const. project-registry.ts
-// does the opposite (its REGISTRY_PATH is computed from homedir() at import
-// time), which is why four of its five exports have no test coverage and why
-// forgetProject had to re-implement read+write inline to escape the closure.
-// Don't repeat that here.
+// `favoritesPath()` is a FUNCTION, not a module-scope const computed from
+// homedir() at import time. project-registry.ts used to do the latter, which is
+// why four of its five exports had no coverage and why forgetProject had to
+// re-implement read+write inline to escape the closure. It follows this shape
+// now; keep both that way.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
   type ArsenalKind,
@@ -25,6 +24,7 @@ import {
   isArsenalKind,
   isArsenalScope,
 } from "../dashboard/arsenal.js";
+import { readJsonFile, updateJsonFile } from "./json-store.js";
 
 const SCHEMA_VERSION = 1;
 /** Bound on the file's size. The endpoint is unauthenticated (localhost) and
@@ -85,17 +85,16 @@ function validEntry(raw: unknown): FavoriteEntry | null {
  * hand-edit doesn't wipe the list.
  */
 export async function readFavorites(path = favoritesPath()): Promise<FavoritesFile> {
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<FavoritesFile>;
-    if (!Array.isArray(parsed.favorites)) return emptyFile();
-    return {
-      schema_version:
-        typeof parsed.schema_version === "number" ? parsed.schema_version : SCHEMA_VERSION,
-      favorites: parsed.favorites.map(validEntry).filter((e): e is FavoriteEntry => e !== null),
-    };
-  } catch {
-    return emptyFile();
-  }
+  const read = await readJsonFile<Partial<FavoritesFile>>(path);
+  // A damaged file still reads as empty HERE, because this is the display path
+  // and hearts are not worth an error dialog. What changed is that setFavorite
+  // no longer writes over it — see below.
+  if (read.status !== "ok" || !Array.isArray(read.data.favorites)) return emptyFile();
+  return {
+    schema_version:
+      typeof read.data.schema_version === "number" ? read.data.schema_version : SCHEMA_VERSION,
+    favorites: read.data.favorites.map(validEntry).filter((e): e is FavoriteEntry => e !== null),
+  };
 }
 
 function sameIdentity(a: FavoriteIdentity, b: FavoriteIdentity): boolean {
@@ -105,18 +104,6 @@ function sameIdentity(a: FavoriteIdentity, b: FavoriteIdentity): boolean {
     (a.source ?? "") === (b.source ?? "") &&
     a.name === b.name
   );
-}
-
-// Serializes read-modify-write within this process, so two fast toggles can't
-// each read the pre-state and clobber one another (double-click, or hearting
-// several cards in a row). A promise chain — no dependency, no lock file. Two
-// separate `syn .` processes can still lost-update each other; that window is a
-// few ms and the loss is one heart, which isn't worth a lock protocol.
-let queue: Promise<unknown> = Promise.resolve();
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(fn, fn); // run regardless of a prior rejection
-  queue = run.catch(() => undefined); // keep the chain tail resolved
-  return run;
 }
 
 /**
@@ -134,13 +121,17 @@ export async function setFavorite(
   path = favoritesPath(),
 ): Promise<{ favorite: boolean; favorites: FavoriteEntry[] }> {
   if (id.kind === "mcp") throw new Error("mcp items cannot be favorited");
-  return serialize(async () => {
-    const file = await readFavorites(path);
-    const at = file.favorites.findIndex((e) => sameIdentity(e, id));
+
+  let latest: FavoriteEntry[] = [];
+  const result = await updateJsonFile<FavoritesFile>(path, emptyFile, (file) => {
+    const favorites = Array.isArray(file.favorites)
+      ? file.favorites.map(validEntry).filter((e): e is FavoriteEntry => e !== null)
+      : [];
+    const at = favorites.findIndex((e) => sameIdentity(e, id));
 
     if (favorite && at === -1) {
-      if (file.favorites.length >= MAX_FAVORITES) throw new Error("too many favorites");
-      file.favorites.push({
+      if (favorites.length >= MAX_FAVORITES) throw new Error("too many favorites");
+      favorites.push({
         kind: id.kind,
         scope: id.scope,
         ...(id.source ? { source: id.source } : {}),
@@ -148,16 +139,27 @@ export async function setFavorite(
         added_at: new Date().toISOString(),
       });
     } else if (!favorite && at !== -1) {
-      file.favorites.splice(at, 1);
+      favorites.splice(at, 1);
     } else {
       // Already in the requested state — don't rewrite the file for a no-op.
-      return { favorite, favorites: file.favorites };
+      latest = favorites;
+      return null;
     }
 
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify(file, null, 2) + "\n", "utf8");
-    return { favorite, favorites: file.favorites };
+    latest = favorites;
+    return { schema_version: file.schema_version ?? SCHEMA_VERSION, favorites };
   });
+
+  // Throwing surfaces as a 500 and the client un-fills the heart, which is the
+  // right outcome: silently "succeeding" against a file we refused to write
+  // would leave the UI asserting something that isn't on disk.
+  if (result.status === "corrupt") {
+    throw new Error(
+      `favorites file could not be parsed (${result.error})` +
+        (result.quarantined ? `; a copy is at ${result.quarantined}` : ""),
+    );
+  }
+  return { favorite, favorites: latest };
 }
 
 /**

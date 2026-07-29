@@ -91,11 +91,18 @@ function parseRead<T>(text: string): ReadResult<T> {
   // A zero-byte file is what a crashed writeFile leaves behind. There's no data
   // in it to lose, so treat it as a fresh start rather than a corruption.
   if (!text.trim()) return { status: "missing" };
+  let parsed: unknown;
   try {
-    return { status: "ok", data: JSON.parse(text) as T };
+    parsed = JSON.parse(text);
   } catch (err) {
     return { status: "corrupt", error: errMessage(err) };
   }
+  // A file containing literally `null` is valid JSON that holds no value, so
+  // it's a fresh start rather than data worth protecting. Callers shape-check
+  // the rest themselves (every one of them does an Array.isArray on its list),
+  // so don't be stricter than that here.
+  if (parsed === null) return { status: "missing" };
+  return { status: "ok", data: parsed as T };
 }
 
 /**

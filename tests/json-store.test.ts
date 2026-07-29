@@ -45,6 +45,14 @@ describe("readJsonFile", () => {
     }
   });
 
+  // `null` is valid JSON holding no value. It used to reach callers as `null`
+  // and crash their shape checks (`read.data.favorites` on null).
+  it("treats a file containing literally null as missing", async () => {
+    const p = join(await tmpDir(), "null.json");
+    await writeFile(p, "null", "utf8");
+    expect((await readJsonFile(p)).status).toBe("missing");
+  });
+
   it("reports a file that exists but won't parse as corrupt", async () => {
     const p = join(await tmpDir(), "bad.json");
     await writeFile(p, '{"n":1', "utf8"); // truncated mid-object

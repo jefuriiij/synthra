@@ -3,7 +3,7 @@
 // the developer's real home (same DI idiom as forgetProject in remove.test.ts).
 
 import { describe, it, expect } from "vitest";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -194,6 +194,28 @@ describe("setFavorite", () => {
       setFavorite({ kind: "agents", scope: "personal", name: "c" }, true, p),
     ]);
     expect((await readFavorites(p)).favorites.map((f) => f.name).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  // The display path still reads a damaged file as empty (hearts aren't worth an
+  // error dialog), but writing over it would destroy the list — so it refuses.
+  it("refuses to write over an unparseable file, and quarantines it", async () => {
+    const p = await tmpFile();
+    const realish = JSON.stringify({
+      schema_version: 1,
+      favorites: [
+        { kind: "skills", scope: "personal", name: "kept-one", added_at: "x" },
+        { kind: "skills", scope: "personal", name: "kept-two", added_at: "x" },
+      ],
+    });
+    await writeFile(p, realish.slice(0, -15), "utf8");
+
+    await expect(setFavorite(SKILL, true, p)).rejects.toThrow(/could not be parsed/);
+
+    const dir = join(p, "..");
+    const copies = (await readdir(dir)).filter((n) => n.includes(".corrupt-"));
+    expect(copies).toHaveLength(1);
+    expect(await readFile(join(dir, copies[0] as string), "utf8")).toContain("kept-two");
+    expect((await readdir(dir)).includes("favorites.json")).toBe(false);
   });
 
   it("throws when the file cannot be written", async () => {
