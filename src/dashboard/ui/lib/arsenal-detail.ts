@@ -57,6 +57,30 @@ export function detailRows(detail: ArsenalDetail | null | undefined): [string, s
   return Object.entries(detail.meta ?? {}).filter(([, v]) => (v ?? "").trim().length > 0);
 }
 
+/**
+ * Exactly what to type to run a skill, or null when it can't be typed at all.
+ *
+ * Worth spelling out: the Arsenal is a catalog of what's installed, which is not
+ * the same list as what you can invoke. A pack member looks like a standalone
+ * command but is an argument to its pack; a plugin skill needs its plugin as a
+ * prefix; and a skill can opt out of the slash menu entirely.
+ *
+ *   pinned member  → "/distill"                     (the pack pinned a shortcut)
+ *   plain member   → "/impeccable distill"
+ *   plugin skill   → "/marketing-skills:seo-audit"
+ *   own skill      → "/dogfood"
+ *   opted out      → null  (user-invocable: false — Claude loads it itself)
+ *   agents / mcp   → null  (spawned by the model / a server registration)
+ */
+export function skillInvocation(item: ArsenalItem, kind: ArsenalKind): string | null {
+  if (kind !== "skills") return null;
+  if (item.invocable === false) return null;
+  if (item.pinned_as) return item.pinned_as;
+  if (item.pack && item.pack_command) return `/${item.pack} ${item.pack_command}`;
+  if (item.scope === "plugin" && item.source) return `/${item.source}:${item.name}`;
+  return `/${item.name}`;
+}
+
 /** One-line provenance under the title: where it came from, what it is, how
  *  big, and the file it reads from. */
 export function detailSubtitle(item: ArsenalItem, detail?: ArsenalDetail | null): string {

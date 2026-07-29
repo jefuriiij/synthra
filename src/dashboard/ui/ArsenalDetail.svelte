@@ -12,7 +12,7 @@
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
   import Heart from "@lucide/svelte/icons/heart";
-  import { bodyStats, detailRows, detailSubtitle } from "$lib/arsenal-detail";
+  import { bodyStats, detailRows, detailSubtitle, skillInvocation } from "$lib/arsenal-detail";
   import { favoriteKey, itemKind, scopeColor } from "$lib/arsenal-groups";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import { store } from "$lib/store.svelte";
@@ -78,6 +78,19 @@
           {#if detail?.description || item.description}
             <p class="mt-3 text-[13px] leading-relaxed text-muted-foreground">
               {detail?.description || item.description}
+            </p>
+          {/if}
+          <!-- Being listed here doesn't mean you can type it: a pack member is an
+               argument to its pack, a plugin skill needs its plugin prefix, and a
+               skill can opt out of the slash menu. Say which case this is. -->
+          {#if skillInvocation(item, kind)}
+            <p class="syn-arsenal-detail-invoke mt-2 font-mono text-xs text-muted-foreground">
+              invoke <span class="text-foreground">{skillInvocation(item, kind)}</span>
+            </p>
+          {:else if kind === "skills" && item.invocable === false}
+            <p class="syn-arsenal-detail-invoke mt-2 text-xs leading-relaxed text-muted-foreground">
+              Not a slash command — this skill sets <code class="font-mono">user-invocable: false</code
+              >, so Claude loads it on its own when the work calls for it.
             </p>
           {/if}
         </div>

@@ -97,6 +97,24 @@
         />
       </button>
     {/if}
+    {#if item.pinned_as}
+      <!-- Before the badge for the same reason as the heart: the badge is
+           conditional, so anything to its right drifts between cards. -->
+      <span
+        class="syn-arsenal-card-pin shrink-0 font-mono text-[10px]"
+        style={`color:${color}`}
+        title={`Pinned as ${item.pinned_as}`}
+      >
+        {item.pinned_as}
+      </span>
+    {:else if item.invocable === false}
+      <span
+        class="syn-arsenal-card-auto shrink-0 font-mono text-[9px] uppercase tracking-wide text-muted-foreground/70"
+        title="Not a slash command — Claude loads this on its own"
+      >
+        auto only
+      </span>
+    {/if}
     {#if showBadge || item.enabled === false}
       <span
         class="syn-arsenal-card-badge ml-auto shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide"

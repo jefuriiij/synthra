@@ -10,6 +10,7 @@ import {
   detailRows,
   detailSubtitle,
   frontmatterRows,
+  skillInvocation,
 } from "../src/dashboard/ui/lib/arsenal-detail.js";
 
 function item(over: Partial<ArsenalItem> & { name: string }): ArsenalItem {
@@ -91,6 +92,51 @@ describe("detailRows", () => {
   it("returns [] with nothing to show", () => {
     expect(detailRows(detail())).toEqual([]);
     expect(detailRows(null)).toEqual([]);
+  });
+});
+
+describe("skillInvocation", () => {
+  it("uses the pinned shortcut when a pack pinned one", () => {
+    const member = item({
+      name: "impeccable audit",
+      pack: "impeccable",
+      pack_command: "audit",
+      pinned_as: "/audit",
+    });
+    expect(skillInvocation(member, "skills")).toBe("/audit");
+  });
+
+  it("falls back to the pack form for an un-pinned member", () => {
+    const member = item({ name: "impeccable audit", pack: "impeccable", pack_command: "audit" });
+    expect(skillInvocation(member, "skills")).toBe("/impeccable audit");
+  });
+
+  it("prefixes a plugin skill with its plugin", () => {
+    const plug = item({ name: "seo-audit", scope: "plugin", source: "marketing-skills" });
+    expect(skillInvocation(plug, "skills")).toBe("/marketing-skills:seo-audit");
+  });
+
+  it("uses the bare name for a project or personal skill, and for a pack's own skill", () => {
+    expect(skillInvocation(item({ name: "dogfood" }), "skills")).toBe("/dogfood");
+    expect(skillInvocation(item({ name: "rel", scope: "project" }), "skills")).toBe("/rel");
+    // the parent carries `pack` but no `pack_command` — it IS a real skill
+    expect(skillInvocation(item({ name: "impeccable", pack: "impeccable" }), "skills")).toBe(
+      "/impeccable",
+    );
+  });
+
+  it("says nothing for a skill that opted out of the slash menu", () => {
+    expect(skillInvocation(item({ name: "shadcn-svelte", invocable: false }), "skills")).toBeNull();
+    // ...even when it would otherwise have had a form
+    const plug = item({ name: "x", scope: "plugin", source: "p", invocable: false });
+    expect(skillInvocation(plug, "skills")).toBeNull();
+  });
+
+  it("says nothing for agents or MCP servers", () => {
+    expect(skillInvocation(item({ name: "release-manager" }), "agents")).toBeNull();
+    expect(
+      skillInvocation(item({ name: "figma", scope: "plugin", source: "figma" }), "mcp"),
+    ).toBeNull();
   });
 });
 
