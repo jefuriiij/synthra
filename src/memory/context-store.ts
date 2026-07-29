@@ -2,8 +2,12 @@
 // Stored in .synthra/ (GIT-TRACKED) so teammates inherit them.
 // Branch-partitioned via branches.ts.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import {
+  readJsonFile,
+  updateJsonFile,
+  writeJsonAtomic,
+  type UpdateResult,
+} from "../shared/json-store.js";
 
 export type EntryKind = "decision" | "task" | "next" | "fact" | "blocker";
 
@@ -36,24 +40,39 @@ interface Store {
 
 const SCHEMA_VERSION = 1;
 
-export async function readEntries(path: string): Promise<ContextEntry[]> {
-  try {
-    const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as Partial<Store>;
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
-  } catch {
-    return [];
-  }
+/**
+ * A damaged store must be distinguishable from an empty one. Reading it as `[]`
+ * used to be doubly destructive: the next append persisted a 1-entry store over
+ * however many entries were really in there, and CONTEXT.md — which is
+ * git-tracked — got rewritten to say there were none.
+ */
+export type StoreRead =
+  | { status: "ok"; entries: ContextEntry[] }
+  | { status: "corrupt"; error: string };
+
+export async function readStore(path: string): Promise<StoreRead> {
+  const read = await readJsonFile<Partial<Store>>(path);
+  if (read.status === "missing") return { status: "ok", entries: [] };
+  if (read.status === "corrupt") return { status: "corrupt", error: read.error };
+  // A file that parses but has no entries array is structurally wrong, not torn;
+  // treat it as empty exactly as before rather than quarantining it.
+  return { status: "ok", entries: Array.isArray(read.data.entries) ? read.data.entries : [] };
 }
 
 export async function writeEntries(path: string, entries: ContextEntry[]): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
   const store: Store = { schema_version: SCHEMA_VERSION, entries };
-  await writeFile(path, JSON.stringify(store, null, 2) + "\n", "utf8");
+  await writeJsonAtomic(path, store);
 }
 
-export async function appendEntry(path: string, entry: ContextEntry): Promise<void> {
-  const entries = await readEntries(path);
-  entries.push(entry);
-  await writeEntries(path, entries);
+/** Append one entry. Returns `corrupt` — having quarantined the damaged file —
+ *  rather than replacing a store it couldn't read. */
+export async function appendEntry(path: string, entry: ContextEntry): Promise<UpdateResult<Store>> {
+  return updateJsonFile<Store>(
+    path,
+    () => ({ schema_version: SCHEMA_VERSION, entries: [] }),
+    (store) => ({
+      schema_version: SCHEMA_VERSION,
+      entries: [...(Array.isArray(store.entries) ? store.entries : []), entry],
+    }),
+  );
 }

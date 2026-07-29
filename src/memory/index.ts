@@ -1,6 +1,7 @@
 // High-level orchestration: branch detection + store routing + CONTEXT.md
 // refresh in one call. Used by the MCP tools and the /context-update route.
 
+import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import {
   currentBranch,
@@ -11,7 +12,7 @@ import {
 import { deriveContextMd, writeContextMd } from "./context-md.js";
 import {
   appendEntry,
-  readEntries,
+  readStore,
   type ContextEntry,
   type EntryAnchor,
   type EntryKind,
@@ -52,6 +53,8 @@ export interface RememberResult {
   branch: string;
   storePath: string;
   contextMdPath: string;
+  /** Set when the store couldn't be parsed, so nothing was saved. */
+  unreadable?: string;
 }
 
 export async function rememberEntry(
@@ -67,11 +70,29 @@ export async function rememberEntry(
     date: new Date().toISOString(),
     ...(input.anchors && input.anchors.length > 0 ? { anchors: input.anchors } : {}),
   };
-  await appendEntry(active.paths.contextStore, entry);
+  const written = await appendEntry(active.paths.contextStore, entry);
+
+  if (written.status === "corrupt") {
+    // Do NOT derive CONTEXT.md here. Deriving from a store we couldn't read is
+    // what turned one bad read into a committed loss of a git-tracked file.
+    log.error(
+      `${active.paths.contextStore} could not be parsed (${written.error}) — nothing was saved, and CONTEXT.md was left alone.` +
+        (written.quarantined ? ` A copy is at ${written.quarantined}.` : ""),
+    );
+    return {
+      entry,
+      branch: active.branch,
+      storePath: active.paths.contextStore,
+      contextMdPath: active.paths.contextMd,
+      unreadable: written.error,
+    };
+  }
 
   // Refresh CONTEXT.md so the narrative stays in sync with the structured store.
-  const entries = await readEntries(active.paths.contextStore);
-  const md = deriveContextMd(entries, active.branch);
+  const md = deriveContextMd(
+    written.status === "written" ? written.data.entries : [],
+    active.branch,
+  );
   await writeContextMd(active.paths.contextMd, md);
 
   return {
@@ -92,6 +113,9 @@ export interface RecallResult {
   branch: string;
   entries: ContextEntry[];
   storePath: string;
+  /** Set when the store couldn't be parsed — an empty `entries` then means
+   *  "unreadable", not "nothing stored". */
+  unreadable?: string;
 }
 
 export async function recallEntries(
@@ -99,7 +123,18 @@ export async function recallEntries(
   input: RecallInput = {},
 ): Promise<RecallResult> {
   const active = await resolveActiveBranch(paths, input.branch);
-  let entries = await readEntries(active.paths.contextStore);
+  const read = await readStore(active.paths.contextStore);
+  if (read.status === "corrupt") {
+    // Say so instead of implying the store is empty — "you have no memory" and
+    // "your memory file is damaged" need very different reactions.
+    return {
+      branch: active.branch,
+      entries: [],
+      storePath: active.paths.contextStore,
+      unreadable: read.error,
+    };
+  }
+  let entries = read.entries;
   if (input.kind) entries = entries.filter((e) => e.type === input.kind);
   if (input.limit && input.limit > 0) entries = entries.slice(-input.limit);
   return {
@@ -111,12 +146,28 @@ export async function recallEntries(
 
 export async function refreshContextMd(paths: SynthraPaths, branchOverride?: string) {
   const active = await resolveActiveBranch(paths, branchOverride);
-  const entries = await readEntries(active.paths.contextStore);
-  const md = deriveContextMd(entries, active.branch);
+  const read = await readStore(active.paths.contextStore);
+
+  // The Stop hook calls this after every session. Rewriting the git-tracked
+  // CONTEXT.md from an unreadable store would replace a real narrative with
+  // "no context entries yet" — so leave it exactly as it is.
+  if (read.status === "corrupt") {
+    log.error(
+      `${active.paths.contextStore} could not be parsed (${read.error}) — CONTEXT.md was left untouched.`,
+    );
+    return {
+      branch: active.branch,
+      path: active.paths.contextMd,
+      entriesSeen: 0,
+      unreadable: read.error,
+    };
+  }
+
+  const md = deriveContextMd(read.entries, active.branch);
   await writeContextMd(active.paths.contextMd, md);
   return {
     branch: active.branch,
     path: active.paths.contextMd,
-    entriesSeen: entries.length,
+    entriesSeen: read.entries.length,
   };
 }
