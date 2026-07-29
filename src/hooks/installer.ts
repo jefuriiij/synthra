@@ -3,9 +3,10 @@
 // regenerates the scripts and merges hook entries cleanly with any user-added
 // hooks already in the file.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { quarantineFile, readJsonFile, writeJsonAtomic } from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { SYNTHRA_HOOK_MARKER, stripOurHooks, type HooksConfig } from "./hooks-config.js";
@@ -24,6 +25,9 @@ import stopSh from "./scripts/stop.sh";
 export interface InstallResult {
   scriptsWritten: string[];
   settingsUpdated: boolean;
+  /** Set when settings.local.json existed but couldn't be parsed, so we refused
+   *  to touch it. The hook scripts are on disk but nothing is registered. */
+  settingsUnreadable?: string;
 }
 
 interface ScriptDef {
@@ -71,13 +75,20 @@ function chosenScriptExt(): string {
   return process.platform === "win32" ? ".ps1" : ".sh";
 }
 
-async function readSettings(path: string): Promise<HooksConfig> {
-  try {
-    const raw = await readFile(path, "utf8");
-    return JSON.parse(raw) as HooksConfig;
-  } catch {
-    return {};
-  }
+// NOTE: this used to `catch { return {} }`, and the caller then merged our hooks
+// into that empty object and wrote it back — silently discarding every permission
+// the user had granted and every non-Synthra hook in the file. settings.local.json
+// is user-owned and Claude Code writes it too, so an unreadable one now stops the
+// install rather than replacing it.
+async function readSettings(path: string): Promise<HooksConfig | { unreadable: string }> {
+  const read = await readJsonFile<HooksConfig>(path);
+  if (read.status === "ok") return read.data;
+  if (read.status === "missing") return {}; // first run — safe to create
+  return { unreadable: read.error };
+}
+
+function isUnreadable(v: HooksConfig | { unreadable: string }): v is { unreadable: string } {
+  return "unreadable" in v && typeof (v as { unreadable: unknown }).unreadable === "string";
 }
 
 function mergeOurHooks(config: HooksConfig, paths: SynthraPaths): HooksConfig {
@@ -112,10 +123,20 @@ export async function installHooks(paths: SynthraPaths): Promise<InstallResult> 
 
   await mkdir(dirname(paths.claudeSettings), { recursive: true });
   const existing = await readSettings(paths.claudeSettings);
-  const stripped = stripOurHooks(existing);
-  const merged = mergeOurHooks(stripped, paths);
 
-  await writeFile(paths.claudeSettings, JSON.stringify(merged, null, 2) + "\n", "utf8");
+  if (isUnreadable(existing)) {
+    // Refuse rather than rebuild. The file holds the user's permissions and any
+    // hooks other tools installed; merging into a blank object would erase them.
+    const moved = await quarantineFile(paths.claudeSettings);
+    log.error(
+      `${paths.claudeSettings} could not be parsed (${existing.unreadable}) — hooks were NOT registered so your permissions aren't overwritten.` +
+        (moved ? ` A copy is at ${moved}; fix the JSON or restore it, then re-run \`syn .\`.` : ""),
+    );
+    return { scriptsWritten, settingsUpdated: false, settingsUnreadable: existing.unreadable };
+  }
+
+  const merged = mergeOurHooks(stripOurHooks(existing), paths);
+  await writeJsonAtomic(paths.claudeSettings, merged);
 
   log.debug(`installed ${scriptsWritten.length} hook script(s) into ${paths.claudeHooksDir}`);
 
