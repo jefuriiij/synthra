@@ -199,6 +199,11 @@ describe("computeArsenal", () => {
       join(home, ".claude", "skills", "broken", "SKILL.md"),
       "not valid frontmatter at all",
     );
+    // opted out of being a slash command — Claude loads it on its own
+    await write(
+      join(home, ".claude", "skills", "auto-only", "SKILL.md"),
+      "---\nname: auto-only\ndescription: Model-invoked only.\nuser-invocable: false\n---\nbody\n",
+    );
 
     await writePack(home);
 
@@ -241,6 +246,19 @@ describe("computeArsenal", () => {
     expect(a.mcp.find((m) => m.name === "myserver")?.meta?.url).toBe("https://x.example/mcp");
   });
 
+  // Regression: `user-invocable` arrives as a STRING, so a truthiness test read
+  // "false" as opting in — labelling the one skill that opted out as typeable.
+  it("marks only an explicit user-invocable: false as not invocable", async () => {
+    const { home, proj } = await fixture();
+    const a = await computeArsenal(proj, home);
+    expect(a.skills.find((s) => s.name === "auto-only")?.invocable).toBe(false);
+    // declared true, and omitted entirely, both mean invocable — encoded as absence
+    expect(a.skills.find((s) => s.name === "demo-skill")?.invocable).toBeUndefined();
+    expect(a.skills.find((s) => s.name === "plug-skill")?.invocable).toBeUndefined();
+    // the raw frontmatter string still reaches the client for display
+    expect(a.skills.find((s) => s.name === "demo-skill")?.meta?.user_invocable).toBe("true");
+  });
+
   it("does not throw on a malformed skill and skips nothing else", async () => {
     const { home, proj } = await fixture();
     const a = await computeArsenal(proj, home);
@@ -248,6 +266,14 @@ describe("computeArsenal", () => {
     expect(a.skills.some((s) => s.name === "demo-skill")).toBe(true);
   });
 });
+
+/** A pinned shortcut exactly as impeccable's pin.mjs writes one. */
+async function writePin(home: string, pack: string, command: string): Promise<void> {
+  await write(
+    join(home, ".claude", "skills", command, "SKILL.md"),
+    `---\nname: ${command}\ndescription: "Shortcut for /${pack} ${command}."\nargument-hint: "[target]"\nuser-invocable: true\n---\n\n<!-- ${pack}-pinned-skill -->\n\nThis is a pinned shortcut for \`/${pack} ${command}\`.\n`,
+  );
+}
 
 describe("command pack expansion", () => {
   async function packFixture(manifest?: string | null): Promise<{ home: string; proj: string }> {
@@ -336,6 +362,84 @@ describe("command pack expansion", () => {
     const plain = a.skills.find((s) => s.name === "plain");
     expect(plain?.pack).toBeUndefined();
     expect(plain?.pack_command).toBeUndefined();
+  });
+});
+
+describe("pinned pack shortcuts", () => {
+  async function pinFixture(): Promise<{ home: string; proj: string }> {
+    const home = await mkdtemp(join(tmpdir(), "syn-pin-home-"));
+    const proj = await mkdtemp(join(tmpdir(), "syn-pin-proj-"));
+    await writePack(home); // manifest: polish, adapt, ghost(no ref file)
+    await writePin(home, "impeccable", "polish"); // member exists → merges
+    await writePin(home, "nosuchpack", "orphan"); // pack absent → stays
+    await write(join(home, ".claude", "skills", "plain", "SKILL.md"), "---\nname: plain\n---\n");
+    return { home, proj };
+  }
+
+  it("folds a pin into its pack member instead of listing it twice", async () => {
+    const { home, proj } = await pinFixture();
+    const a = await computeArsenal(proj, home);
+    const member = a.skills.find((s) => s.name === "impeccable polish");
+    expect(member?.pinned_as).toBe("/polish");
+    // the redirect file is represented by the member, not listed on its own
+    expect(a.skills.some((s) => s.name === "polish")).toBe(false);
+  });
+
+  it("leaves un-pinned members without a shortcut", async () => {
+    const { home, proj } = await pinFixture();
+    const a = await computeArsenal(proj, home);
+    expect(a.skills.find((s) => s.name === "impeccable adapt")?.pinned_as).toBeUndefined();
+  });
+
+  it("keeps an orphan pin as its own skill rather than dropping it", async () => {
+    const { home, proj } = await pinFixture();
+    const a = await computeArsenal(proj, home);
+    const orphan = a.skills.find((s) => s.name === "orphan");
+    expect(orphan).toBeDefined();
+    expect(orphan?.pack).toBeUndefined(); // no pack to belong to
+  });
+
+  it("serves an orphan pin's own file from the detail endpoint", async () => {
+    const { home, proj } = await pinFixture();
+    const d = await computeArsenalDetail(
+      proj,
+      { kind: "skills", scope: "personal", name: "orphan" },
+      home,
+    );
+    expect(d?.body).toContain("nosuchpack-pinned-skill");
+  });
+
+  it("counts a merged pin once, not twice", async () => {
+    const { home, proj } = await pinFixture();
+    const a = await computeArsenal(proj, home);
+    expect(a.counts.skills).toBe(a.skills.length);
+    // impeccable + 2 members + plain + orphan = 5; the merged `polish` is not extra
+    expect(a.skills.map((s) => s.name).sort()).toEqual([
+      "impeccable",
+      "impeccable adapt",
+      "impeccable polish",
+      "orphan",
+      "plain",
+    ]);
+  });
+
+  // Detection is a substring match, so a skill that merely DOCUMENTS the
+  // convention is read as a pin for a pack that doesn't exist. The orphan path
+  // is what makes that harmless: it still appears, as itself, unmodified. The
+  // residual risk is a doc skill whose name also collides with a real command
+  // of a real installed pack — accepted as vanishingly unlikely.
+  it("still lists a skill that merely mentions the marker in its body", async () => {
+    const home = await mkdtemp(join(tmpdir(), "syn-pin-doc-"));
+    const proj = await mkdtemp(join(tmpdir(), "syn-pin-docp-"));
+    await write(
+      join(home, ".claude", "skills", "writing-packs", "SKILL.md"),
+      "---\nname: writing-packs\ndescription: How packs work.\n---\nPins carry a marker like `<!-- mypack-pinned-skill -->` in the body.\n",
+    );
+    const a = await computeArsenal(proj, home);
+    const doc = a.skills.find((s) => s.name === "writing-packs");
+    expect(doc).toBeDefined();
+    expect(doc?.pack).toBeUndefined();
+    expect(doc?.pinned_as).toBeUndefined();
   });
 });
 

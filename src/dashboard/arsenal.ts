@@ -35,6 +35,16 @@ export interface ArsenalItem {
   /** Set ONLY on pack members: the bare sub-command ("polish"). Its presence is
    *  what distinguishes a member from the pack's parent skill. */
   pack_command?: string;
+  /** The standalone shortcut pinned for this pack member, e.g. "/distill".
+   *  Deliberately NOT `pack_command`: that field excludes an item from the
+   *  Dispatcher, and a pinned command is a real, separately installed skill. */
+  pinned_as?: string;
+  /** Set ONLY when a skill declares `user-invocable: false` — i.e. the user
+   *  CANNOT type it as a slash command and Claude loads it on its own. Absent
+   *  means invocable, which is Claude Code's default when the key is omitted
+   *  (68 of 68 plugin skills omit it), so encoding the exception as presence
+   *  beats stamping every item with `true`. */
+  invocable?: boolean;
   /** Kind-specific extras: agents {tools,model}; skills {argument_hint,user_invocable}; mcp {type,url}. */
   meta?: Record<string, string>;
 }
@@ -121,6 +131,28 @@ interface PackSpec {
 const PACKS: Record<string, PackSpec> = {
   impeccable: { manifest: "scripts/command-metadata.json", dir: "reference" },
 };
+
+/**
+ * A pack can "pin" one of its commands: it writes a tiny standalone skill whose
+ * body just redirects to the pack, because a real SKILL.md is the only way into
+ * Claude Code's slash-command menu. Those files carry a marker comment naming
+ * the pack that owns them, e.g. `<!-- impeccable-pinned-skill -->`.
+ *
+ * We fold each one into the pack member it shortcuts, so a command shows up
+ * once — as its playbook — carrying the short name you can actually type.
+ * Matching on the marker ONLY: a personal skill that merely happens to be
+ * called `polish` must never be swallowed into a pack.
+ */
+const PIN_MARKER = /<!--\s*([a-z0-9][a-z0-9-]*)-pinned-skill\s*-->/i;
+
+/** A pinned shortcut found during the scan, held until its pack member exists. */
+interface PinnedShortcut {
+  pack: string;
+  command: string;
+  item: ArsenalItem;
+  file: string;
+  description: string;
+}
 
 interface PackEntry {
   description?: string;
@@ -308,11 +340,15 @@ function skillItem(
   const meta: Record<string, string> = {};
   if (fm["argument-hint"]) meta.argument_hint = fm["argument-hint"];
   if (fm["user-invocable"]) meta.user_invocable = fm["user-invocable"];
+  // Frontmatter is a string here, so a truthiness test would read the literal
+  // "false" as opting IN — the exact inversion of what the author asked for.
+  const optedOut = fm["user-invocable"]?.trim().toLowerCase() === "false";
   return {
     name: fm.name || fallbackName,
     description: clip(fm.description || "", DESC_MAX),
     scope,
     ...(source ? { source } : {}),
+    ...(optedOut ? { invocable: false } : {}),
     ...(Object.keys(meta).length ? { meta } : {}),
   };
 }
@@ -384,6 +420,7 @@ async function scanSkillsDir(
   source: string | undefined,
   out: ArsenalItem[],
   index: SourceIndex,
+  pins: PinnedShortcut[],
 ): Promise<void> {
   for (const name of await listNames(dir)) {
     const file = join(dir, name, "SKILL.md");
@@ -391,12 +428,68 @@ async function scanSkillsDir(
     if (md === null) continue; // not a skill dir (or broken symlink) — skip
     const fm = parseFrontmatter(md);
     const item = skillItem(fm, name, scope, source);
+
+    // Free detection: `md` is the whole file and parseFrontmatter discards the
+    // body, so this costs one substring scan over an already-resident string.
+    const pinned = PIN_MARKER.exec(md);
+    if (pinned?.[1]) {
+      // Held back, not emitted — mergePins decides whether it becomes a card of
+      // its own (pack missing) or folds into its member (the normal case).
+      pins.push({
+        pack: pinned[1].toLowerCase(),
+        command: item.name,
+        item,
+        file,
+        description: fm.description ?? "",
+      });
+      continue;
+    }
+
     const spec = PACKS[item.name];
     if (spec) item.pack = item.name; // the pack's own row header
     out.push(item);
     indexSource(index, "skills", item, file, fm.description ?? "");
     if (spec) out.push(...(await expandPack(join(dir, name), item, spec, index)));
   }
+}
+
+/**
+ * Fold each pinned shortcut into the pack member it points at, so a command
+ * appears once instead of twice (`distill` under Personal AND `impeccable
+ * distill` under Impeccable).
+ *
+ * A pin whose member isn't there — pack uninstalled, or a stale pin for a
+ * command that no longer exists — is emitted as an ordinary skill rather than
+ * dropped. Losing a real installed file would be worse than showing a redirect.
+ *
+ * Matching is scoped: `pin.mjs` writes into the same skills dir as the pack it
+ * belongs to, so a personal pin must not attach to a project pack.
+ */
+function mergePins(
+  skills: ArsenalItem[],
+  pins: PinnedShortcut[],
+  index: SourceIndex,
+): ArsenalItem[] {
+  if (!pins.length) return skills;
+  const members = new Map<string, ArsenalItem>();
+  for (const s of skills) {
+    if (s.pack && s.pack_command) {
+      members.set(`${s.scope} ${s.source ?? ""} ${s.pack} ${s.pack_command}`, s);
+    }
+  }
+
+  const orphans: ArsenalItem[] = [];
+  for (const pin of pins) {
+    const key = `${pin.item.scope} ${pin.item.source ?? ""} ${pin.pack} ${pin.command}`;
+    const member = members.get(key);
+    if (member) {
+      member.pinned_as = `/${pin.command}`;
+      continue;
+    }
+    orphans.push(pin.item);
+    indexSource(index, "skills", pin.item, pin.file, pin.description);
+  }
+  return orphans.length ? [...skills, ...orphans] : skills;
 }
 
 async function scanAgentsDir(
@@ -488,10 +581,11 @@ export async function computeArsenal(
   const agents: ArsenalItem[] = [];
   const mcp: ArsenalItem[] = [];
   const sources: SourceIndex = new Map();
+  const pins: PinnedShortcut[] = [];
 
   // --- own files: project, then personal ---
-  await scanSkillsDir(join(projClaude, "skills"), "project", undefined, skills, sources);
-  await scanSkillsDir(join(homeClaude, "skills"), "personal", undefined, skills, sources);
+  await scanSkillsDir(join(projClaude, "skills"), "project", undefined, skills, sources, pins);
+  await scanSkillsDir(join(homeClaude, "skills"), "personal", undefined, skills, sources, pins);
   await scanAgentsDir(join(projClaude, "agents"), "project", undefined, agents, sources);
   await scanAgentsDir(join(homeClaude, "agents"), "personal", undefined, agents, sources);
   mcp.push(...mcpItemsFrom(await readJson(join(projectRoot, ".mcp.json")), "project", undefined));
@@ -572,9 +666,13 @@ export async function computeArsenal(
     mcp.push(...pMcp);
   }
 
+  // Fold pinned shortcuts into their pack members before dedupe/sort, so a
+  // command is one card carrying the short name you can type.
+  const withPins = mergePins(skills, pins, sources);
+
   // dedupe skills by scope+source+name (symlink/dir overlaps)
   const seen = new Set<string>();
-  const dedupedSkills = skills.filter((s) => {
+  const dedupedSkills = withPins.filter((s) => {
     const k = `${s.scope}:${s.source ?? ""}:${s.name}`;
     if (seen.has(k)) return false;
     seen.add(k);

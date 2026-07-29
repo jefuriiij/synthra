@@ -153,6 +153,24 @@ describe("scoreArsenal", () => {
     expect(m.skills.map((s) => s.name)).toContain("impeccable");
     expect(m.skills.map((s) => s.name)).not.toContain("impeccable polish");
   });
+
+  // A pinned shortcut is a real installed skill, so it must stay routable. This
+  // guards the reason `pinned_as` exists as its own field: reusing
+  // `pack_command` for it would have silently emptied 23 skills out of the pool.
+  it("still routes a skill that a pack pinned a shortcut for", () => {
+    const pinned = item({
+      name: "harden",
+      description: "make interfaces production-ready with error handling and i18n",
+      pinned_as: "/harden",
+    });
+    const m = scoreArsenal(
+      "make the settings interfaces production-ready with error handling",
+      arsenal([], [pinned]),
+      noExts,
+      1,
+    );
+    expect(m.skills.map((s) => s.name)).toContain("harden");
+  });
 });
 
 describe("scoreDifficulty (v0.18)", () => {
