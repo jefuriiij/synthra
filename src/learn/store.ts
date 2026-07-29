@@ -6,9 +6,10 @@
 // Every read is best-effort: a missing / corrupt / schema-mismatched file yields
 // an empty store, so the ranker degrades to its deterministic behavior.
 
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { writeJsonAtomic } from "../shared/json-store.js";
 import { emptyStore, LEARN_SCHEMA_VERSION, type AccessEvent, type LearnStore } from "./usage.js";
 
 export async function readLearnStore(path: string): Promise<LearnStore> {
@@ -34,8 +35,7 @@ export async function readLearnStore(path: string): Promise<LearnStore> {
 
 export async function writeLearnStore(path: string, store: LearnStore): Promise<void> {
   try {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify(store, null, 2) + "\n", "utf8");
+    await writeJsonAtomic(path, store);
   } catch {
     // Persistence is best-effort; the log remains the source of truth.
   }

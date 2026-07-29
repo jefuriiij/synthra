@@ -10,9 +10,9 @@
 // grammar changes — readParseCache returns an empty cache on a version mismatch,
 // forcing a full re-parse so stale symbols can never leak into the graph.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
+import { writeJsonAtomic } from "../shared/json-store.js";
 import { fileHash } from "./hash.js";
 import { parseSource, type CallSite, type ParsedFile, type ParsedSymbol } from "./parser.js";
 import type { WalkedFile } from "./walker.js";
@@ -56,8 +56,7 @@ export async function readParseCache(path: string): Promise<ParseCache> {
 
 export async function writeParseCache(path: string, cache: ParseCache): Promise<void> {
   try {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${JSON.stringify(cache)}\n`, "utf8");
+    await writeJsonAtomic(path, cache, { pretty: false });
   } catch {
     // Best-effort: a missing/unwritable cache just means the next scan is full.
   }

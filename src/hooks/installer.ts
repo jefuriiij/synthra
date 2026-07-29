@@ -3,10 +3,15 @@
 // regenerates the scripts and merges hook entries cleanly with any user-added
 // hooks already in the file.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { quarantineFile, readJsonFile, writeJsonAtomic } from "../shared/json-store.js";
+import {
+  quarantineFile,
+  readJsonFile,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { SYNTHRA_HOOK_MARKER, stripOurHooks, type HooksConfig } from "./hooks-config.js";
@@ -117,7 +122,9 @@ export async function installHooks(paths: SynthraPaths): Promise<InstallResult> 
   const scriptsWritten: string[] = [];
   for (const s of SCRIPTS) {
     const target = join(paths.claudeHooksDir, `${s.baseName}${chosenScriptExt()}`);
-    await writeFile(target, chosenScriptBody(s), "utf8");
+    // Atomic: a half-written hook script is one Claude Code will still try to
+    // execute on the next tool call.
+    await writeTextAtomic(target, chosenScriptBody(s));
     scriptsWritten.push(target);
   }
 

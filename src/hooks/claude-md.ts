@@ -3,7 +3,9 @@
 // On each run, any prior synthra-policy block (any version) is removed and the
 // current-version block is appended at the end.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+
+import { writeTextAtomic } from "../shared/json-store.js";
 import { basename, dirname } from "node:path";
 
 export const POLICY_VERSION = 9;
@@ -215,7 +217,7 @@ export async function patchClaudeMd(path: string, projectName?: string): Promise
     // First creation: scaffold the onboarding skeleton (user-owned, written
     // once) followed by Synthra's managed policy block.
     const name = projectName || basename(dirname(path)) || "this project";
-    await writeFile(path, onboardingSkeleton(name) + "\n" + block + "\n", "utf8");
+    await writeTextAtomic(path, onboardingSkeleton(name) + "\n" + block + "\n");
     return { created: true, updated: false, skipped: false };
   }
 
@@ -234,6 +236,7 @@ export async function patchClaudeMd(path: string, projectName?: string): Promise
     return { created: false, updated: false, skipped: true };
   }
 
-  await writeFile(path, desired, "utf8");
+  // Atomic: CLAUDE.md is user-authored, git-tracked, and read by Claude itself.
+  await writeTextAtomic(path, desired);
   return { created: false, updated: true, skipped: false };
 }

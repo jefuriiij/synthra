@@ -8,7 +8,9 @@
 // Structure mirrors doctor-command.ts: a pure, testable core (removeSynthra)
 // plus a printing/prompting wrapper (removeCommand).
 
-import { readFile, readdir, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, rmdir, stat, unlink } from "node:fs/promises";
+
+import { writeJsonAtomic, writeTextAtomic } from "../shared/json-store.js";
 import { basename, join, resolve } from "node:path";
 
 import { onboardingSkeleton, stripPolicyBlock } from "../hooks/claude-md.js";
@@ -103,7 +105,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
       await unlink(paths.gitignore);
       result.removed.push(".gitignore (was synthra-only)");
     } else {
-      await writeFile(paths.gitignore, stripped.trimEnd() + "\n", "utf8");
+      await writeTextAtomic(paths.gitignore, stripped.trimEnd() + "\n");
       result.kept.push(".gitignore (synthra entries stripped)");
     }
   }
@@ -123,7 +125,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
         await unlink(paths.claudeMd);
         result.removed.push("CLAUDE.md (was synthra-generated)");
       } else {
-        await writeFile(paths.claudeMd, remainder.trimEnd() + "\n", "utf8");
+        await writeTextAtomic(paths.claudeMd, remainder.trimEnd() + "\n");
         result.kept.push("CLAUDE.md (policy block stripped, your content kept)");
       }
     }
@@ -164,7 +166,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
         await unlink(paths.claudeSettings);
         result.removed.push(".claude/settings.local.json (was synthra-only)");
       } else {
-        await writeFile(paths.claudeSettings, JSON.stringify(config, null, 2) + "\n", "utf8");
+        await writeJsonAtomic(paths.claudeSettings, config);
         result.kept.push(".claude/settings.local.json (synthra hooks stripped)");
       }
     } catch {
@@ -191,7 +193,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
         await unlink(mcpPath);
         result.removed.push(".mcp.json (was synthra-only)");
       } else if (hadSynthra) {
-        await writeFile(mcpPath, JSON.stringify(mcp, null, 2) + "\n", "utf8");
+        await writeJsonAtomic(mcpPath, mcp);
         result.kept.push(".mcp.json (synthra entry removed)");
       } else {
         result.skipped.push(".mcp.json (no synthra entry)");

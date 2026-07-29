@@ -1,7 +1,9 @@
 // Project bootstrap: creates .synthra-graph/, .synthra/, updates .gitignore,
 // patches CLAUDE.md with the versioned policy block.
 
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
+
+import { writeTextAtomic } from "../shared/json-store.js";
 import { basename } from "node:path";
 
 import { patchClaudeMd } from "../hooks/claude-md.js";
@@ -64,7 +66,8 @@ async function patchGitignore(path: string): Promise<boolean> {
     (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
     (existing.length ? "\n" : "") +
     block;
-  await writeFile(path, existing + appendix, "utf8");
+  // Atomic: .gitignore is user-owned, and we're appending to their content.
+  await writeTextAtomic(path, existing + appendix);
   return true;
 }
 

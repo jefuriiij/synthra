@@ -4,9 +4,9 @@
 //   - Next Steps (max 3 bullets)
 // Capped at ~20 visible content lines.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 
+import { writeTextAtomic } from "../shared/json-store.js";
 import type { ContextEntry } from "./context-store.js";
 
 export interface ContextMd {
@@ -76,9 +76,9 @@ export function formatContextMd(ctx: ContextMd): string {
   return lines.join("\n");
 }
 
+/** Atomic because this file is GIT-TRACKED — a torn write gets committed. */
 export async function writeContextMd(path: string, ctx: ContextMd): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, formatContextMd(ctx), "utf8");
+  await writeTextAtomic(path, formatContextMd(ctx));
 }
 
 export async function readContextMd(path: string): Promise<string | null> {

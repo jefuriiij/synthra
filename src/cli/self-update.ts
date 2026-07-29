@@ -18,13 +18,14 @@
 //   capped by FETCH_TIMEOUT_MS. SYN_NO_UPDATE_CHECK=1 opts out of (1)
 //   only; the local last-seen comparison in (2) still fires.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import spawn from "cross-spawn";
 
+import { writeJsonAtomic } from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
 
 const PKG_NAME = "@jefuriiij/synthra";
@@ -113,9 +114,8 @@ async function readLastSeen(): Promise<string | null> {
 
 async function writeLastSeen(version: string): Promise<void> {
   try {
-    await mkdir(SYNTHRA_DIR, { recursive: true });
     const data: LastSeenFile = { version, updated_at: new Date().toISOString() };
-    await writeFile(LAST_SEEN_PATH, JSON.stringify(data, null, 2), "utf8");
+    await writeJsonAtomic(LAST_SEEN_PATH, data);
   } catch {
     // best-effort
   }

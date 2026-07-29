@@ -5,8 +5,9 @@
 // Stop, so there is no migration — a schema mismatch is simply treated as
 // "no snapshot" and the primer degrades to its legacy output.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+
+import { writeJsonAtomic } from "../shared/json-store.js";
 
 export const SESSION_SCHEMA_VERSION = 2;
 
@@ -46,6 +47,5 @@ export async function readSession(path: string): Promise<SessionState | null> {
 }
 
 export async function writeSession(path: string, state: SessionState): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(state, null, 2) + "\n", "utf8");
+  await writeJsonAtomic(path, state);
 }

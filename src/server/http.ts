@@ -161,6 +161,10 @@ export async function startServer(
   const app = buildApp(ctx, port);
   const nodeServer = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
 
+  // Left as a plain write on purpose: four bytes in one syscall can't tear, and
+  // a temp+rename would litter .synthra-graph/ for no gain. The real problem with
+  // this file is ownership — a second server silently overwrites it and orphans
+  // the first — which is a separate fix.
   await writeFile(paths.mcpPort, String(port), "utf8");
 
   // Auto-reindex: a source edit re-runs the incremental scan + swaps the
