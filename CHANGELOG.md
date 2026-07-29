@@ -7,6 +7,55 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.25.0] — 2026-07-29
+
+Audit of every state-file write in Synthra. It found three ways your data could be
+destroyed silently, all sharing one mechanism: **a reader that treated a damaged
+file as an empty one, and a writer that then saved that emptiness over it.** Being
+graceful about a missing file was right; being graceful about a *damaged* file
+quietly deleted things.
+
+### Fixed
+
+- **`.claude/settings.local.json` could be rewritten with only Synthra's hooks.**
+  If that file didn't parse — a hand edit, a merge-conflict marker, an interrupted
+  write by any tool — the hook installer read it as `{}` and saved it back
+  containing nothing but its own entries, discarding every permission you'd
+  granted and every hook another tool had installed. It now refuses to touch a
+  settings file it can't read, sets a copy aside, and tells you which file and why.
+  The hook scripts still get written, so fixing the JSON and re-running completes
+  the install.
+- **A damaged context store could destroy your memory.** `.synthra/` is
+  git-tracked, so this got *committed*. A failed parse read as zero entries, which
+  then (a) saved a one-entry store over however many were really there and
+  (b) rewrote `CONTEXT.md` to say there were none. A damaged store is now set
+  aside intact and nothing is written in its place. Separately, an empty store can
+  no longer replace a `CONTEXT.md` that has content — the guard is on the outcome,
+  so it also covers a deleted store or a mis-resolved branch.
+- **`~/.synthra/projects.json` and `favorites.json` had the same shape of bug** —
+  one bad read and the next write persisted a single-entry file. Both refuse now.
+- **A corrupt graph refused to start Synthra.** `info_graph.json` is ~900 KB and
+  was the likeliest file to be caught half-written, and reading it threw a fatal
+  *"Run `syn scan` first"*. The graph is rebuilt from your filesystem, so losing it
+  costs seconds — Synthra now rescans automatically instead of telling you to run
+  the command it could run itself.
+- **Two `syn .` runs at the same moment could lose a project** from the registry.
+  Each read the file, each added only itself, and one won. Updates are serialized
+  and retried against what actually landed.
+
+### Changed
+
+- **Every state file is now written atomically** — to a temp file, then one rename
+  — so a crash or a killed process can no longer leave a half-written file behind.
+  That's what produced corrupt state in the first place. Covers the graph,
+  `CONTEXT.md`, `CLAUDE.md`, `.gitignore`, `settings.local.json`, `.mcp.json`, the
+  hook scripts, the session snapshot, the parse cache and the usage store. Append-only
+  `.jsonl` logs are untouched — single small appends whose readers already skip bad lines.
+- A file that can't be parsed is moved to `<name>.corrupt-<timestamp>` rather than
+  deleted, so it stays recoverable by hand. `syn doctor` will learn to report these.
+
+---
+
 ## [0.24.0] — 2026-07-28
 
 ### Added
