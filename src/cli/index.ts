@@ -111,8 +111,14 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
   await recordProject(projectRoot);
   const scan = await scanCommand(rawPath, { full: opts.full });
 
-  // 2. MCP server (background within this process)
-  const mcpHandle: ServerHandle = await startServer(paths);
+  // 2. MCP server (background within this process). If a live server already
+  //    owns this project we attach to it rather than binding a rival — a rival
+  //    would keep watching files and writing state while the hooks (which read
+  //    whichever port was written last) talk past it.
+  const mcpHandle: ServerHandle = await startServer(paths, { version: VERSION });
+  if (mcpHandle.alreadyRunning) {
+    log.info(`Synthra is already running for this project on ${mcpHandle.url} — reusing it.`);
+  }
 
   // 3. Dashboard (optional — non-fatal if it fails)
   let dashboardHandle: DashboardServerHandle | null = null;
@@ -122,9 +128,13 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
     log.warn(`dashboard failed to start on port ${cfg.dashboardPort}: ${(err as Error).message}`);
   }
 
-  // 4. Install hooks + register MCP so the IDE / external claude can see it
+  // 4. Install hooks + register MCP so the IDE / external claude can see it.
+  //    When we attached to an existing server its registration already points
+  //    at the right port — re-registering would only churn .mcp.json.
   await installHooks(paths);
-  const mcpRegistered = await registerMcp(cfg.claudeBin, mcpHandle.port, projectRoot);
+  const mcpRegistered = mcpHandle.alreadyRunning
+    ? true
+    : await registerMcp(cfg.claudeBin, mcpHandle.port, projectRoot);
 
   let claudeExitCode = 0;
   try {
@@ -146,7 +156,11 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
       log.info(`received ${sig} — shutting down…`);
     }
   } finally {
-    await unregisterMcp(cfg.claudeBin, projectRoot).catch(() => undefined);
+    // Only tear down the registration if it still points at OUR server — and
+    // never at all if we were merely attached to someone else's.
+    if (!mcpHandle.alreadyRunning) {
+      await unregisterMcp(cfg.claudeBin, projectRoot, mcpHandle.port).catch(() => undefined);
+    }
     if (dashboardHandle) {
       await dashboardHandle
         .stop()

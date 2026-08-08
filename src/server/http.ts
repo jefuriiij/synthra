@@ -4,7 +4,6 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { writeFile } from "node:fs/promises";
 
 import { ActivityStore } from "../activity/activity-log.js";
 import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js";
@@ -18,7 +17,8 @@ import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
 import { handleMcpRequest } from "./mcp.js";
-import { findFreePort } from "./port.js";
+import { checkOwner, claimOwnership, releaseOwnership } from "./owner.js";
+import { reserveFreePort, type PortReservation } from "./port.js";
 import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
@@ -31,12 +31,17 @@ import { handleRoute } from "./routes/route.js";
 export interface ServerHandle {
   port: number;
   url: string;
+  /** True when a live server already owned this project and we deferred to it
+   *  (v0.26). The caller must NOT re-register MCP or treat this as its own. */
+  alreadyRunning?: boolean;
   stop(): Promise<void>;
 }
 
 export interface StartOptions {
   /** Override the port range search. */
   port?: number;
+  /** Recorded in the owner file for diagnostics. */
+  version?: string;
 }
 
 async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
@@ -101,7 +106,13 @@ function buildApp(ctx: ServerContext, port: number): Hono {
     }),
   );
 
-  app.get("/health", (c) => c.json({ ok: true }));
+  // Liveness AND identity. Ports are machine-global and mcp_port outlives the
+  // process that wrote it, so "something answered" is not the same as "our
+  // server answered" — a stale port file can name a port another project's
+  // Synthra now owns. Callers compare project_root before trusting it.
+  app.get("/health", (c) =>
+    c.json({ ok: true, project_root: ctx.paths.projectRoot, pid: process.pid, port }),
+  );
 
   app.get("/prime", async (c) => c.json(await handlePrime(ctx, port)));
 
@@ -155,17 +166,40 @@ export async function startServer(
   paths: SynthraPaths,
   options: StartOptions = {},
 ): Promise<ServerHandle> {
+  // One owner per project (v0.26). If a server for THIS root is already
+  // answering /health, defer to it instead of binding a rival that would
+  // orphan it — the caller decides whether to reuse or refuse.
+  if (!options.port) {
+    const owner = await checkOwner(paths);
+    if (owner.state === "live") {
+      return {
+        port: owner.record.port,
+        url: `http://127.0.0.1:${owner.record.port}`,
+        alreadyRunning: true,
+        async stop() {},
+      };
+    }
+    if (owner.state === "stale") {
+      log.debug(`clearing a stale owner record (port ${owner.record.port} is dead)`);
+    } else if (owner.state === "foreign") {
+      log.warn(
+        `port ${owner.record.port} is now served by a different project ` +
+          `(${owner.servedRoot}) — taking a fresh port for this one.`,
+      );
+    }
+  }
+
   const ctx = await loadContext(paths);
-  const port = options.port ?? (await findFreePort());
+  // Hold the port across the gap between choosing it and binding it, so two
+  // servers starting together can't both pick the same one.
+  const reservation = options.port ? null : await reserveFreePort();
+  const port = options.port ?? (reservation as PortReservation).port;
+  await reservation?.release();
 
   const app = buildApp(ctx, port);
   const nodeServer = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
 
-  // Left as a plain write on purpose: four bytes in one syscall can't tear, and
-  // a temp+rename would litter .synthra-graph/ for no gain. The real problem with
-  // this file is ownership — a second server silently overwrites it and orphans
-  // the first — which is a separate fix.
-  await writeFile(paths.mcpPort, String(port), "utf8");
+  await claimOwnership(paths, port, options.version ?? "unknown");
 
   // Auto-reindex: a source edit re-runs the incremental scan + swaps the
   // in-memory graph so reads never go stale mid-session (debounced; opt out with
@@ -188,7 +222,12 @@ export async function startServer(
     // matches whichever branch is currently checked out.
     if (e.kind === "branch-switch") {
       const to = (e.details as { to?: string } | undefined)?.to ?? "unknown";
-      await rescanAndSwap(ctx, paths, `branch ${to}`);
+      // Through the reindexer so a branch switch can't run a second scanner
+      // alongside an in-flight edit-scan — both write the same graph files, and
+      // whichever finishes last wins regardless of which saw the newer tree.
+      // With auto-reindex off there's no competing scanner to coordinate with.
+      if (reindexer) await reindexer.runNow(`branch ${to}`);
+      else await rescanAndSwap(ctx, paths, `branch ${to}`);
     }
   });
   try {
@@ -213,6 +252,9 @@ export async function startServer(
       await gitWatcher.stop().catch(() => undefined);
       // Persist any pending usage signal before we go down.
       await ctx.learn?.flush().catch(() => undefined);
+      // Drop the port file + owner record so hooks can't keep POSTing at a
+      // dead port (which they'd do silently). Only removes OUR record.
+      await releaseOwnership(paths);
       await new Promise<void>((resolve, reject) => {
         nodeServer.close((err) => (err ? reject(err) : resolve()));
       });

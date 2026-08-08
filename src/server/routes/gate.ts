@@ -270,7 +270,10 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
-  const retrieval = await retrieve(ctx.graph, query);
+  // Pin one generation — the block hint below must be built from the same graph
+  // the decision was made on, and auto-reindex can swap ctx.graph mid-await.
+  const graph = ctx.graph;
+  const retrieval = await retrieve(graph, query);
   // "low" = no real matches → let Grep through; Synthra has nothing useful.
   // "medium" + "high" = Synthra has structured context for this query →
   // bias toward blocking. The pitch ("use graph_continue instead of Grep")
@@ -290,7 +293,7 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   // be stale and they probably want a fresh search.
   const qTokens = new Set(tokenizeQuery(query));
   const recentPaths = ctx.activity.recentFilePaths(RECENT_ACTIVITY_WINDOW_MS);
-  const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens, ctx.graph);
+  const overlap = recentlyTouchedMatchesQuery(recentPaths, qTokens, graph);
 
   if (overlap.length > 0) {
     const res: GateResponse = {
@@ -331,7 +334,7 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     return res;
   }
 
-  const hint = buildBlockHint(query, retrieval, ctx.graph, req.tool_name);
+  const hint = buildBlockHint(query, retrieval, graph, req.tool_name);
   const res: GateResponse = { decision: "block", reason: hint };
   await logDecision(
     ctx,

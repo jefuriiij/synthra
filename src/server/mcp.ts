@@ -795,12 +795,15 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
   // Session-aware routing (#14): seed retrieval with files the session has
   // touched — the human's recent saves + edits the AI registered via
   // graph_register_edit — so the ranker boosts them. Mirrors the /pack route.
-  const retrieval = await retrieve(ctx.graph, query, {
+  // One generation for the whole pack — retrieve and pack must agree on which
+  // graph they're describing, and auto-reindex can swap ctx.graph mid-await.
+  const graph = ctx.graph;
+  const retrieval = await retrieve(graph, query, {
     recentlyEditedPaths: ctx.activity.recentFilePaths(15 * 60 * 1000),
     sessionKnownPaths: getRegisteredEdits(),
     usageScores: ctx.learn?.effectiveScores(),
   });
-  const packed = await pack(retrieval.files, { query, graph: ctx.graph });
+  const packed = await pack(retrieval.files, { query, graph });
 
   // Log the query (no file, weight 0) as query→outcome fuel for a future
   // mechanism — never count retrieval.files, which would feed ranking its own
@@ -1058,7 +1061,13 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const [rawFile, symbolName] = target.includes("::") ? target.split("::", 2) : [target, undefined];
   const filePath = (rawFile ?? "").trim();
 
-  const resolved = resolveFileTarget(ctx.graph, filePath);
+  // Pin one graph generation for the whole handler. Auto-reindex swaps
+  // ctx.graph on any source edit, and this function awaits twice — so reading
+  // it again below could pair THIS file's cached content with line numbers from
+  // a graph rescanned after the edit, slicing out the wrong lines with no error.
+  const graph = ctx.graph;
+
+  const resolved = resolveFileTarget(graph, filePath);
   if ("ambiguous" in resolved) {
     const shown = resolved.ambiguous.slice(0, 5).join(", ");
     const more = resolved.ambiguous.length > 5 ? ", …" : "";
@@ -1075,7 +1084,7 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   // short of an edit. Feed it to the learning layer.
   await logAccess(ctx, { ts: nowIso(), path: fileNode.path, source: "read" });
 
-  const facts = buildFactsFooter(fileNode.path, await safeRecallAll(ctx), ctx.graph);
+  const facts = buildFactsFooter(fileNode.path, await safeRecallAll(ctx), graph);
   const factsBlock = facts ? `\n\n---\n${facts}` : "";
 
   if (!symbolName) {
@@ -1083,7 +1092,7 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   }
 
   const cleanSym = symbolName.trim();
-  const symbol = ctx.graph.nodes.find(
+  const symbol = graph.nodes.find(
     (n): n is SymbolNode => n.kind === "symbol" && n.file === fileNode.path && n.name === cleanSym,
   );
   if (!symbol) {
@@ -1105,10 +1114,10 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
     `\n\n---\n✎ To edit this symbol: Read("${fileNode.path}", offset=${offset}, limit=${limit}) ` +
     `then Edit — that satisfies Claude Code's read-gate at ~${limit} lines; do NOT re-read the whole file.`;
 
-  const deps = buildDepsFooter(symbol, ctx.graph);
+  const deps = buildDepsFooter(symbol, graph);
   const depsBlock = deps ? `\n\n---\n${deps}` : "";
 
-  const tests = buildTestsFooter(symbol, ctx.graph);
+  const tests = buildTestsFooter(symbol, graph);
   const testsBlock = tests ? `\n\n---\n${tests}` : "";
 
   return textContent(

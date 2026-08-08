@@ -18,6 +18,10 @@ const POLL_MS = 2000;
 export interface GitWatcher {
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Re-read .git/HEAD now. This is what the fs.watch callback calls; exposed
+   *  so the re-entrancy guard can be tested without depending on FS event
+   *  timing, which differs per platform and is flaky under CI load. */
+  checkNow(): Promise<void>;
 }
 
 export type GitEventHandler = (e: GitEvent) => void | Promise<void>;
@@ -57,18 +61,38 @@ export function createGitWatcher(root: string, onEvent: GitEventHandler): GitWat
     }
   };
 
+  let headBusy = false;
+  let headDirty = false;
+
+  // fs.watch fires 2-3x for a single `git checkout` on Windows, and the
+  // branch comparison below only happens after an await — so overlapping calls
+  // would each still see the old lastBranch, each emit branch-switch, and each
+  // kick off a rescan of the same tree. Serialize, and re-check once at the end
+  // if HEAD moved again while we were emitting.
   const checkHead = async () => {
-    const branch = await readHeadBranch(root);
-    if (branch && branch !== lastBranch) {
-      const prev = lastBranch;
-      lastBranch = branch;
-      if (prev !== null) {
-        await emitSafe({
-          kind: "branch-switch",
-          details: { from: prev, to: branch },
-          ts: new Date().toISOString(),
-        });
-      }
+    if (headBusy) {
+      headDirty = true;
+      return;
+    }
+    headBusy = true;
+    try {
+      do {
+        headDirty = false;
+        const branch = await readHeadBranch(root);
+        if (branch && branch !== lastBranch) {
+          const prev = lastBranch;
+          lastBranch = branch;
+          if (prev !== null) {
+            await emitSafe({
+              kind: "branch-switch",
+              details: { from: prev, to: branch },
+              ts: new Date().toISOString(),
+            });
+          }
+        }
+      } while (headDirty);
+    } finally {
+      headBusy = false;
     }
   };
 
@@ -94,6 +118,8 @@ export function createGitWatcher(root: string, onEvent: GitEventHandler): GitWat
   };
 
   return {
+    checkNow: checkHead,
+
     async start() {
       // Seed initial branch + status so the first real change emits an event
       // rather than a stale "from null".

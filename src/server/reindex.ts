@@ -48,6 +48,14 @@ export async function rescanAndSwap(
 export interface Reindexer {
   /** Note a change; runs a single rescan once changes settle (debounced). */
   schedule(): void;
+  /**
+   * Rescan immediately, sharing the same non-overlap guard as `schedule()`.
+   * For events that shouldn't wait out the debounce (a branch switch changes
+   * every file at once) but still must not run a second scanner alongside one
+   * already in flight — two concurrent `scanProject` runs write the same graph
+   * files, and the loser's output is what survives.
+   */
+  runNow(label: string): Promise<void>;
   /** Cancel any pending rescan (call on server shutdown). */
   stop(): void;
 }
@@ -70,30 +78,48 @@ export function createReindexer(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running = false;
   let pending = false;
+  let pendingLabel = "edit";
+  let inFlight: Promise<void> = Promise.resolve();
 
-  async function run(): Promise<void> {
+  async function run(label: string): Promise<void> {
     if (running) {
-      pending = true; // changes arrived mid-scan — run once more when done
-      return;
+      // A scan is already going. Don't start a second one — note that the
+      // world moved again and let the current scan chain one more when it
+      // lands. Callers awaiting runNow() await that trailing scan too.
+      pending = true;
+      pendingLabel = label;
+      return inFlight;
     }
     running = true;
-    try {
-      await rescan(ctx, paths, "edit");
-    } finally {
-      running = false;
-      if (pending) {
-        pending = false;
-        void run();
+    inFlight = (async () => {
+      try {
+        await rescan(ctx, paths, label);
+      } finally {
+        running = false;
+        if (pending) {
+          pending = false;
+          await run(pendingLabel);
+        }
       }
-    }
+    })();
+    return inFlight;
   }
 
   return {
+    runNow(label: string) {
+      // A branch switch invalidates everything; a debounced edit-scan already
+      // queued would only rescan the same tree again.
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      return run(label);
+    },
     schedule() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        void run();
+        void run("edit");
       }, debounceMs);
       // Don't keep the process alive just for a pending reindex.
       timer.unref?.();

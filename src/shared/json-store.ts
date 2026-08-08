@@ -233,12 +233,24 @@ function serializeByPath<T>(path: string, fn: () => Promise<T>): Promise<T> {
  * sufficient here: several appends inside one millisecond produce an identical
  * size AND an identical mtime, so a "nothing changed" verdict silently dropped
  * updates. These files are kilobytes, so re-reading them costs nothing.
+ *
+ * `afterWrite` runs while this file's queue slot is still held, receiving the
+ * state that is now on disk. Use it for anything DERIVED from this file that
+ * must not be rendered from a stale read — outside the slot, a concurrent
+ * update can land between the read and the derived write, and the derived
+ * output silently reverts it.
  */
+export interface UpdateOptions<T> {
+  pretty?: boolean;
+  retries?: number;
+  afterWrite?: (data: T) => Promise<void>;
+}
+
 export function updateJsonFile<T>(
   path: string,
   init: () => T,
   mutate: (current: T) => T | null,
-  opts: { pretty?: boolean; retries?: number } = {},
+  opts: UpdateOptions<T> = {},
 ): Promise<UpdateResult<T>> {
   return serializeByPath(path, () => updateOnce(path, init, mutate, opts));
 }
@@ -247,7 +259,7 @@ async function updateOnce<T>(
   path: string,
   init: () => T,
   mutate: (current: T) => T | null,
-  opts: { pretty?: boolean; retries?: number },
+  opts: UpdateOptions<T>,
 ): Promise<UpdateResult<T>> {
   const retries = opts.retries ?? 10;
 
@@ -264,8 +276,14 @@ async function updateOnce<T>(
       };
     }
 
-    const next = mutate(read.status === "ok" ? read.data : init());
-    if (next === null) return { status: "unchanged" };
+    const current = read.status === "ok" ? read.data : init();
+    const next = mutate(current);
+    if (next === null) {
+      // Nothing to write, but the read was authoritative and we still hold the
+      // slot — so a derived view rendered here is just as safe as after a write.
+      await opts.afterWrite?.(current);
+      return { status: "unchanged" };
+    }
 
     const lastAttempt = attempt >= retries;
     const wrote = await writeAtomic(path, serialize(next, opts.pretty ?? true), async () =>
@@ -274,6 +292,7 @@ async function updateOnce<T>(
       lastAttempt ? true : (await readRaw(path)) === before,
     );
     if (wrote) {
+      await opts.afterWrite?.(next);
       return { status: "written", data: next, ...(attempt > 0 ? { contended: true } : {}) };
     }
     // Jitter so a group of contending writers doesn't retry in lockstep.

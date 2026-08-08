@@ -110,3 +110,41 @@ export function recomputeFromLog(events: AccessEvent[]): LearnStore {
   for (const ev of events) foldEvent(store, ev);
   return store;
 }
+
+/** Newest event timestamp in a log, or null for an empty/undateable one. */
+export function latestEventTs(events: AccessEvent[]): string | null {
+  let best: string | null = null;
+  let bestMs = -Infinity;
+  for (const ev of events) {
+    const ms = Date.parse(ev.ts);
+    if (Number.isFinite(ms) && ms > bestMs) {
+      bestMs = ms;
+      best = ev.ts;
+    }
+  }
+  return best;
+}
+
+/**
+ * Combine two aggregates path-by-path, keeping whichever entry folded the more
+ * recent event. Needed because the store is written whole: without a merge, a
+ * writer holding an older view silently drops every path the other one learned.
+ * Weights aren't summed — both sides derive from the same append-only log, so
+ * adding them would double-count shared history.
+ */
+export function mergeStores(ours: LearnStore, theirs: LearnStore): LearnStore {
+  const files: Record<string, FileStat> = { ...theirs.files };
+  for (const [path, stat] of Object.entries(ours.files)) {
+    const other = files[path];
+    // NaN comparisons are false, so an unparseable timestamp on either side
+    // loses to the entry we can actually date.
+    if (!other || Date.parse(stat.lastTs) >= Date.parse(other.lastTs)) files[path] = stat;
+  }
+  const oursAsOf = Date.parse(ours.asOf);
+  const theirsAsOf = Date.parse(theirs.asOf);
+  return {
+    schema_version: LEARN_SCHEMA_VERSION,
+    asOf: oursAsOf >= theirsAsOf || !Number.isFinite(theirsAsOf) ? ours.asOf : theirs.asOf,
+    files,
+  };
+}

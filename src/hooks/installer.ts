@@ -6,12 +6,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import {
-  quarantineFile,
-  readJsonFile,
-  writeJsonAtomic,
-  writeTextAtomic,
-} from "../shared/json-store.js";
+import { updateJsonFile, writeTextAtomic } from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { SYNTHRA_HOOK_MARKER, stripOurHooks, type HooksConfig } from "./hooks-config.js";
@@ -80,22 +75,6 @@ function chosenScriptExt(): string {
   return process.platform === "win32" ? ".ps1" : ".sh";
 }
 
-// NOTE: this used to `catch { return {} }`, and the caller then merged our hooks
-// into that empty object and wrote it back — silently discarding every permission
-// the user had granted and every non-Synthra hook in the file. settings.local.json
-// is user-owned and Claude Code writes it too, so an unreadable one now stops the
-// install rather than replacing it.
-async function readSettings(path: string): Promise<HooksConfig | { unreadable: string }> {
-  const read = await readJsonFile<HooksConfig>(path);
-  if (read.status === "ok") return read.data;
-  if (read.status === "missing") return {}; // first run — safe to create
-  return { unreadable: read.error };
-}
-
-function isUnreadable(v: HooksConfig | { unreadable: string }): v is { unreadable: string } {
-  return "unreadable" in v && typeof (v as { unreadable: unknown }).unreadable === "string";
-}
-
 function mergeOurHooks(config: HooksConfig, paths: SynthraPaths): HooksConfig {
   const hooks = (config.hooks = config.hooks ?? {});
   for (const s of SCRIPTS) {
@@ -129,21 +108,27 @@ export async function installHooks(paths: SynthraPaths): Promise<InstallResult> 
   }
 
   await mkdir(dirname(paths.claudeSettings), { recursive: true });
-  const existing = await readSettings(paths.claudeSettings);
 
-  if (isUnreadable(existing)) {
-    // Refuse rather than rebuild. The file holds the user's permissions and any
-    // hooks other tools installed; merging into a blank object would erase them.
-    const moved = await quarantineFile(paths.claudeSettings);
+  // Read-merge-write in one verified step. Claude Code owns this file too and
+  // rewrites it on every permission approval, so reading it, merging, and
+  // writing as separate steps silently discarded any approval granted in the
+  // gap. A corrupt file is quarantined and NOT rebuilt: merging our hooks into
+  // a blank object would erase every permission and every other tool's hooks.
+  const result = await updateJsonFile<HooksConfig>(
+    paths.claudeSettings,
+    () => ({}), // first run — safe to create
+    (current) => mergeOurHooks(stripOurHooks(current), paths),
+  );
+
+  if (result.status === "corrupt") {
     log.error(
-      `${paths.claudeSettings} could not be parsed (${existing.unreadable}) — hooks were NOT registered so your permissions aren't overwritten.` +
-        (moved ? ` A copy is at ${moved}; fix the JSON or restore it, then re-run \`syn .\`.` : ""),
+      `${paths.claudeSettings} could not be parsed (${result.error}) — hooks were NOT registered so your permissions aren't overwritten.` +
+        (result.quarantined
+          ? ` A copy is at ${result.quarantined}; fix the JSON or restore it, then re-run \`syn .\`.`
+          : ""),
     );
-    return { scriptsWritten, settingsUpdated: false, settingsUnreadable: existing.unreadable };
+    return { scriptsWritten, settingsUpdated: false, settingsUnreadable: result.error };
   }
-
-  const merged = mergeOurHooks(stripOurHooks(existing), paths);
-  await writeJsonAtomic(paths.claudeSettings, merged);
 
   log.debug(`installed ${scriptsWritten.length} hook script(s) into ${paths.claudeHooksDir}`);
 

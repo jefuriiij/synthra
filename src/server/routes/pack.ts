@@ -25,14 +25,17 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
 
   const recentlyEditedPaths = ctx.activity.recentFilePaths(15 * 60 * 1000);
   const usageScores = ctx.learn?.effectiveScores();
-  const retrieval = await retrieve(ctx.graph, req.query, { recentlyEditedPaths, usageScores });
+  // Pin one generation: auto-reindex can swap ctx.graph across the awaits
+  // below, and retrieval, scoring and packing must all describe the same graph.
+  const graph = ctx.graph;
+  const retrieval = await retrieve(graph, req.query, { recentlyEditedPaths, usageScores });
 
   // Surface per-file scoring rationale in the rendered pack.
-  const allFiles = ctx.graph.nodes.filter((n) => n.kind === "file");
+  const allFiles = graph.nodes.filter((n) => n.kind === "file");
   const scored = scoreFiles({
     candidates: allFiles as Parameters<typeof scoreFiles>[0]["candidates"],
     query: req.query,
-    graph: ctx.graph,
+    graph,
     recentlyEditedPaths,
     usageScores,
   });
@@ -43,7 +46,7 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
 
   const result = await pack(retrieval.files, {
     query: req.query,
-    graph: ctx.graph,
+    graph,
     budgetTokens: req.maxTokens,
     includeTests: req.includeTests,
     reasons,

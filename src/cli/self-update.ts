@@ -25,7 +25,7 @@ import { createInterface } from "node:readline/promises";
 
 import spawn from "cross-spawn";
 
-import { writeJsonAtomic } from "../shared/json-store.js";
+import { readJsonFile, updateJsonFile } from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
 
 const PKG_NAME = "@jefuriiij/synthra";
@@ -103,19 +103,30 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 }
 
 async function readLastSeen(): Promise<string | null> {
-  try {
-    const raw = await readFile(LAST_SEEN_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<LastSeenFile>;
-    return parsed.version ?? null;
-  } catch {
-    return null;
-  }
+  const read = await readJsonFile<Partial<LastSeenFile>>(LAST_SEEN_PATH);
+  // Missing and corrupt both mean "we don't know" — the only cost of being
+  // wrong here is showing a changelog twice.
+  return read.status === "ok" ? (read.data.version ?? null) : null;
 }
 
+/**
+ * Record the version whose changelog we've shown.
+ *
+ * This file is machine-wide (`~/.synthra/`), so every project's `syn .` writes
+ * it — two starting together is ordinary, not exotic. Never move the record
+ * backwards: an older binary running after a newer one would otherwise make the
+ * newer version's changelog reappear on the next run.
+ */
 async function writeLastSeen(version: string): Promise<void> {
   try {
-    const data: LastSeenFile = { version, updated_at: new Date().toISOString() };
-    await writeJsonAtomic(LAST_SEEN_PATH, data);
+    await updateJsonFile<LastSeenFile>(
+      LAST_SEEN_PATH,
+      () => ({ version, updated_at: new Date().toISOString() }),
+      (current) => {
+        if (current.version && !isNewer(version, current.version)) return null;
+        return { version, updated_at: new Date().toISOString() };
+      },
+    );
   } catch {
     // best-effort
   }

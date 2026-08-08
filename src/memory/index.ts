@@ -13,6 +13,7 @@ import { deriveContextMd, readContextMd, writeContextMd } from "./context-md.js"
 import {
   appendEntry,
   readStore,
+  renderFromStore,
   type ContextEntry,
   type EntryAnchor,
   type EntryKind,
@@ -102,7 +103,12 @@ export async function rememberEntry(
     date: new Date().toISOString(),
     ...(input.anchors && input.anchors.length > 0 ? { anchors: input.anchors } : {}),
   };
-  const written = await appendEntry(active.paths.contextStore, entry);
+  // Refresh CONTEXT.md inside the store's write window (see renderFromStore):
+  // publishing afterwards, from this call's own view of the entries, is what
+  // let two concurrent writers each render a narrative missing the other's.
+  const written = await appendEntry(active.paths.contextStore, entry, (entries) =>
+    publishContextMd(active.paths.contextMd, entries, active.branch).then(() => undefined),
+  );
 
   if (written.status === "corrupt") {
     // Do NOT derive CONTEXT.md here. Deriving from a store we couldn't read is
@@ -119,13 +125,6 @@ export async function rememberEntry(
       unreadable: written.error,
     };
   }
-
-  // Refresh CONTEXT.md so the narrative stays in sync with the structured store.
-  await publishContextMd(
-    active.paths.contextMd,
-    written.status === "written" ? written.data.entries : [],
-    active.branch,
-  );
 
   return {
     entry,
@@ -178,7 +177,16 @@ export async function recallEntries(
 
 export async function refreshContextMd(paths: SynthraPaths, branchOverride?: string) {
   const active = await resolveActiveBranch(paths, branchOverride);
-  const read = await readStore(active.paths.contextStore);
+
+  // Read the store and publish the narrative in one uninterruptible step. As
+  // two steps, a `context_remember` landing in between was silently dropped
+  // from the git-tracked CONTEXT.md — the entry stayed in the store, so the
+  // only evidence was a narrative quietly missing a line.
+  let entriesSeen = 0;
+  const read = await renderFromStore(active.paths.contextStore, async (entries) => {
+    entriesSeen = entries.length;
+    await publishContextMd(active.paths.contextMd, entries, active.branch);
+  });
 
   // The Stop hook calls this after every session. Rewriting the git-tracked
   // CONTEXT.md from an unreadable store would replace a real narrative with
@@ -195,10 +203,9 @@ export async function refreshContextMd(paths: SynthraPaths, branchOverride?: str
     };
   }
 
-  await publishContextMd(active.paths.contextMd, read.entries, active.branch);
   return {
     branch: active.branch,
     path: active.paths.contextMd,
-    entriesSeen: read.entries.length,
+    entriesSeen,
   };
 }

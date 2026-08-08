@@ -13,6 +13,7 @@ import spawn from "cross-spawn";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import type { GraphSchema } from "../graph/types.js";
 import { POLICY_VERSION } from "../hooks/claude-md.js";
+import { probeHealth, sameRoot } from "../server/owner.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
@@ -48,6 +49,53 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The `MCP server` check: read the port file the hooks read, then ask whoever
+ * holds that port who they serve.
+ *
+ * Three distinct failures hide behind "the port file exists":
+ *   - nobody is listening → the file is a corpse from a hard kill, and hooks
+ *     have been no-oping silently ever since;
+ *   - someone is listening but serves another project → that port was recycled,
+ *     so this project's hooks are reading and writing *their* state;
+ *   - it's a live server for this project → all good.
+ */
+async function checkMcpServer(portFile: string, projectRoot: string): Promise<DoctorCheck> {
+  const label = "MCP server";
+  let raw: string;
+  try {
+    raw = (await readFile(portFile, "utf8")).trim();
+  } catch {
+    return {
+      status: "ok",
+      label,
+      detail: "not running (no mcp_port) — hooks stay inert until you run `syn .` here.",
+    };
+  }
+
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port <= 0) {
+    return { status: "warn", label, detail: `mcp_port is not a port number (${raw || "empty"}).` };
+  }
+
+  const health = await probeHealth(port);
+  if (!health) {
+    return {
+      status: "warn",
+      label,
+      detail: `stale port file — nothing is listening on :${port}, so every hook silently no-ops (no gating, no CONTEXT.md refresh). Run \`syn .\` here.`,
+    };
+  }
+  if (!sameRoot(health.project_root, projectRoot)) {
+    return {
+      status: "fail",
+      label,
+      detail: `:${port} is served by a different project (${health.project_root}) — this project's hooks are talking to it. Run \`syn .\` here to take a fresh port.`,
+    };
+  }
+  return { status: "ok", label, detail: `listening on :${port} (pid ${health.pid})` };
 }
 
 /** Collect the diagnostic checks for a project. Pure of console output so it can
@@ -136,6 +184,13 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
       });
     }
   }
+
+  // Is a server actually reachable on the port the hooks will use?
+  //
+  // Worth its own check because the failure is invisible: every hook script
+  // ends in `catch { exit 0 }`, so a dead port means the Moat stops gating and
+  // CONTEXT.md stops refreshing with nothing logged anywhere.
+  checks.push(await checkMcpServer(paths.mcpPort, projectRoot));
 
   // MCP registration for the IDE (.mcp.json at the project root)
   checks.push(

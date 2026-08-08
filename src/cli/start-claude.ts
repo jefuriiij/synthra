@@ -7,6 +7,8 @@
 //     itself so the default flow can skip the CLI spawn.
 
 import spawn from "cross-spawn";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { installHooks } from "../hooks/installer.js";
 import { loadConfig } from "../shared/config.js";
@@ -60,9 +62,44 @@ export async function registerMcp(bin: string, mcpPort: number, cwd: string): Pr
   return true;
 }
 
-export async function unregisterMcp(bin: string, cwd: string): Promise<void> {
+/**
+ * Remove our MCP registration on shutdown — but ONLY if it still points at us.
+ *
+ * `--scope project` is a single shared entry in .mcp.json, not one per process.
+ * Before v0.26 a shutting-down server ran this unconditionally, so when two
+ * `syn` instances shared a project, the first to exit deleted the *other's*
+ * registration: Claude Code lost the synthra MCP server mid-session while a
+ * healthy server was still listening, with both `claude mcp` calls exiting 0
+ * and nothing logged above debug.
+ */
+export async function unregisterMcp(bin: string, cwd: string, ownPort?: number): Promise<void> {
+  if (ownPort !== undefined) {
+    const registered = await readRegisteredPort(cwd);
+    if (registered !== null && registered !== ownPort) {
+      log.debug(
+        `leaving MCP registration alone — it points at :${registered}, not our :${ownPort}`,
+      );
+      return;
+    }
+  }
   const r = await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "project"], cwd);
   if (r.code === 0) log.debug("unregistered MCP server");
+}
+
+/** The port in .mcp.json's synthra entry — the same file `--scope project` writes. */
+export async function readRegisteredPort(cwd: string): Promise<number | null> {
+  try {
+    const raw = await readFile(join(cwd, ".mcp.json"), "utf8");
+    const url = (JSON.parse(raw) as McpJson)?.mcpServers?.[MCP_NAME]?.url;
+    const m = typeof url === "string" ? /:(\d+)(?:\/|$)/.exec(url) : null;
+    return m?.[1] ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+interface McpJson {
+  mcpServers?: Record<string, { url?: string } | undefined>;
 }
 
 export interface SpawnClaudeOptions {

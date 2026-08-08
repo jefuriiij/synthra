@@ -64,6 +64,34 @@ describe("installHooks", () => {
     expect(ours).toHaveLength(1);
   });
 
+  // v0.26: Claude Code owns this file too and rewrites it on every permission
+  // approval. Reading it, merging, and writing back as separate steps meant an
+  // approval granted in that gap was silently discarded.
+  it("keeps a permission written concurrently with the install", async () => {
+    const paths = await project();
+    await mkdir(paths.claudeDir, { recursive: true });
+    await writeFile(paths.claudeSettings, JSON.stringify(REAL_SETTINGS, null, 2), "utf8");
+
+    // Land a new permission while installHooks is mid-flight.
+    const racer = (async () => {
+      const current = JSON.parse(await readFile(paths.claudeSettings, "utf8"));
+      current.permissions = current.permissions ?? {};
+      current.permissions.allow = [
+        ...(current.permissions.allow ?? []),
+        "Bash(granted-mid-install)",
+      ];
+      await writeFile(paths.claudeSettings, JSON.stringify(current, null, 2), "utf8");
+    })();
+
+    const [r] = await Promise.all([installHooks(paths), racer]);
+    expect(r.settingsUpdated).toBe(true);
+
+    const cfg = JSON.parse(await readFile(paths.claudeSettings, "utf8"));
+    expect(cfg.permissions?.allow).toContain("Bash(granted-mid-install)");
+    // ...and our hooks still registered.
+    expect(JSON.stringify(cfg.hooks)).toContain("synthra-hook=true");
+  });
+
   // THE regression. Before this, an unparseable settings file was read as {},
   // merged, and written back containing only Synthra's hooks — annihilating the
   // user's permissions and any hook another tool had installed.

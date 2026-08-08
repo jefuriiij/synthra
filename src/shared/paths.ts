@@ -20,6 +20,7 @@ export interface SynthraPaths {
   learnStore: string;
   parseCache: string;
   mcpPort: string;
+  mcpOwner: string;
   mcpServerLog: string;
   mcpServerErrLog: string;
   contextStore: string;
@@ -55,6 +56,7 @@ export function resolvePaths(projectRoot: string): SynthraPaths {
     learnStore: join(graphDir, "learn_store.json"),
     parseCache: join(graphDir, "parse_cache.json"),
     mcpPort: join(graphDir, "mcp_port"),
+    mcpOwner: join(graphDir, "mcp_owner.json"),
     mcpServerLog: join(graphDir, "mcp_server.log"),
     mcpServerErrLog: join(graphDir, "mcp_server.err.log"),
     contextStore: join(contextDir, "context-store.json"),

@@ -22,6 +22,13 @@ export async function serveCommand(rawPath: string): Promise<void> {
   }
 
   const handle = await startServer(paths);
+  if (handle.alreadyRunning) {
+    // Starting a rival would orphan the live one: it keeps watching files and
+    // writing state while every hook talks to whoever wrote mcp_port last.
+    log.info(`Synthra is already running for this project on ${handle.url} — nothing to do.`);
+    log.info("stop that instance first if you want a fresh server.");
+    return;
+  }
   log.info(`MCP server listening on ${handle.url}`);
   log.info(`port written to ${paths.mcpPort}`);
   log.info("press Ctrl+C to stop.");

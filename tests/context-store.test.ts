@@ -148,3 +148,47 @@ describe("rememberEntry / refreshContextMd with a damaged store", () => {
     expect(r.unreadable).toBeTruthy();
   });
 });
+
+// v0.26 — CONTEXT.md is git-tracked and derived, and it used to be rendered
+// from a read taken OUTSIDE the store's write window. An entry landing in the
+// gap survived in the store but vanished from the narrative, so the only
+// evidence was a committed file quietly missing a line.
+describe("CONTEXT.md can't regress under concurrent writers", () => {
+  it("keeps an entry remembered while a refresh is in flight", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-ctx-race-"));
+    const paths = resolvePaths(root);
+    await writeEntries(paths.contextStore, [entry("first")]);
+
+    // Fire both without awaiting between them: the refresh reads the store and
+    // the remember appends to it in the same tick.
+    await Promise.all([
+      refreshContextMd(paths),
+      rememberEntry(paths, { text: "landed mid-refresh", kind: "decision" }),
+    ]);
+
+    const md = await readFile(paths.contextMd, "utf8");
+    expect(md).toContain("first");
+    expect(md).toContain("landed mid-refresh");
+    // And the store itself never lost anything either.
+    const stored = await recallEntries(paths);
+    expect(stored.entries.map((e) => e.content)).toEqual(["first", "landed mid-refresh"]);
+  });
+
+  it("loses no entry when several are remembered at once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-ctx-race-"));
+    const paths = resolvePaths(root);
+    const texts = ["alpha", "beta", "gamma", "delta"];
+
+    await Promise.all(texts.map((t) => rememberEntry(paths, { text: t, kind: "decision" })));
+
+    // Every writer's entry survives, whatever order they interleaved in.
+    const stored = (await recallEntries(paths)).entries.map((e) => e.content);
+    expect(stored.sort()).toEqual([...texts].sort());
+
+    // The narrative shows the most recent MAX_BULLETS (3) decisions — the point
+    // is that the last render saw the complete store, not a partial one.
+    const md = await readFile(paths.contextMd, "utf8");
+    expect(md).toContain(stored[stored.length - 1]);
+    expect(md.match(/^- /gm)?.length).toBe(3);
+  });
+});

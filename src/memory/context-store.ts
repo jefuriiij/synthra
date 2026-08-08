@@ -65,8 +65,16 @@ export async function writeEntries(path: string, entries: ContextEntry[]): Promi
 }
 
 /** Append one entry. Returns `corrupt` — having quarantined the damaged file —
- *  rather than replacing a store it couldn't read. */
-export async function appendEntry(path: string, entry: ContextEntry): Promise<UpdateResult<Store>> {
+ *  rather than replacing a store it couldn't read.
+ *
+ *  `onPersisted` runs before the store's queue slot is released, so a derived
+ *  view (CONTEXT.md) can be rendered from exactly these entries with no other
+ *  writer able to interleave. */
+export async function appendEntry(
+  path: string,
+  entry: ContextEntry,
+  onPersisted?: (entries: ContextEntry[]) => Promise<void>,
+): Promise<UpdateResult<Store>> {
   return updateJsonFile<Store>(
     path,
     () => ({ schema_version: SCHEMA_VERSION, entries: [] }),
@@ -74,5 +82,26 @@ export async function appendEntry(path: string, entry: ContextEntry): Promise<Up
       schema_version: SCHEMA_VERSION,
       entries: [...(Array.isArray(store.entries) ? store.entries : []), entry],
     }),
+    onPersisted ? { afterWrite: (store) => onPersisted(store.entries) } : {},
+  );
+}
+
+/**
+ * Render a derived view of the store while holding its queue slot, without
+ * changing it. This is how CONTEXT.md gets refreshed safely: reading the store
+ * and then writing the narrative as two separate steps lets a `context_remember`
+ * land in between, and the narrative — written from the older read — drops it.
+ * The entry survives in the store, so the loss shows up only in the git-tracked
+ * file nobody diffs.
+ */
+export async function renderFromStore(
+  path: string,
+  render: (entries: ContextEntry[]) => Promise<void>,
+): Promise<UpdateResult<Store>> {
+  return updateJsonFile<Store>(
+    path,
+    () => ({ schema_version: SCHEMA_VERSION, entries: [] }),
+    () => null, // read-only: never rewrite the store just to publish a view
+    { afterWrite: (store) => render(Array.isArray(store.entries) ? store.entries : []) },
   );
 }

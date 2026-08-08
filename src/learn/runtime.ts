@@ -7,6 +7,7 @@ import { appendAccess, readAccessLog, readLearnStore, writeLearnStore } from "./
 import {
   effectiveScores,
   foldEvent,
+  latestEventTs,
   recomputeFromLog,
   type AccessEvent,
   type LearnStore,
@@ -27,13 +28,23 @@ export class LearnRuntime {
     this.store = store;
   }
 
-  /** Load the aggregate from disk; if it's empty but a raw log exists, replay it
-   *  (the log is the source of truth). Always succeeds — falls back to empty. */
+  /**
+   * Load the aggregate from disk, replaying the raw access log whenever the
+   * aggregate is behind it. The log is append-only and authoritative; the
+   * aggregate is a cache, so any disagreement is resolved in the log's favor.
+   *
+   * Checking "is it stale" rather than "is it empty" is what makes this
+   * self-healing: a store truncated or clobbered by an older writer keeps some
+   * files, so an empty-only check would accept it and quietly serve a ranking
+   * built on partial history forever. Always succeeds — falls back to empty.
+   */
   static async load(accessLogPath: string, storePath: string): Promise<LearnRuntime> {
     let store = await readLearnStore(storePath);
-    if (Object.keys(store.files).length === 0) {
-      const events = await readAccessLog(accessLogPath);
-      if (events.length > 0) store = recomputeFromLog(events);
+    const events = await readAccessLog(accessLogPath);
+    const newest = latestEventTs(events);
+    // An empty store's asOf is the epoch, so this also covers the cold-start case.
+    if (newest !== null && Date.parse(newest) > Date.parse(store.asOf)) {
+      store = recomputeFromLog(events);
     }
     return new LearnRuntime(accessLogPath, storePath, store);
   }

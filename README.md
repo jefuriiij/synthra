@@ -74,6 +74,7 @@ The newer, bigger lever is **model routing**: on heavy usage the assistant can d
 | **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
 | **Activity awareness** | Watches file saves, branch switches, uncommitted diffs | Claude knows what you changed between turns |
 | **Live token dashboard** | Cost, model breakdown, savings floor, Moat blocks, hot files | See exactly where your spend goes |
+| **Favorites** | Heart any skill or agent in the Arsenal; they get their own cross-cut Favorites row | Find your go-to tools without re-browsing every category |
 | **Reuse detection** | `find_symbol` / `duplicate_symbols` surface existing code before you write new | Less duplicated, over-engineered code |
 | **Edit-safety** | `blast_radius` shows callers + guarding tests before a rename | Change things without breaking them |
 | **Auto-reindex on edit** | The graph rescans ~1s after edits settle | Tools never serve stale code mid-session |
@@ -160,7 +161,7 @@ The platform-agnostic parts — `syn scan`, `syn serve`, `syn dashboard`, the MC
 Live at **http://127.0.0.1:8901** (falls back through 8901–8910 if the port is busy). Three views plus two dialogs:
 
 - **Overview** — cost hero, model breakdown donut, the Moat card, savings floor, hot files, recent turns, tool usage.
-- **Arsenal** — every skill, subagent, and MCP server installed for this project (scoped project / personal / plugin) with descriptions — so you never drop to the CLI to recall your toolkit.
+- **Arsenal** — every skill, subagent, and MCP server installed for this project (scoped project / personal / plugin) with descriptions — so you never drop to the CLI to recall your toolkit. Heart your go-to skills and agents and they get their own **Favorites** row up top.
 - **Commands** — every `syn` command with its flags and description.
 - **Report** — runs the doctor checks live and shows the ✅/⚠️/❌ list (often that alone is the fix). One click copies a **redacted** markdown diagnostic (home paths → `~`); two buttons open GitHub's bug / feature forms. Nothing is ever sent automatically.
 - **FAQ** — the short version of this README.

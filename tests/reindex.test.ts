@@ -136,4 +136,43 @@ describe("createReindexer", () => {
     await sleep(20);
     expect(calls).toBe(2);
   });
+
+  // v0.26: a branch switch used to call rescanAndSwap directly, bypassing the
+  // guard above. Two scanProject runs then wrote the same graph files at once
+  // and whichever finished last won — regardless of which saw the newer tree.
+  it("runNow shares the non-overlap guard with schedule()", async () => {
+    const labels: string[] = [];
+    let releaseFirst: (() => void) | null = null;
+    const rescan = (_c: ServerContext, _p: SynthraPaths, label: string): Promise<void> => {
+      labels.push(label);
+      if (labels.length === 1) return new Promise<void>((res) => (releaseFirst = () => res()));
+      return Promise.resolve();
+    };
+    const rx = createReindexer(stubCtx, stubPaths, { debounceMs: 5, rescan });
+
+    rx.schedule();
+    await sleep(20); // edit-scan is in flight
+    expect(labels).toEqual(["edit"]);
+
+    const branch = rx.runNow("branch feature/x");
+    await sleep(20); // must NOT start a second scanner alongside the first
+    expect(labels).toEqual(["edit"]);
+
+    releaseFirst?.();
+    await branch;
+    expect(labels).toEqual(["edit", "branch feature/x"]);
+  });
+
+  it("runNow drops a queued debounce — a branch switch invalidates everything", async () => {
+    const labels: string[] = [];
+    const rx = createReindexer(stubCtx, stubPaths, {
+      debounceMs: 30,
+      rescan: async (_c, _p, label) => void labels.push(label),
+    });
+
+    rx.schedule(); // queued, not yet fired
+    await rx.runNow("branch main");
+    await sleep(60); // the pending edit-scan must not fire on top of it
+    expect(labels).toEqual(["branch main"]);
+  });
 });

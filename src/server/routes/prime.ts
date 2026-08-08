@@ -143,6 +143,10 @@ function buildResumeDigest(
 }
 
 export async function handlePrime(ctx: ServerContext, port: number): Promise<PrimeResponse> {
+  // Pin the same generation legacyPrimer just read (it runs before any await),
+  // so the resume digest and the primer below it can't describe two different
+  // graphs when auto-reindex lands mid-request.
+  const graph = ctx.graph;
   const legacy = legacyPrimer(ctx);
 
   const snap = await readSession(ctx.paths.sessionState);
@@ -154,7 +158,7 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
   let changedSymbolLines: string[] = [];
   if (snap.headSha) {
     const ranges = await getChangedLineRanges(ctx.paths.projectRoot, snap.headSha);
-    changedSymbolLines = changedSymbolsSection(ranges, ctx.graph);
+    changedSymbolLines = changedSymbolsSection(ranges, graph);
   }
   const digest = buildResumeDigest(snap, branchNow, changedSymbolLines);
   return { primer: `${digest}\n\n---\n\n${legacy}`, port };
