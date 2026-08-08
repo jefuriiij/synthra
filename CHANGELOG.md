@@ -7,6 +7,84 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.26.0] — 2026-08-08
+
+v0.25 stopped Synthra from destroying a file it had misread. This one is about the
+other half: **nothing in Synthra knew who owned a project right now.** No lockfile,
+no liveness check, no link between a port and the project it serves. Open a second
+`syn` on the same repo — or just close one and open it later — and the pieces
+started talking past each other, silently.
+
+Nothing here changes the hook scripts, so **you don't need to re-run `syn .`** for
+these fixes to take effect. Updating the package is enough.
+
+### Fixed
+
+- **A second `syn` no longer orphans the first.** It used to bind another port,
+  overwrite `.synthra-graph/mcp_port`, and leave the original server running —
+  still watching your files and writing state — while every hook talked to
+  whichever process wrote the port file last. Synthra now checks whether a server
+  for this project is already answering and reuses it: `Synthra is already running
+  for this project on :8081 — reusing it.`
+- **Shutting one instance down no longer unregisters another's MCP server.**
+  `claude mcp remove --scope project` targets a single shared entry in `.mcp.json`,
+  not one per process, so the first instance to exit deleted the *other's*
+  registration. Claude Code lost the `synthra` MCP server mid-session while a
+  healthy server was still listening — both `claude mcp` calls exited 0 and nothing
+  was logged. The registration is now only removed when it still points at the
+  instance that's leaving.
+- **A clean exit no longer leaves a port file naming a dead port.** Nothing ever
+  removed `mcp_port`, and every hook script ends in `catch { exit 0 }` by design —
+  so a stale file didn't produce an error anywhere, it just quietly switched off
+  the Moat and stopped `CONTEXT.md` from refreshing. Both the port file and the new
+  owner record are now cleared on shutdown, and only ever by their own owner.
+- **Synthra won't adopt a port that another project now serves.** Ports are
+  machine-global and `mcp_port` outlives the process that wrote it, so a stale file
+  could name a port a *different* project's Synthra had since claimed — sending
+  this project's `/context-update` into that project's paths and rewriting **its**
+  git-tracked `CONTEXT.md`. `/health` now reports which project root it serves, and
+  the answer is checked before anything trusts the port.
+- **`syn doctor` diagnoses all of the above.** New `MCP server` check: warns
+  `stale port file — nothing is listening on :8081, so every hook silently no-ops`,
+  and fails outright when the port belongs to another project.
+- **`CONTEXT.md` can no longer lose an entry it just saved.** The narrative was
+  rendered from a store read taken *before* a concurrent `context_remember` landed,
+  and its write won. The entry survived in the store, so the only evidence was a
+  git-tracked file quietly missing a line. Rendering now happens inside the store's
+  write window.
+- **`graph_read` can no longer return the wrong lines.** It captured a file's
+  content, awaited, then looked the symbol up again — so an auto-reindex landing in
+  between paired old file content with new line numbers and sliced out whatever
+  happened to be there. Every handler that spans an await now pins one graph
+  generation. Same fix in `graph_continue`, `/pack`, `/gate` and `/prime`, where
+  retrieval and rendering could describe two different graphs.
+- **A branch switch no longer starts a scan alongside one already running.** Both
+  wrote the same graph files, and whichever finished last won — regardless of which
+  had seen the newer tree. Branch switches now go through the same non-overlap
+  guard as edit-scans. Relatedly, `.git/HEAD` fires two or three times per checkout
+  on Windows, and the branch comparison happened after an await, so one switch
+  could be detected twice.
+- **A permission granted while `syn .` is starting is no longer discarded.**
+  Claude Code writes `settings.local.json` on every approval; the hook installer
+  read it, merged, and wrote it back as separate steps.
+- **The usage-learning store now repairs itself.** It's a cache of an append-only
+  log, but it only replayed that log when it was completely *empty* — so a store
+  clobbered by an older writer kept some files, passed the check, and served a
+  ranking built on partial history indefinitely. It now replays whenever it's
+  behind the log, and merges against what's on disk rather than overwriting it.
+- **`~/.synthra/last-seen-version.json`** goes through the same safe read-write
+  path as every other state file, and never moves backwards.
+
+### Added
+
+- `.synthra-graph/mcp_owner.json` — who owns this project: port, pid, project root,
+  start time, version. Only `syn` reads it. `mcp_port` deliberately stays a bare
+  integer, because the hook scripts parse it directly and are only rewritten on
+  `syn .`.
+- `GET /health` now returns `{ ok, project_root, pid, port }` instead of `{ ok }`.
+
+---
+
 ## [0.25.0] — 2026-07-29
 
 Audit of every state-file write in Synthra. It found three ways your data could be
