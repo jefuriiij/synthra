@@ -7,6 +7,61 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.27.0] — 2026-08-09
+
+Synthra runs two unauthenticated HTTP servers on your machine while you work, and
+binding them to `127.0.0.1` is not the boundary it feels like. This release closes
+that, and finishes the last three items from v0.26's concurrency audit.
+
+Nothing here changes the hook scripts, so **no need to re-run `syn .`** — updating
+the package is enough.
+
+### Security
+
+- **Both servers now refuse requests that aren't addressed to localhost.** Previously
+  any page open in your browser could be used to reach them. The technique is DNS
+  rebinding: an attacker's page re-points its own domain at `127.0.0.1`, then fetches
+  its own origin. The browser considers that same-origin, so no CORS applies and the
+  response body is readable by the attacker's script. Binding to loopback doesn't
+  help — the browser is *on* your machine and makes the request for them.
+
+  This mattered most for the MCP server, where `POST /mcp` exposes `graph_read` — a
+  read-any-file-in-the-project primitive with nothing in front of it. The dashboard
+  exposed `/report`, `/data`, and the full body of any installed skill or agent via
+  `/arsenal/item`.
+
+  The check keys on the `Host` header because browsers forbid page script from
+  setting it, so a rebound request always arrives naming the attacker's domain while
+  a real one says `127.0.0.1` or `localhost`. `Origin` cannot do this job: a rebound
+  request is same-origin, so no `Origin` is sent at all.
+
+  **If you reach Synthra from another device** — a phone on your LAN, a tunnel, a
+  container — list the hostname in the new `SYN_ALLOWED_HOSTS` (comma-separated;
+  `dev.box` matches any port, `dev.box:8901` pins one). Refused requests return 403
+  and name the variable, so the fix is in the error.
+
+### Fixed
+
+- **Registered edits no longer leak between sessions or grow without bound.** The MCP
+  server outlives any single Claude session, and the set of files reported via
+  `graph_register_edit` was never cleared — so every later session inherited every
+  earlier one's edits, which then rode into that session's saved `filesTouched` as
+  though they'd just been worked on. Entries are now timestamped and age out on the
+  same 24-hour window already used for the human half of that same question, with a
+  cap as a backstop.
+- **`.gitignore` and `CLAUDE.md` are no longer read and rewritten as separate steps.**
+  Both are yours, and an edit landing in the gap was silently dropped. They now go
+  through a new text-mode read-modify-write with the same per-path serialization and
+  byte-comparison the JSON state files have used since v0.25 — which means every
+  write Synthra makes to a file it doesn't own now takes the same safe path.
+
+### Added
+
+- `SYN_ALLOWED_HOSTS` — extra hostnames both servers will answer on, for LAN, tunnel
+  and container setups.
+
+---
+
 ## [0.26.0] — 2026-08-08
 
 v0.25 stopped Synthra from destroying a file it had misread. This one is about the
