@@ -316,9 +316,14 @@ The acceptance test for "Synthra works": run `syn .` in a real repo (`windsor-st
 
 ## Out of scope for v0.1 (deferred)
 
+_This list described what M1–M6 didn't build. Re-checked 2026-08-09 against the
+current codebase (now at v0.26.0) — two items have since shipped; struck
+through rather than deleted, so the historical plan stays intact. For what's
+still ahead, see the living backlog at `Updates/Roadmap/roadmap.md`._
+
 - IDE companion extension (VS Code / Antigravity / Cursor) — designed for, not built yet
-- Diff-tracked incremental graph updates + lazy on-disk graph (v0.1 does a full re-parse each run and holds the whole graph, file contents included, in memory — tested fine to a few hundred files at sub-second scans, comfortable into the low thousands; very large monorepos need this)
+- Diff-tracked incremental graph updates + lazy on-disk graph — **partially shipped.** A content-hash parse cache (only changed files re-parse on rescan) landed in v0.3.0, and the MCP server auto-reindexes on file/git changes without a manual re-scan (v0.9.0). Still true: the full graph, file contents included, stays in memory each run — comfortable into the low thousands of files; a lazy on-disk graph for very large monorepos is not built.
 - Embedding-based semantic retrieval (keyword scoring is enough to start)
 - Codex CLI / Cursor / Gemini support (same MCP, different launcher — fast follow-on)
-- Self-update mechanism (manually `npm i -g synthra@latest` for now)
-- macOS/Linux platform parity for hooks (write `.sh` versions in M3, but Windows is primary)
+- ~~Self-update mechanism (manually `npm i -g synthra@latest` for now)~~ — **shipped.** `syn .` checks the npm registry on every run and offers an interactive update (v0.1.8+), plus a startup changelog catch-up (v0.1.17+) for upgrades done outside the prompt. `SYN_NO_UPDATE_CHECK=1` opts out.
+- ~~macOS/Linux platform parity for hooks (write `.sh` versions in M3, but Windows is primary)~~ — **shipped.** All five hook events ship both `.ps1` and `.sh` versions; the bash hooks are jq-based throughout and were smoke-tested end-to-end on Linux (v0.1.25).
