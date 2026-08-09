@@ -474,13 +474,13 @@ function mergePins(
   const members = new Map<string, ArsenalItem>();
   for (const s of skills) {
     if (s.pack && s.pack_command) {
-      members.set(`${s.scope} ${s.source ?? ""} ${s.pack} ${s.pack_command}`, s);
+      members.set(`${s.scope}\u0000${s.source ?? ""}\u0000${s.pack}\u0000${s.pack_command}`, s);
     }
   }
 
   const orphans: ArsenalItem[] = [];
   for (const pin of pins) {
-    const key = `${pin.item.scope} ${pin.item.source ?? ""} ${pin.pack} ${pin.command}`;
+    const key = `${pin.item.scope}\u0000${pin.item.source ?? ""}\u0000${pin.pack}\u0000${pin.command}`;
     const member = members.get(key);
     if (member) {
       member.pinned_as = `/${pin.command}`;
