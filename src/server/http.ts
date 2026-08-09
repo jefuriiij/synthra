@@ -13,6 +13,7 @@ import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import { LearnRuntime } from "../learn/runtime.js";
 import { loadConfig } from "../shared/config.js";
+import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
@@ -94,6 +95,19 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
 
 function buildApp(ctx: ServerContext, port: number): Hono {
   const app = new Hono();
+
+  // First, and on every route rather than per-handler — a guard you have to
+  // remember to add is a guard that gets missed on the next route. This one
+  // matters most here: /mcp exposes graph_read, which reads any file in the
+  // project, to anyone who can get a request through.
+  app.use("*", async (c, next) => {
+    const host = c.req.header("host");
+    if (!isAllowedHost(host, port, loadConfig().allowedHosts)) {
+      log.warn(`refused request with Host: ${host ?? "(none)"}`);
+      return c.json({ error: forbiddenHostMessage(host) }, 403);
+    }
+    await next();
+  });
 
   app.get("/", (c) =>
     c.json({

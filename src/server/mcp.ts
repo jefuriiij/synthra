@@ -1125,15 +1125,47 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   );
 }
 
-const editedFiles = new Set<string>();
+/**
+ * Files the AI has told us it edited, each stamped with when.
+ *
+ * This is process-global and the server outlives any one Claude session, so a
+ * plain Set was wrong twice over: it grew without bound, and every later
+ * session inherited every earlier session's edits — which then rode into that
+ * session's `filesTouched` snapshot as if they'd just been worked on.
+ *
+ * Bounded by age rather than cleared at Stop because an MCP tool call carries
+ * no session id, so there is nothing to key a per-session bucket on; and two
+ * Claude windows can share one server, where clearing on the first Stop would
+ * wipe the other session mid-flight. The window matches the one
+ * `ctx.activity.recentFilePaths` already uses for the human half of the same
+ * question, so both halves of "touched this session" finally agree.
+ */
+const editedFiles = new Map<string, number>();
+const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EDIT_MAX_ENTRIES = 500;
+
+/** Drop anything past the window, then trim oldest-first if still oversized. */
+function pruneEdits(nowMs: number): void {
+  for (const [path, ts] of editedFiles) {
+    if (nowMs - ts > EDIT_WINDOW_MS) editedFiles.delete(path);
+  }
+  if (editedFiles.size <= EDIT_MAX_ENTRIES) return;
+  // Map preserves insertion order, but re-registering a file refreshes its
+  // timestamp without moving it — so sort rather than trusting that order.
+  const byAge = [...editedFiles.entries()].sort((a, b) => a[1] - b[1]);
+  for (const [path] of byAge.slice(0, editedFiles.size - EDIT_MAX_ENTRIES)) {
+    editedFiles.delete(path);
+  }
+}
 
 async function graphRegisterEdit(args: Record<string, unknown> | undefined, ctx: ServerContext) {
   const files = Array.isArray(args?.files)
     ? (args.files as unknown[]).filter((f) => typeof f === "string")
     : [];
+  const now = Date.now();
   for (const f of files) {
     const file = f as string;
-    editedFiles.add(file);
+    editedFiles.set(file, now);
     // An edit is the strongest relevance signal — record it (weight 2). Resolve
     // to the canonical graph path so it keys to the same node the ranker scores;
     // a new/renamed file simply logs its raw path and decays out if unmatched.
@@ -1144,13 +1176,22 @@ async function graphRegisterEdit(args: Record<string, unknown> | undefined, ctx:
       source: "register_edit",
     });
   }
+  pruneEdits(now);
   return textContent(
-    `Registered ${files.length} edited file(s). Total tracked this session: ${editedFiles.size}.`,
+    `Registered ${files.length} edited file(s). Total tracked recently: ${editedFiles.size}.`,
   );
 }
 
-export function getRegisteredEdits(): string[] {
-  return Array.from(editedFiles);
+/** Recently-registered edits, newest first. Prunes as it reads, so a long-lived
+ *  server that stops receiving edits still lets the old ones age out. */
+export function getRegisteredEdits(nowMs: number = Date.now()): string[] {
+  pruneEdits(nowMs);
+  return [...editedFiles.entries()].sort((a, b) => b[1] - a[1]).map(([path]) => path);
+}
+
+/** Test seam — the set is process-global and would otherwise leak between tests. */
+export function __resetRegisteredEdits(): void {
+  editedFiles.clear();
 }
 
 const VALID_KINDS = new Set<EntryKind>(["decision", "task", "next", "fact", "blocker"]);

@@ -3,9 +3,7 @@
 // On each run, any prior synthra-policy block (any version) is removed and the
 // current-version block is appended at the end.
 
-import { readFile } from "node:fs/promises";
-
-import { writeTextAtomic } from "../shared/json-store.js";
+import { updateTextFile } from "../shared/json-store.js";
 import { basename, dirname } from "node:path";
 
 export const POLICY_VERSION = 9;
@@ -204,39 +202,38 @@ export function onboardingSkeleton(projectName: string): string {
 }
 
 export async function patchClaudeMd(path: string, projectName?: string): Promise<PatchResult> {
-  let existing: string | null;
-  try {
-    existing = await readFile(path, "utf8");
-  } catch {
-    existing = null;
-  }
-
   const block = policyBlock();
+  let created = false;
 
-  if (existing === null) {
-    // First creation: scaffold the onboarding skeleton (user-owned, written
-    // once) followed by Synthra's managed policy block.
-    const name = projectName || basename(dirname(path)) || "this project";
-    await writeTextAtomic(path, onboardingSkeleton(name) + "\n" + block + "\n");
-    return { created: true, updated: false, skipped: false };
-  }
+  // Through updateTextFile: CLAUDE.md is user-authored, git-tracked, and read by
+  // Claude itself, so prose the user writes between our read and our write must
+  // survive. The mutate is pure and re-runs against whatever actually landed.
+  const result = await updateTextFile(path, (existing) => {
+    if (existing === null) {
+      // First creation: scaffold the onboarding skeleton (user-owned, written
+      // once) followed by Synthra's managed policy block.
+      created = true;
+      const name = projectName || basename(dirname(path)) || "this project";
+      return onboardingSkeleton(name) + "\n" + block + "\n";
+    }
+    created = false;
 
-  // Strip any prior policy block (any version), then re-append the current one.
-  // The block is always separated from the preceding content by exactly one
-  // blank line. We must normalize here: ANY_BLOCK_RE's trailing `\s*` consumes
-  // the block's own newline, so naively re-joining `stripped + "\n" + block`
-  // would add a blank line on every run — invisible per `syn .`, but with
-  // auto-reindex it rewrites the watched CLAUDE.md endlessly. Trimming trailing
-  // whitespace and re-joining with a fixed gap makes the patch idempotent.
-  const stripped = existing.replace(ANY_BLOCK_RE, "");
-  const base = stripped.replace(/\s+$/, "");
-  const desired = base.length ? `${base}\n\n${block}\n` : `${block}\n`;
+    // Strip any prior policy block (any version), then re-append the current
+    // one. The block is always separated from the preceding content by exactly
+    // one blank line. We must normalize here: ANY_BLOCK_RE's trailing `\s*`
+    // consumes the block's own newline, so naively re-joining
+    // `stripped + "\n" + block` would add a blank line on every run — invisible
+    // per `syn .`, but with auto-reindex it rewrites the watched CLAUDE.md
+    // endlessly. Trimming trailing whitespace and re-joining with a fixed gap
+    // makes the patch idempotent, and updateTextFile turns an unchanged result
+    // into no write at all.
+    const stripped = existing.replace(ANY_BLOCK_RE, "");
+    const base = stripped.replace(/\s+$/, "");
+    return base.length ? `${base}\n\n${block}\n` : `${block}\n`;
+  });
 
-  if (desired === existing) {
-    return { created: false, updated: false, skipped: true };
-  }
-
-  // Atomic: CLAUDE.md is user-authored, git-tracked, and read by Claude itself.
-  await writeTextAtomic(path, desired);
-  return { created: false, updated: true, skipped: false };
+  if (result.status === "unchanged") return { created: false, updated: false, skipped: true };
+  return created
+    ? { created: true, updated: false, skipped: false }
+    : { created: false, updated: true, skipped: false };
 }

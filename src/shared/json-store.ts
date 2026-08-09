@@ -255,6 +255,55 @@ export function updateJsonFile<T>(
   return serializeByPath(path, () => updateOnce(path, init, mutate, opts));
 }
 
+export type TextUpdateResult =
+  | { status: "written"; text: string; contended?: boolean }
+  | { status: "unchanged" };
+
+/**
+ * The text sibling of `updateJsonFile`, for files we append to but do not own:
+ * `.gitignore` and `CLAUDE.md`. Same per-path serialization and same
+ * byte-compare before the rename, so an edit the user (or another tool) makes
+ * between our read and our write is noticed and merged into rather than
+ * flattened.
+ *
+ * `mutate` receives `null` when the file doesn't exist — distinct from `""`,
+ * which is a real empty file — and returns `null` to mean "nothing to do", so
+ * the common idempotent re-run writes nothing at all.
+ *
+ * There is no `corrupt` state here, unlike the JSON side: any byte sequence is
+ * valid text, so there is nothing to fail to parse and nothing to quarantine.
+ */
+export function updateTextFile(
+  path: string,
+  mutate: (current: string | null) => string | null,
+  opts: { retries?: number } = {},
+): Promise<TextUpdateResult> {
+  return serializeByPath(path, () => updateTextOnce(path, mutate, opts));
+}
+
+async function updateTextOnce(
+  path: string,
+  mutate: (current: string | null) => string | null,
+  opts: { retries?: number },
+): Promise<TextUpdateResult> {
+  const retries = opts.retries ?? 10;
+
+  for (let attempt = 0; ; attempt++) {
+    const before = await readRaw(path);
+    const next = mutate(before);
+    if (next === null || next === before) return { status: "unchanged" };
+
+    const lastAttempt = attempt >= retries;
+    const wrote = await writeAtomic(path, next, async () =>
+      lastAttempt ? true : (await readRaw(path)) === before,
+    );
+    if (wrote) {
+      return { status: "written", text: next, ...(attempt > 0 ? { contended: true } : {}) };
+    }
+    await sleep(1 + Math.floor(Math.random() * 4));
+  }
+}
+
 async function updateOnce<T>(
   path: string,
   init: () => T,

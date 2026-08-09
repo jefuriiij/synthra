@@ -16,6 +16,7 @@ export interface SynthraConfig {
   routeMinScore: number;
   mcpPort: number | null;
   dashboardPort: number;
+  allowedHosts: string[];
   logLevel: "debug" | "info" | "warn" | "error";
   claudeBin: string;
 }
@@ -29,6 +30,13 @@ function num(name: string, fallback: number): number {
 
 function str<T extends string>(name: string, fallback: T): T {
   return (process.env[name] as T) ?? fallback;
+}
+
+function list(name: string): string[] {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function loadConfig(): SynthraConfig {
@@ -62,6 +70,12 @@ export function loadConfig(): SynthraConfig {
     routeMinScore: num("SYN_ROUTE_MIN_SCORE", 5),
     mcpPort: process.env.SYN_MCP_PORT ? num("SYN_MCP_PORT", 0) : null,
     dashboardPort: num("SYN_DASHBOARD_PORT", 8901),
+    // Extra hostnames both servers will answer on, beyond localhost. Needed
+    // only when reaching Synthra from another device (LAN, tunnel, container) —
+    // everything else is refused so a browser can't be tricked into relaying
+    // for a remote page. Comma-separated; "host" matches any port, "host:8901"
+    // pins one.
+    allowedHosts: list("SYN_ALLOWED_HOSTS"),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),
     claudeBin: str("SYN_CLAUDE_BIN", "claude" as const),
   };

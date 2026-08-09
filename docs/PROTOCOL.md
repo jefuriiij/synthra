@@ -2,6 +2,21 @@
 
 > HTTP routes + MCP tool schemas. Living document — fill in alongside implementation.
 
+## Host requirement (applies to every route on both servers)
+
+Since v0.27, both servers reject any request whose `Host` header does not name
+localhost on the port that server is actually bound to — `127.0.0.1:<port>`,
+`localhost:<port>` or `[::1]:<port>` — or a hostname listed in `SYN_ALLOWED_HOSTS`
+(comma-separated; a bare `dev.box` matches any port, `dev.box:8901` pins one).
+A refused request gets `403` with a body naming the variable. A missing `Host`
+fails closed.
+
+This exists because binding to `127.0.0.1` does not stop a page in the user's
+browser from being used to reach these servers (DNS rebinding). `Host` is the
+header to key on: browsers forbid page script from setting it, so a rebound
+request always names the attacker's domain. `Origin` cannot substitute — a
+rebound request is same-origin, so no `Origin` is sent at all.
+
 ## HTTP routes — MCP server (port 8080–8099)
 
 Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in `8080–8099`, written to `.synthra-graph/mcp_port`. This is a *separate* process/port from the dashboard (see below) — one MCP server owns one project (`mcp_owner.json`; see ARCHITECTURE.md).

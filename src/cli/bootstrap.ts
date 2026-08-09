@@ -1,9 +1,9 @@
 // Project bootstrap: creates .synthra-graph/, .synthra/, updates .gitignore,
 // patches CLAUDE.md with the versioned policy block.
 
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 
-import { writeTextAtomic } from "../shared/json-store.js";
+import { updateTextFile } from "../shared/json-store.js";
 import { basename } from "node:path";
 
 import { patchClaudeMd } from "../hooks/claude-md.js";
@@ -51,24 +51,24 @@ async function ensureDir(path: string): Promise<boolean> {
 }
 
 async function patchGitignore(path: string): Promise<boolean> {
-  let existing = "";
-  try {
-    existing = await readFile(path, "utf8");
-  } catch {
-    /* file may not exist */
-  }
-  const trimmed = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
-  const missing = GITIGNORE_ENTRIES.filter((e) => !trimmed.has(e.entry));
-  if (missing.length === 0) return false;
+  // Through updateTextFile because .gitignore is user-owned and we only ever
+  // append to it: reading, computing and writing as separate steps would drop
+  // any line they added in the gap. The mutate below is pure and re-runs
+  // against whatever actually landed.
+  const result = await updateTextFile(path, (current) => {
+    const existing = current ?? "";
+    const trimmed = new Set(existing.split(/\r?\n/).map((l) => l.trim()));
+    const missing = GITIGNORE_ENTRIES.filter((e) => !trimmed.has(e.entry));
+    if (missing.length === 0) return null; // already ours — write nothing
 
-  const block = missing.map((m) => `# ${m.comment}\n${m.entry}`).join("\n") + "\n";
-  const appendix =
-    (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
-    (existing.length ? "\n" : "") +
-    block;
-  // Atomic: .gitignore is user-owned, and we're appending to their content.
-  await writeTextAtomic(path, existing + appendix);
-  return true;
+    const block = missing.map((m) => `# ${m.comment}\n${m.entry}`).join("\n") + "\n";
+    const appendix =
+      (existing.length === 0 || existing.endsWith("\n") ? "" : "\n") +
+      (existing.length ? "\n" : "") +
+      block;
+    return existing + appendix;
+  });
+  return result.status === "written";
 }
 
 export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {

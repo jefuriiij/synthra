@@ -15,6 +15,7 @@ import pkgJson from "../../package.json" with { type: "json" };
 
 import { buildDiagnosticReport, runDoctorChecks } from "../cli/doctor-command.js";
 import { loadConfig } from "../shared/config.js";
+import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
@@ -53,6 +54,20 @@ export async function startDashboard(
     );
   }
   const app = new Hono();
+
+  // Same guard as the MCP server, for the same reason: binding 127.0.0.1 does
+  // not stop a page in the user's browser from being tricked into relaying for
+  // a remote attacker (DNS rebinding — see shared/host-guard.ts). This server
+  // hands out /report, /data and any skill's file body via /arsenal/item.
+  const allowedHosts = loadConfig().allowedHosts;
+  app.use("*", async (c, next) => {
+    const host = c.req.header("host");
+    if (!isAllowedHost(host, port, allowedHosts)) {
+      log.warn(`dashboard refused request with Host: ${host ?? "(none)"}`);
+      return c.json({ error: forbiddenHostMessage(host) }, 403);
+    }
+    await next();
+  });
 
   app.get("/", (c) => c.html(indexHtml.replaceAll("__SYN_VERSION__", VERSION)));
 

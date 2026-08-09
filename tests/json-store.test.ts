@@ -11,6 +11,7 @@ import {
   quarantineFile,
   readJsonFile,
   updateJsonFile,
+  updateTextFile,
   writeJsonAtomic,
   writeTextAtomic,
 } from "../src/shared/json-store.js";
@@ -216,5 +217,86 @@ describe("updateJsonFile", () => {
     const r = await updateJsonFile<Store>(p, init, (cur) => ({ items: [...cur.items, "a"] }));
     expect(r.status).toBe("written");
     expect(JSON.parse(await readFile(p, "utf8")).items).toEqual(["a"]);
+  });
+});
+
+// v0.27 — the text sibling, for files we append to but do not own: .gitignore
+// and CLAUDE.md. Same serialization and byte-compare as the JSON side, minus
+// the corrupt state (any bytes are valid text, so nothing can fail to parse).
+describe("updateTextFile", () => {
+  const appendLine = (line: string) => (cur: string | null) => {
+    const existing = cur ?? "";
+    if (existing.split("\n").includes(line)) return null; // already there
+    return existing + (existing === "" || existing.endsWith("\n") ? "" : "\n") + line + "\n";
+  };
+
+  it("creates the file when absent, passing null to the mutate", async () => {
+    const p = join(await tmpDir(), "f.txt");
+    let sawNull = false;
+    const r = await updateTextFile(p, (cur) => {
+      sawNull = cur === null;
+      return "hello\n";
+    });
+    expect(sawNull).toBe(true); // null means absent — distinct from ""
+    expect(r.status).toBe("written");
+    expect(await readFile(p, "utf8")).toBe("hello\n");
+  });
+
+  it("distinguishes an empty file from a missing one", async () => {
+    const p = join(await tmpDir(), "f.txt");
+    await writeFile(p, "", "utf8");
+    let seen: string | null = "unset";
+    await updateTextFile(p, (cur) => {
+      seen = cur;
+      return "x";
+    });
+    expect(seen).toBe("");
+  });
+
+  it("appends to the user's existing content without disturbing it", async () => {
+    const p = join(await tmpDir(), ".gitignore");
+    await writeFile(p, "node_modules/\ndist/\n", "utf8");
+    await updateTextFile(p, appendLine(".synthra-graph/"));
+    expect(await readFile(p, "utf8")).toBe("node_modules/\ndist/\n.synthra-graph/\n");
+  });
+
+  it("writes nothing when the mutate returns null", async () => {
+    const p = join(await tmpDir(), "f.txt");
+    await writeFile(p, "keep me\n", "utf8");
+    const before = (await stat(p)).mtimeMs;
+    const r = await updateTextFile(p, () => null);
+    expect(r.status).toBe("unchanged");
+    expect((await stat(p)).mtimeMs).toBe(before);
+  });
+
+  it("writes nothing when the result is byte-identical", async () => {
+    // The idempotent re-run: `syn .` patches CLAUDE.md every time, and an
+    // unnecessary write there feeds the file watcher its own edit.
+    const p = join(await tmpDir(), "f.txt");
+    await writeFile(p, "same\n", "utf8");
+    const r = await updateTextFile(p, () => "same\n");
+    expect(r.status).toBe("unchanged");
+  });
+
+  // THE reason this exists: read-then-write loses whatever landed in the gap.
+  it("loses no concurrent append", async () => {
+    const p = join(await tmpDir(), ".gitignore");
+    const lines = ["a/", "b/", "c/", "d/", "e/"];
+    await Promise.all(lines.map((l) => updateTextFile(p, appendLine(l))));
+    const written = (await readFile(p, "utf8")).split("\n").filter(Boolean);
+    expect([...written].sort()).toEqual([...lines].sort());
+  });
+
+  it("creates missing parent directories", async () => {
+    const p = join(await tmpDir(), "nested", "deep", "f.txt");
+    expect((await updateTextFile(p, () => "x\n")).status).toBe("written");
+    expect(await readFile(p, "utf8")).toBe("x\n");
+  });
+
+  it("leaves no temp files behind", async () => {
+    const dir = await tmpDir();
+    const p = join(dir, "f.txt");
+    await Promise.all(["a", "b", "c"].map((l) => updateTextFile(p, appendLine(l))));
+    expect((await readdir(dir)).filter((n) => n.endsWith(".tmp"))).toEqual([]);
   });
 });
