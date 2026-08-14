@@ -7,6 +7,62 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.27.1] — 2026-08-14
+
+0.27.0 shipped `synthra-pre-tool-use.sh` with CRLF line endings on macOS and Linux.
+bash doesn't tolerate that — it fails while *parsing* the file, before any of the
+script's logic runs:
+
+```
+PreToolUse:Bash hook error: line 7: $'\r': command not found
+line 8: set: +: invalid option
+line 36: syntax error: unexpected end of file from `if' command on line 30
+```
+
+That hook is registered for the `Grep|Glob|Bash` matcher, so the failure took **all
+three tools out of the session**. Its `# Always exits 0` contract couldn't save it;
+bash died before reaching the code that guarantees it. And because repairing the
+file needs Bash, the agent couldn't fix it either — the one failure mode an agent
+can't work around.
+
+**You must re-run `syn .` to pick this up.** Unlike the last two releases, updating
+the package is not enough: the CR bytes are in the hook file already written into
+your project, and only `installHooks()` rewrites it. One `syn .` per affected
+project heals it.
+
+### Fixed
+
+- **POSIX hook scripts are now normalized to LF at the moment they're written**, and
+  PowerShell hooks to CRLF, instead of trusting the bytes baked into the bundle.
+  This is the only defense that holds no matter what state the machine that built
+  the release was in, and it repairs an already-broken install rather than just
+  avoiding new ones.
+
+  The bug was build-time contamination, not a source bug. Every `.sh` file in git
+  was clean the whole time. `.gitattributes` sets `* text=auto eol=lf`, which makes
+  git normalize CRLF→LF when it hashes the working tree — so a CRLF file on disk
+  hashes *identical* to its LF blob, produces no content diff, and can never be
+  committed. esbuild's text loader reads from disk rather than from git, so it
+  inlined the CR verbatim. One editor writing CRLF once (VS Code `files.eol`,
+  Notepad, a PowerShell rewrite) silently poisons every build from that machine,
+  and `git add --renormalize` is a no-op because the index was never wrong.
+
+- **Stale hooks for the other platform are now pruned on install.** `syn .` only
+  ever writes the current platform's extension, so upgrading from a version that
+  wrote both — or sharing a checkout across platforms — left orphan `.ps1` files in
+  `.claude/hooks/` that nothing but `syn remove` cleaned up. They were never
+  registered, but they read as live hooks to anyone auditing that directory.
+
+### Added
+
+- **Two build guards, so this class of bug can't ship again.** `prebuild` strips CR
+  from the hook sources before esbuild sees them and warns when it has to; `postbuild`
+  (also `npm run verify:eol`) extracts every inlined bash body from the built bundle
+  and fails if any carries a CR. The check runs against `dist`, not `src` — a
+  source-level check passed for 0.27.0 because the source genuinely was clean.
+
+---
+
 ## [0.27.0] — 2026-08-09
 
 Synthra runs two unauthenticated HTTP servers on your machine while you work, and
