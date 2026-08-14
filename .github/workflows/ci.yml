@@ -25,4 +25,13 @@ jobs:
       - run: npm run check # Biome lint + format
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - run: npm run build # prebuild normalizes hook EOL, postbuild verifies the bundle
+
+      # Belt-and-braces on the artifact that actually ships. postbuild already
+      # runs this, so it fires on both platforms — but pin it explicitly here so
+      # removing a lifecycle script can't silently drop the guard. Note CI can
+      # never reproduce the original bug: the checkout is always LF via
+      # .gitattributes, and 0.27.0's contamination lived only on the publisher's
+      # working tree. The real guard is normalizeEol() at the write site.
+      - name: Assert no CRLF in inlined bash hooks
+        run: npm run verify:eol

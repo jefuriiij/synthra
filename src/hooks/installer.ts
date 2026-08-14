@@ -3,7 +3,7 @@
 // regenerates the scripts and merges hook entries cleanly with any user-added
 // hooks already in the file.
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { updateJsonFile, writeTextAtomic } from "../shared/json-store.js";
@@ -67,8 +67,24 @@ function commandFor(scriptPath: string): string {
   return `bash "${scriptPath}"`;
 }
 
+/** Force the line endings the interpreter needs: CRLF for PowerShell, LF for
+ *  bash. Never trust the inlined body — esbuild embeds whatever bytes sat on the
+ *  build machine's disk, and `.gitattributes`' `text=auto` makes a CRLF
+ *  working-tree file hash identical to its LF blob — so it never shows as a
+ *  content diff, can never be committed, and no source-level check or CI job can
+ *  see it. Only the build machine's disk is poisoned. That shipped a CRLF
+ *  `pre-tool-use.sh` in 0.27.0: bash dies at parse time (`$'\r': command not
+ *  found`), and because that hook matches `Grep|Glob|Bash`, it takes all three
+ *  tools out of the session — including the ones needed to repair it, so the
+ *  agent can't self-heal. Normalizing here is the only defense that holds
+ *  regardless of build-machine state, and it repairs a poisoned install on the
+ *  next `syn .`. See issue #2. */
+export function normalizeEol(body: string, ext: string): string {
+  return ext === ".ps1" ? body.replace(/\r?\n/g, "\r\n") : body.replace(/\r\n/g, "\n");
+}
+
 function chosenScriptBody(s: ScriptDef): string {
-  return process.platform === "win32" ? s.ps1 : s.sh;
+  return process.platform === "win32" ? normalizeEol(s.ps1, ".ps1") : normalizeEol(s.sh, ".sh");
 }
 
 function chosenScriptExt(): string {
@@ -99,12 +115,20 @@ export async function installHooks(paths: SynthraPaths): Promise<InstallResult> 
   await mkdir(paths.claudeHooksDir, { recursive: true });
 
   const scriptsWritten: string[] = [];
+  const staleExt = chosenScriptExt() === ".ps1" ? ".sh" : ".ps1";
   for (const s of SCRIPTS) {
     const target = join(paths.claudeHooksDir, `${s.baseName}${chosenScriptExt()}`);
     // Atomic: a half-written hook script is one Claude Code will still try to
     // execute on the next tool call.
     await writeTextAtomic(target, chosenScriptBody(s));
     scriptsWritten.push(target);
+
+    // Drop the other platform's copy. We only ever write chosenScriptExt(), so
+    // switching platforms on a shared checkout — or upgrading from a version
+    // that wrote both — leaves orphans here that no later run touches and only
+    // `syn remove` cleans up. They're never registered, but they read as live
+    // hooks to anyone auditing .claude/hooks/.
+    await unlink(join(paths.claudeHooksDir, `${s.baseName}${staleExt}`)).catch(() => {});
   }
 
   await mkdir(dirname(paths.claudeSettings), { recursive: true });

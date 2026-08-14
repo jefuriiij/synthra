@@ -11,8 +11,11 @@
     "synthra": "bin/syn"
   },
   "scripts": {
+    "prebuild": "node scripts/normalize-hook-eol.mjs",
     "build": "npm run build:ui && tsup",
+    "postbuild": "node scripts/verify-bundle-eol.mjs",
     "build:ui": "vite build --config vite.config.dashboard.ts",
+    "verify:eol": "node scripts/verify-bundle-eol.mjs",
     "dev": "tsup --watch",
     "dev:ui": "vite --config vite.config.dashboard.ts",
     "test": "vitest run",
