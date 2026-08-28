@@ -182,8 +182,9 @@ describe("CONTEXT.md can't regress under concurrent writers", () => {
     await Promise.all(texts.map((t) => rememberEntry(paths, { text: t, kind: "decision" })));
 
     // Every writer's entry survives, whatever order they interleaved in.
+    // Compare on a COPY: sort() mutates, and the write order is needed below.
     const stored = (await recallEntries(paths)).entries.map((e) => e.content);
-    expect(stored.sort()).toEqual([...texts].sort());
+    expect([...stored].sort()).toEqual([...texts].sort());
 
     // The narrative shows the most recent MAX_BULLETS (3) decisions — the point
     // is that the last render saw the complete store, not a partial one.
