@@ -7,6 +7,50 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.28.0] - 2026-08-28
+
+Synthra worked well on code and badly on markup, and the reason turned out to be
+one missing line rather than a missing feature.
+
+### Fixed
+
+- **HTML files were never parsed at all.** `.html` and `.hubl` were absent from the
+  list of extensions the scanner hands to a parser, so every markup file scanned to
+  **zero symbols** - including HubSpot templates, whose HubL macro/block extraction
+  shipped back in v0.1.21 and has been dead code ever since. The unit tests never
+  caught it because they call the parser directly and skip that filter; there is now
+  a test that scans a real project end to end.
+
+  Two things followed from that, both reported across six dogfood sessions: a search
+  for a CSS class in a file you already had open would be blocked and then redirected
+  to whatever vendored JavaScript happened to rank for the token, and `graph_read`
+  could not slice a markup file at all, so every edit round on a long page meant
+  reading the whole thing.
+
+### Added
+
+- **Plain HTML now has symbols.** A page is indexed in three passes: `<section>` and
+  any element with an `id` become landmarks you can slice, every CSS rule in a
+  `<style>` block becomes a symbol, and inline `<script>` is parsed as JavaScript.
+  Both tree-sitter grammars were already bundled, so nothing new is downloaded.
+
+  On a real 3,438-line page this goes from 0 symbols to 490. Searching `bcard` now
+  matches the page that defines it, and `graph_read("page.html::hero")` returns that
+  one section.
+
+  BEM variants fold together - `.bcard`, `.bcard--feat` and `.bcard--nar` are one
+  symbol, and its line range stays on the base rule rather than stretching across
+  the `@media` override, so a slice stays small. The signature says how many rules
+  exist when there is more than one.
+
+- **Third-party code no longer wins by accident.** Files under `vendor/`,
+  `bower_components/` and friends, and bundles named `*.min.js` / `*.bundle.js`, are
+  ranked down unless the query names one of their symbols outright - so looking
+  *into* a library still works. `lib/` and `assets/` are deliberately not treated as
+  vendor markers, since plenty of projects keep their own source there.
+
+---
+
 ## [0.27.1] — 2026-08-14
 
 0.27.0 shipped `synthra-pre-tool-use.sh` with CRLF line endings on macOS and Linux.
