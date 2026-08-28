@@ -7,7 +7,7 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [0.28.0] - 2026-08-28
+## [0.28.0] — 2026-08-28
 
 Synthra worked well on code and badly on markup, and the reason turned out to be
 one missing line rather than a missing feature.
