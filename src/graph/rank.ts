@@ -132,6 +132,29 @@ function indexImportEdges(graph: GraphSchema | undefined): Map<string, Set<strin
   return out;
 }
 
+const VENDOR_PENALTY = 3;
+
+/** Directory names that mean "someone else's code", plus the two filename
+ *  shapes for shipped bundles. Deliberately narrow: `lib/` and `assets/` are
+ *  excluded because plenty of projects keep their own source there. */
+const VENDOR_SEGMENTS = [
+  "vendor",
+  "vendors",
+  "third-party",
+  "thirdparty",
+  "bower_components",
+  "jquery",
+  "gsap-public",
+];
+
+export function looksVendored(path: string): boolean {
+  const lower = path.toLowerCase();
+  const segments = lower.split("/");
+  if (segments.some((s) => VENDOR_SEGMENTS.includes(s))) return true;
+  const file = segments[segments.length - 1] ?? "";
+  return /\.(min|bundle)\.[a-z]+$/.test(file) || /-min\.[a-z]+$/.test(file);
+}
+
 export function scoreFiles(inputs: RankInputs): ScoredFile[] {
   const qTokens = new Set(tokenizeQuery(inputs.query));
   const symbolsByFile = indexSymbolsByFile(inputs.graph);
@@ -226,6 +249,17 @@ export function scoreFiles(inputs: RankInputs): ScoredFile[] {
     if (seeds.has(file.path)) {
       score += 5;
       reasons.push("seed");
+    }
+
+    // Vendored code answers almost any token by accident. Six dogfood sessions
+    // in a row, a search for a CSS class in a known page was redirected to
+    // gsap's `_defineProperties`, bootstrap's `n`, or fslightbox internals —
+    // the graph had nothing better to offer for markup, so third-party JS won.
+    // Only penalise when the query didn't name one of its symbols outright, so
+    // someone genuinely looking INTO a library still finds it.
+    if (!exactSym && looksVendored(file.path)) {
+      score -= VENDOR_PENALTY;
+      reasons.push("vendor");
     }
 
     scored.push({ file, score, reasons, symHits, exactSym });

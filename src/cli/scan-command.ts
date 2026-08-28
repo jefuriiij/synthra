@@ -41,6 +41,11 @@ const PARSABLE_EXTS = new Set([
   ".hxx",
   ".dart",
   ".cs",
+  // Markup. Omitting these is why every .html file scanned to ZERO symbols even
+  // though a parser for them shipped in v0.1.21 — the file never reached it,
+  // and hubl.test.ts calls parseHubL directly so it never noticed.
+  ".html",
+  ".hubl",
 ]);
 
 export interface ScanResult {

@@ -12,7 +12,7 @@ import { parseCpp } from "./parsers/cpp.js";
 import { parseCSharp } from "./parsers/csharp.js";
 import { parseDart } from "./parsers/dart.js";
 import { parseGo } from "./parsers/go.js";
-import { parseHubL } from "./parsers/hubl.js";
+import { parseHtml } from "./parsers/html.js";
 import { parseJava } from "./parsers/java.js";
 import { parseKotlin } from "./parsers/kotlin.js";
 import { parsePhp } from "./parsers/php.js";
@@ -64,7 +64,9 @@ export type GrammarName =
   | "c"
   | "cpp"
   | "dart"
-  | "csharp";
+  | "csharp"
+  | "html"
+  | "css";
 
 const GRAMMAR_FILES: Record<GrammarName, string> = {
   typescript: "tree-sitter-wasms/out/tree-sitter-typescript.wasm",
@@ -81,6 +83,8 @@ const GRAMMAR_FILES: Record<GrammarName, string> = {
   cpp: "tree-sitter-wasms/out/tree-sitter-cpp.wasm",
   dart: "tree-sitter-wasms/out/tree-sitter-dart.wasm",
   csharp: "tree-sitter-wasms/out/tree-sitter-c_sharp.wasm",
+  html: "tree-sitter-wasms/out/tree-sitter-html.wasm",
+  css: "tree-sitter-wasms/out/tree-sitter-css.wasm",
 };
 
 let parserInit: Promise<void> | null = null;
@@ -152,7 +156,9 @@ export async function parseSource(f: WalkedFile, source: string): Promise<Parsed
       return parseVue(f, source);
     case ".html":
     case ".hubl":
-      return parseHubL(f, source);
+      // parseHtml runs the HubL extraction itself, then adds markup, CSS and
+      // inline-script symbols on top.
+      return parseHtml(f, source);
     case ".go":
       return parseGo(f, source);
     case ".rs":

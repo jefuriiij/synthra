@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { scoreFiles } from "../src/graph/rank.js";
+import { looksVendored, scoreFiles } from "../src/graph/rank.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../src/graph/types.js";
 
 function graphWith(symbolName: string): { graph: GraphSchema; candidates: FileNode[] } {
@@ -206,5 +206,32 @@ describe("scoreFiles — IDF keyword weighting", () => {
     const [top] = scoreFiles({ candidates: [a, b], query: "auth", graph });
     expect(top.file.path).toBe("src/a.ts");
     expect(top.score).toBe(2); // refIdf == idf(auth) → weight exactly KW_BASE_WEIGHT
+  });
+});
+
+// v0.28 — vendored code answered almost any token by accident. Six dogfood
+// sessions running, a CSS-class search in a known page was redirected to gsap,
+// bootstrap or fslightbox internals.
+describe("looksVendored", () => {
+  it("spots third-party directories", () => {
+    expect(looksVendored("assets/vendor/gsap.js")).toBe(true);
+    expect(looksVendored("theme/vendors/isotope.js")).toBe(true);
+    expect(looksVendored("js/gsap-public/all.js")).toBe(true);
+    expect(looksVendored("bower_components/jquery/x.js")).toBe(true);
+  });
+
+  it("spots shipped bundles by filename", () => {
+    expect(looksVendored("js/app.min.js")).toBe(true);
+    expect(looksVendored("js/site.bundle.js")).toBe(true);
+    expect(looksVendored("js/theme-min.css")).toBe(true);
+  });
+
+  it("leaves your own source alone", () => {
+    // lib/ and assets/ are deliberately NOT vendor markers — plenty of
+    // projects keep first-party code there.
+    expect(looksVendored("src/lib/socket.ts")).toBe(false);
+    expect(looksVendored("assets/js/main.js")).toBe(false);
+    expect(looksVendored("pages/home-v3.html")).toBe(false);
+    expect(looksVendored("src/components/Bundle.svelte")).toBe(false);
   });
 });
