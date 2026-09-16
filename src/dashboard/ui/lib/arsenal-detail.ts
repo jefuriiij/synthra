@@ -85,8 +85,12 @@ export function skillInvocation(item: ArsenalItem, kind: ArsenalKind): string | 
  *  big, and the file it reads from. */
 export function detailSubtitle(item: ArsenalItem, detail?: ArsenalDetail | null): string {
   const kindWord = { skills: "skill", agents: "agent", mcp: "mcp server" };
+  // A repo slug reads as a place, not a thing — "installed from x/y" instead of
+  // the bare pack name a command pack like impeccable gets.
   const origin = item.pack
-    ? item.pack
+    ? item.pack.includes("/")
+      ? `installed from ${item.pack}`
+      : item.pack
     : item.scope === "plugin"
       ? `plugin ${item.source ?? ""}`.trim()
       : item.scope;

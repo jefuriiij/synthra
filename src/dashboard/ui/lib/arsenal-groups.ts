@@ -114,6 +114,9 @@ function groupKey(item: ArsenalItem): string {
 }
 
 function groupLabel(item: ArsenalItem): string {
+  // A repo slug from the `npx skills` lock ("emilkowalski/skills") is a name,
+  // not a hyphenated id — title-casing it would print "Emilkowalski/skills".
+  if (item.pack?.includes("/")) return item.pack;
   if (item.pack) return prettyPluginLabel(item.pack);
   return item.scope === "plugin" ? prettyPluginLabel(item.source ?? "plugin") : SCOPE_LABEL[item.scope];
 }

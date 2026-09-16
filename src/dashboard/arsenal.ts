@@ -453,6 +453,40 @@ async function scanSkillsDir(
   }
 }
 
+/** Shape of `~/.agents/.skill-lock.json`, written by the `npx skills` CLI. Only
+ *  `source` (the repo slug, e.g. "emilkowalski/skills") is read here. */
+interface SkillLock {
+  skills?: Record<string, { source?: string } | undefined>;
+}
+
+/**
+ * Stamp `pack` on lock-file skills with the repo they were installed from.
+ *
+ * `pack` alone is the group key — the UI groups on `pack:<pack>`. `pack_command`
+ * is deliberately NOT set: its presence marks an expanded command-pack member,
+ * which rewrites the invoke string to `/<pack> <cmd>` and hides the item from
+ * the Dispatcher. A lock-file skill is a real standalone skill, so it must keep
+ * `/<name>` and stay routable.
+ *
+ * The hard-coded PACKS table wins over the lock: a command pack that also
+ * happens to be lock-installed is still a command pack. Missing or malformed
+ * lock file = nothing happens.
+ */
+async function applySkillLock(
+  lockPath: string,
+  scope: ArsenalScope,
+  skills: ArsenalItem[],
+): Promise<void> {
+  const lock = await readJson<SkillLock>(lockPath);
+  const entries = lock?.skills;
+  if (!entries || typeof entries !== "object") return;
+  for (const item of skills) {
+    if (item.scope !== scope || item.pack || item.pinned_as) continue;
+    const source = entries[item.name]?.source;
+    if (typeof source === "string" && source.trim()) item.pack = source.trim();
+  }
+}
+
 /**
  * Fold each pinned shortcut into the pack member it points at, so a command
  * appears once instead of twice (`distill` under Personal AND `impeccable
@@ -586,6 +620,12 @@ export async function computeArsenal(
   // --- own files: project, then personal ---
   await scanSkillsDir(join(projClaude, "skills"), "project", undefined, skills, sources, pins);
   await scanSkillsDir(join(homeClaude, "skills"), "personal", undefined, skills, sources, pins);
+  // `npx skills` COPIES a skill into .claude/skills — no symlink, no marker in
+  // the file. Its lock file is the only record of which repo it came from, so
+  // read it to group those skills by repo the way plugin skills group by plugin.
+  // Scoped: a project lock must never label a personal skill, or vice versa.
+  await applySkillLock(join(projectRoot, ".agents", ".skill-lock.json"), "project", skills);
+  await applySkillLock(join(homeDir, ".agents", ".skill-lock.json"), "personal", skills);
   await scanAgentsDir(join(projClaude, "agents"), "project", undefined, agents, sources);
   await scanAgentsDir(join(homeClaude, "agents"), "personal", undefined, agents, sources);
   mcp.push(...mcpItemsFrom(await readJson(join(projectRoot, ".mcp.json")), "project", undefined));
