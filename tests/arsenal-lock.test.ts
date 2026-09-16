@@ -22,7 +22,8 @@ async function write(path: string, content: string): Promise<void> {
   await writeFile(path, content, "utf8");
 }
 
-const skillMd = (name: string) => `---\nname: ${name}\ndescription: ${name} does things.\n---\n# ${name}\n`;
+const skillMd = (name: string) =>
+  `---\nname: ${name}\ndescription: ${name} does things.\n---\n# ${name}\n`;
 
 /** A fake home with two ordinary personal skills. Returns [home, project]. */
 async function fixture(): Promise<{ home: string; project: string }> {
@@ -113,7 +114,10 @@ describe("skill lock → pack", () => {
   it("scopes the lookup: a project lock never labels a personal skill", async () => {
     const { home, project } = await fixture();
     // Same name in both scopes; only the project lock names it.
-    await write(join(project, ".claude", "skills", "ask-sonner", "SKILL.md"), skillMd("ask-sonner"));
+    await write(
+      join(project, ".claude", "skills", "ask-sonner", "SKILL.md"),
+      skillMd("ask-sonner"),
+    );
     await write(
       join(project, ".agents", ".skill-lock.json"),
       lockJson({ "ask-sonner": "emilkowalski/skills" }),
