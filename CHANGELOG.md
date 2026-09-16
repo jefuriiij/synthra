@@ -7,6 +7,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.29.0] — 2026-09-16
+
+### Added
+
+- **Skills installed with the `npx skills` CLI now group under the repo they came
+  from** in the Arsenal, the same way plugin skills group under their plugin. That
+  CLI copies a skill into `.claude/skills` with no symlink and no marker, so the
+  dashboard used to list every one as a plain personal skill with nothing to say
+  where it came from. Synthra now reads the CLI's lock file
+  (`.agents/.skill-lock.json`) and labels each skill with its source repo — e.g.
+  `emilkowalski/skills`, `flutter/skills`. The project lock labels project skills
+  and your home lock labels personal ones, never crossed.
+
+  These stay real standalone skills: the invoke string is still `/<name>`, and they
+  remain visible to the Dispatcher. A command pack like impeccable keeps its own
+  grouping even if it also appears in the lock. A missing or unreadable lock file
+  changes nothing. Skills the lock lists but that are no longer on disk are not
+  shown — the dashboard reflects what is actually installed.
+
+---
+
 ## [0.28.0] — 2026-08-28
 
 Synthra worked well on code and badly on markup, and the reason turned out to be
