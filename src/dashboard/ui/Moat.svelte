@@ -35,7 +35,7 @@
     </div>
   {/if}
   <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-    {#each gates as g (g.ts + g.query)}
+    {#each gates as g, i (g.ts + "|" + i)}
       <div class="flex items-baseline gap-2 font-mono text-xs">
         <span class="shrink-0 text-muted-foreground">{fmtTs(g.ts)}</span>
         <span
@@ -52,7 +52,7 @@
       <div class="mt-2 border-t border-border pt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
         Terminal hunts (observe-only)
       </div>
-      {#each recentBash as b (b.ts + b.query)}
+      {#each recentBash as b, i (b.ts + "|" + i)}
         <div class="flex items-baseline gap-2 font-mono text-xs">
           <span class="shrink-0 text-muted-foreground">{fmtTs(b.ts)}</span>
           <span

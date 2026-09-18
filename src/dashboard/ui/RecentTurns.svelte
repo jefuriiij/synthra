@@ -31,7 +31,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each slice as t (t.ts + t.project_path + t.model)}
+        {#each slice as t, i (t.ts + "|" + i)}
           <tr class="border-t border-border/60">
             <td class="py-1.5 pr-2 text-muted-foreground">{fmtTs(t.ts)}</td>
             <td class="max-w-[120px] truncate py-1.5 pr-2 text-foreground" title={t.project_name}>{t.project_name}</td>

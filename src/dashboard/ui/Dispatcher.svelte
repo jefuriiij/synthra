@@ -78,7 +78,7 @@
     <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-1 lg:border-l lg:border-border lg:pl-4">
       <div class="text-[10px] uppercase tracking-wide text-muted-foreground">Recent decisions</div>
       <div class="flex max-h-[150px] min-h-0 flex-col gap-1 overflow-y-auto">
-        {#each routes as r (r.ts + r.prompt)}
+        {#each routes as r, i (r.ts + "|" + i)}
           <div class="flex items-baseline gap-2 font-mono text-xs">
             <span class="shrink-0 text-muted-foreground">{fmtTs(r.ts)}</span>
             <span

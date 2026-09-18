@@ -7,6 +7,32 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.30.1] — 2026-09-19
+
+### Fixed
+
+- **The dashboard rendered nothing but skeletons once your logs got busy.** Every
+  card stayed a grey placeholder while the sidebar showed a live clock — so the
+  data was arriving fine, and the failure looked like a loading bug rather than a
+  crash.
+
+  It was `each_key_duplicate`: four `{#each}` blocks keyed their rows on
+  `ts + query` (or `ts + prompt`), and Svelte 5 throws when a keyed each sees the
+  same key twice. That kills the whole component subtree mid-render, which is why
+  the sidebar — rendered before it — survived and the entire overview did not.
+
+  Duplicate keys are not exotic here: one Grep is recorded by the gate *and* the
+  Bash observer inside the same millisecond, so two entries legitimately share a
+  timestamp and a query. On a real log this was 220 collisions in
+  `recent_gates`, 111 in `recent_bash`, 110 in `recent_routes`. The lists are
+  append-ordered slices, so they are now keyed by `ts + index` — unique by
+  construction, no matter how dense the logs get.
+
+  Nothing in the backend was wrong: `/data` was answering 200 with 499 KB in
+  49 ms the whole time.
+
+---
+
 ## [0.30.0] — 2026-09-19
 
 ### Added
