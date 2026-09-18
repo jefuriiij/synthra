@@ -284,6 +284,8 @@ Everything works with zero config. Environment variables (all optional):
 | `SYN_NO_BASH_OBSERVE` | _(unset)_ | Disable the observe-only Bash exploration logger |
 | `SYN_NO_UPDATE_CHECK` | `0` | Set to `1` to skip the daily version-check ping |
 | `SYN_DASHBOARD_DEDUPE` | `1` | Set to `0`/`off`/`false` to see every raw token-log entry |
+| `SYN_DASHBOARD_RECENT_N` | _(unset)_ | Rows per `recent_*` feed in the `/data` payload. Unset, the capped feeds (gates/bash/routes) send 60 and the paginated turn history sends 500 |
+| `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Disk cap for `activity.jsonl`, truncated to its recent half when exceeded. Queries read the in-memory ring, so the file is for eyeball debugging only; `0` disables the cap |
 
 Advanced tuning knobs (read budgets, cache TTLs, gate-hint size, usage-learning decay) also exist as `SYN_*` vars — see `src/shared/config.ts` if you need to fine-tune retrieval.
 
