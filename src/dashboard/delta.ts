@@ -3,7 +3,7 @@
 // dashboard's rendered shape: per-project + global aggregate + recent calls
 // across all projects.
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 import { tokenizeQuery } from "../graph/rank.js";
 import { readLearnStore } from "../learn/store.js";
@@ -317,6 +317,34 @@ export interface DashboardData {
   recent_routes: RecentRoute[];
 }
 
+/**
+ * Cheap change-detector for a set of logs: size + mtime, no content read.
+ *
+ * The dashboard polls /data every 10 seconds whether or not anything happened,
+ * and each poll re-read and re-parsed every log of every registered project.
+ * On an idle dashboard almost all of that work reproduces the previous answer
+ * byte for byte.
+ *
+ * A missing file contributes a distinct marker rather than throwing, and that
+ * marker must differ from any real stat: logs appear the first time a feature
+ * is used (a project's first gate block creates gate_log.jsonl), and treating
+ * that transition as "unchanged" would pin a stale payload until the next
+ * unrelated write.
+ */
+export async function logsFingerprint(paths: string[]): Promise<string> {
+  const parts = await Promise.all(
+    paths.map(async (p) => {
+      try {
+        const st = await stat(p);
+        return `${st.size}:${st.mtimeMs}`;
+      } catch {
+        return "-";
+      }
+    }),
+  );
+  return parts.join("|");
+}
+
 /** Read a JSONL file, skipping unparseable lines. Exported for `syn report`,
  *  which needs the raw per-entry detail this module otherwise aggregates away. */
 export async function readJsonl<T>(path: string): Promise<T[]> {
@@ -526,6 +554,21 @@ function dedupeTokens(entries: TokenLogEntry[]): TokenLogEntry[] {
 export const RECENT_FEED_N = 60;
 export const RECENT_TURNS_N = 500;
 
+/**
+ * Memoized /data payload, invalidated by the logs' size+mtime.
+ *
+ * Process-global because there is one dashboard per process. Keyed on the
+ * fingerprint AND the requested row budgets, so a caller asking for a different
+ * depth never receives another caller's slice.
+ */
+let payloadCache: { key: string; feedN: number; turnsN: number; data: DashboardData } | null = null;
+
+/** Drop the memoized payload. Tests use this to assert recomputation; nothing
+ *  in the server needs it, since the fingerprint handles real invalidation. */
+export function clearDashboardCache(): void {
+  payloadCache = null;
+}
+
 export async function computeDashboardData(
   activePaths: SynthraPaths,
   recentN?: number,
@@ -534,6 +577,31 @@ export async function computeDashboardData(
   const turnsN = recentN ?? RECENT_TURNS_N;
   const registered = await listProjects();
 
+  // Fingerprint before reading any content: on an idle dashboard the poll
+  // outnumbers the actual change by a wide margin, and stat is far cheaper
+  // than read+JSON.parse over every log of every project.
+  const fingerprintPaths: string[] = [];
+  for (const root of [activePaths.projectRoot, ...registered.map((p) => p.path)]) {
+    const p = resolvePaths(root);
+    fingerprintPaths.push(p.tokenLog, p.gateLog, p.toolLog, p.bashLog, p.routeLog, p.delegationLog);
+  }
+  const key = await logsFingerprint(fingerprintPaths);
+  const hit = payloadCache;
+  if (hit && hit.key === key && hit.feedN === feedN && hit.turnsN === turnsN) {
+    return hit.data;
+  }
+
+  const data = await computeDashboardDataUncached(activePaths, registered, feedN, turnsN);
+  payloadCache = { key, feedN, turnsN, data };
+  return data;
+}
+
+async function computeDashboardDataUncached(
+  activePaths: SynthraPaths,
+  registered: Awaited<ReturnType<typeof listProjects>>,
+  feedN: number,
+  turnsN: number,
+): Promise<DashboardData> {
   // Always include the active project, even if not yet in the registry.
   const activePath = activePaths.projectRoot;
   const activeName = basename(activePath);
