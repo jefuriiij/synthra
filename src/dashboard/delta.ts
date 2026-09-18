@@ -8,7 +8,7 @@ import { readFile, stat } from "node:fs/promises";
 import { tokenizeQuery } from "../graph/rank.js";
 import { readLearnStore } from "../learn/store.js";
 import { effectiveScores, emptyStore, type LearnStore } from "../learn/usage.js";
-import { resolvePaths, type SynthraPaths } from "../shared/paths.js";
+import { resolvePaths, sameRoot, type SynthraPaths } from "../shared/paths.js";
 import { estimateCostUsd } from "../shared/pricing.js";
 import { listProjects } from "../shared/project-registry.js";
 
@@ -603,13 +603,18 @@ async function computeDashboardDataUncached(
   turnsN: number,
 ): Promise<DashboardData> {
   // Always include the active project, even if not yet in the registry.
+  //
+  // Matched with sameRoot, not string equality: the active root arrives spelled
+  // however the caller spelled it (an editor extension host hands over a
+  // lowercased drive letter, a shell an uppercase one), and an exact compare
+  // prepended a second entry for a directory already in the list — the same
+  // project rendered twice, its logs counted twice in every global total.
   const activePath = activePaths.projectRoot;
   const activeName = basename(activePath);
-  const knownPaths = new Set(registered.map((p) => p.path));
   const allEntries: Array<{ path: string; name: string; last_seen: string | null }> = [
     ...registered.map((p) => ({ path: p.path, name: p.name, last_seen: p.last_seen })),
   ];
-  if (!knownPaths.has(activePath)) {
+  if (!registered.some((p) => sameRoot(p.path, activePath))) {
     allEntries.unshift({ path: activePath, name: activeName, last_seen: null });
   }
 

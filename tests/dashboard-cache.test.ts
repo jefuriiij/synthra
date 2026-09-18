@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   clearDashboardCache,
@@ -19,6 +19,7 @@ import {
   logsFingerprint,
 } from "../src/dashboard/delta.js";
 import { resolvePaths, type SynthraPaths } from "../src/shared/paths.js";
+import { recordProject } from "../src/shared/project-registry.js";
 
 async function tmp(): Promise<string> {
   return mkdtemp(join(tmpdir(), "syn-fp-"));
@@ -134,5 +135,31 @@ describe("computeDashboardData caching", () => {
     const wide = await computeDashboardData(paths, 500);
     const narrow = await computeDashboardData(paths);
     expect(narrow).not.toBe(wide);
+  });
+
+  // Companion to the registry-level dedupe. Fixing recordProject stopped the
+  // registry FILE holding a root twice, but the dashboard merges the active
+  // project into that list separately — and did so with an exact string match.
+  // An active path spelled differently from the stored one (the editor
+  // extension host hands over a lowercased drive letter, a shell gives an
+  // uppercase one) reappeared as a second card with the same name and the same
+  // logs counted twice.
+  it("does not list the active project twice when its path is spelled differently", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-dash-"));
+    await mkdir(join(root, ".synthra-graph"), { recursive: true });
+
+    // Register it under one spelling...
+    await recordProject(root, join(process.env.HOME as string, ".synthra", "projects.json"));
+
+    // ...and ask for the dashboard under another. On Windows these are the same
+    // directory; on POSIX, forward slashes already match, so vary the case of
+    // the drive letter only when there is one.
+    const alt = /^[A-Za-z]:/.test(root)
+      ? root[0].toLowerCase() + root.slice(1)
+      : root.replace(/\/$/, "");
+
+    const data = await computeDashboardData(resolvePaths(alt));
+    const matching = data.projects.filter((p) => p.name === basename(root));
+    expect(matching).toHaveLength(1);
   });
 });
