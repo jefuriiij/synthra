@@ -7,6 +7,54 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.31.0] — 2026-09-19
+
+### Changed
+
+- **The `/data` payload dropped from 483 KB to 172 KB (-64%), and a poll that
+  finds nothing new now costs 8 ms instead of 45 ms.**
+
+  Two separate problems, both measured on a real 14-project install before and
+  after.
+
+  `/data` carried 500 rows of each `recent_*` array — together ~96% of the
+  payload, re-sent every 10 seconds. Most of it was unreachable: `Moat.svelte`
+  slices gates to 50 and bash to 12, `Dispatcher.svelte` slices routes to 50.
+  Those three feeds now send 60.
+
+  `recent_turns` deliberately still sends 500. It is *paginated* by
+  `RecentTurns.svelte` at 25 rows a page, so all 500 rows are reachable — 20
+  pages of real history. Cutting it to match the others would have silently
+  thrown away 17 of them. `SYN_DASHBOARD_RECENT_N` still overrides both.
+
+  Separately, every poll re-read and re-parsed every log of every registered
+  project, on an interval, whether or not anything had changed. The logs are now
+  fingerprinted on size+mtime — `stat` only, no content read — and an unchanged
+  fingerprint serves the previous payload. A log *appearing* (a project's first
+  gate block creates `gate_log.jsonl`) counts as a change, so a new feature's
+  first event is never hidden behind a stale cache.
+
+### Fixed
+
+- **The dashboard listed the active project twice, counting its logs twice in
+  every global total.** 0.30.2 stopped the registry *file* holding one root
+  under two spellings, but the dashboard merges the active project into that
+  list separately and still compared raw path strings. Since the editor
+  extension host passes a lowercased drive letter and a shell passes an
+  uppercase one, the duplicate came straight back on the next poll. Now uses the
+  same `sameRoot()` as the registry.
+
+- **`activity.jsonl` grew without bound while nothing read it.** At 3.4 MB
+  across 13 projects in 113 days it was the largest file Synthra writes, behind
+  a comment promising audit tooling that never arrived — `recent_activity` is
+  served entirely from the 100-event in-memory ring, and `/data` never opens the
+  file. Now capped at 512 KB, truncated to its recent half on a newline boundary
+  so no partial JSON line is ever left behind. A single line longer than the
+  window has no safe cut point and is left intact rather than corrupted.
+  `SYN_ACTIVITY_LOG_MAX_BYTES` overrides; `0` disables.
+
+---
+
 ## [0.30.2] — 2026-09-19
 
 ### Fixed
