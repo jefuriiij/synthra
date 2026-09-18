@@ -7,6 +7,80 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.30.0] — 2026-09-19
+
+### Added
+
+- **IDE extension — Synthra starts itself when you open a project.** No more
+  typing `syn .` in every window. A status-bar item shows the live symbol count,
+  opens the dashboard on click, and reports the MCP port and graph stats on
+  hover. Commands: start / stop / restart / open dashboard / show log / run
+  doctor. Built from `extension/`, packaged as a `.vsix`.
+
+  It uses stock VS Code APIs only, so one build installs into **VS Code,
+  Antigravity, Cursor, Windsurf and VSCodium** — the AI-IDE forks all install
+  from Open VSX, and anything Microsoft-specific would work in one editor and
+  silently fail in the others.
+
+  Auto-start only fires in folders Synthra already knows (`.synthra-graph/` or
+  `.synthra/` present). Bootstrapping on every folder open would append
+  `.gitignore` entries, a `CLAUDE.md` policy block and `.claude/` hooks into
+  repos you never opted in — so a new project needs the explicit
+  **Synthra: Start for this project** command once.
+
+- **`syn . --managed`** — run under a supervising process. Emits one
+  machine-readable `[syn:ready] {…}` line (port, dashboard URL, registration
+  state, graph counts) so a parent doesn't have to re-derive any of it from
+  `.synthra-graph/`, and shuts down cleanly when the parent closes stdin.
+
+  stdin EOF rather than a signal, because there is no portable signal that runs
+  our cleanup: on Windows Node has no real POSIX signals, so `kill()` becomes
+  TerminateProcess and the `finally` that unregisters MCP and releases
+  `mcp_port` / `mcp_owner.json` never runs. That leaves a port file naming a
+  dead port — and since every hook script ends in `catch { exit 0 }`, the Moat
+  and the CONTEXT.md refresh would stop working *silently*, with nothing logged
+  anywhere. Opt-in, so an interactive `syn .` is unaffected.
+
+### Fixed
+
+- **`graph_continue` ignored its own token budget.** The pack budget knob was
+  read from the environment into config and then never passed to the packer, so
+  `pack()` fell through to its own hardcoded default. Both constants were 4000,
+  which is exactly why nobody noticed: setting the variable changed nothing, and
+  the output looked correct. It now reaches both pack entry points
+  (`graph_continue` and `POST /pack`), and the default lives in one exported
+  constant instead of two independent literals that could drift.
+- **The knob is now named for what it measures.** `SYN_HARD_MAX_READ_CHARS` said
+  CHARS while its documented meaning, its default, and its only consumer were all
+  TOKENS. It is now `SYN_PACK_BUDGET_TOKENS`; the old name is still honored as a
+  fallback, so an existing export keeps working.
+
+### Changed
+
+- **`calls` edges are now resolved using the caller's imports.** Cross-file
+  callee resolution previously required a repo-wide unique name and dropped the
+  edge otherwise — so a call to a name defined in several files was thrown away
+  even when the calling file imported exactly one of them. Those imports were
+  already being resolved for the `imports` edges and then discarded. Resolution
+  order is now: same-file symbol → the unique *imported* definer → the unique
+  repo-wide definer. Ambiguous after all three is still skipped rather than
+  guessed, and a file that imports none of the candidates no longer falls back to
+  the repo-wide guess. `blast_radius`, `call_path` and `graph_read`'s dependency
+  footer all read these edges, so all three get more complete at once.
+- **`SCHEMA_VERSION` → 3.** Stored v2 graphs auto-rescan on load, as designed.
+
+### Removed
+
+- **`FileNode.summary`.** Three regexes ran over every file's full text on every
+  scan to populate a field that nothing has ever read. Dropping it removes work
+  from the hot scan path and bytes from `info_graph.json`.
+- **Three config knobs that were never read:** `SYN_TURN_READ_BUDGET_CHARS`,
+  `SYN_FALLBACK_MAX_CALLS_PER_TURN`, `SYN_RETRIEVE_CACHE_TTL_SEC`. They parsed
+  into `SynthraConfig` and no code consumed them. A documented knob that silently
+  does nothing is worse than an undocumented one.
+
+---
+
 ## [0.29.0] — 2026-09-16
 
 ### Added

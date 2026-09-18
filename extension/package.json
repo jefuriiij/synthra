@@ -1,0 +1,104 @@
+{
+  "name": "synthra-vscode",
+  "displayName": "Synthra",
+  "description": "Starts Synthra's context engine automatically when you open a project — no more typing `syn .`. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
+  "version": "0.30.0",
+  "publisher": "jefuriiij",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jefuriiij/synthra.git",
+    "directory": "extension"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "context-engine",
+    "antigravity",
+    "cursor"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "synthra.start",
+        "title": "Synthra: Start for this project",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.stop",
+        "title": "Synthra: Stop",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.restart",
+        "title": "Synthra: Restart",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.openDashboard",
+        "title": "Synthra: Open dashboard",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.showOutput",
+        "title": "Synthra: Show log",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.runDoctor",
+        "title": "Synthra: Run doctor",
+        "category": "Synthra"
+      }
+    ],
+    "configuration": {
+      "title": "Synthra",
+      "properties": {
+        "synthra.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start Synthra automatically when a folder containing a Synthra project is opened."
+        },
+        "synthra.requireExistingProject": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only auto-start in folders Synthra already knows (they have a .synthra-graph/ or .synthra/ directory). Turn this off to auto-start in every folder you open — including ones where you have never run `syn .`."
+        },
+        "synthra.path": {
+          "type": "string",
+          "default": "syn",
+          "description": "Path to the `syn` executable. Leave as `syn` if it is on your PATH."
+        },
+        "synthra.showDashboardNotification": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a notification with the dashboard link each time Synthra starts. Off by default — the status bar already shows it."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "watch": "npm run compile -- --watch",
+    "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
+  }
+}

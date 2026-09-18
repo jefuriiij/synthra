@@ -489,7 +489,6 @@ describe("handleRoute", () => {
       size: 1,
       keywords: [],
       content: "",
-      summary: "",
       file_hash: "x",
     };
     const graph: GraphSchema = {

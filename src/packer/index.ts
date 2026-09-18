@@ -1,8 +1,9 @@
 // Compresses a list of retrieved files into a structured context pack:
 // signatures + top function bodies + tests co-retrieved + dependency edges.
-// Budget is enforced in characters (~ tokens × 4) — see SYN_HARD_MAX_READ_CHARS.
+// Budget is enforced in characters (~ tokens × 4) — see SYN_PACK_BUDGET_TOKENS.
 
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
+import { DEFAULT_PACK_BUDGET_TOKENS } from "../shared/config.js";
 import { formatPack, type FormatFileSection } from "./format.js";
 import { selectInlineBodies } from "./inline.js";
 import { extractSignatures } from "./signatures.js";
@@ -11,7 +12,7 @@ import { findTestsForFile } from "./tests.js";
 export interface PackOptions {
   query: string;
   graph: GraphSchema;
-  /** Soft target for total tokens (≈ chars/4). Default: 4000. */
+  /** Soft target for total tokens (≈ chars/4). Default: SYN_PACK_BUDGET_TOKENS (4000). */
   budgetTokens?: number;
   /** Fraction of remaining budget to spend on a single file's inline bodies. Default: 0.5. */
   inlineBodyRatio?: number;
@@ -37,7 +38,7 @@ function indexSymbolsByFile(graph: GraphSchema): SymbolNode[] {
 }
 
 export async function pack(files: FileNode[], opts: PackOptions): Promise<ContextPack> {
-  const budgetTokens = opts.budgetTokens ?? 4000;
+  const budgetTokens = opts.budgetTokens ?? DEFAULT_PACK_BUDGET_TOKENS;
   const budgetChars = budgetTokens * 4;
   const inlineRatio = opts.inlineBodyRatio ?? 0.5;
   const includeTests = opts.includeTests ?? true;

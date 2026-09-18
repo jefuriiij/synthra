@@ -79,8 +79,15 @@ function symN(file: string, name: string, start: number, end: number): SymbolNod
 function callEdges(
   symsByFile: Record<string, SymbolNode[]>,
   callsByFile: Record<string, CallSite[]>,
+  importsByFile?: Record<string, string[]>,
 ) {
-  return buildCallEdges(new Map(Object.entries(symsByFile)), new Map(Object.entries(callsByFile)));
+  return buildCallEdges(
+    new Map(Object.entries(symsByFile)),
+    new Map(Object.entries(callsByFile)),
+    importsByFile
+      ? new Map(Object.entries(importsByFile).map(([k, v]) => [k, new Set(v)]))
+      : undefined,
+  );
 }
 
 describe("buildCallEdges (name-based call resolution)", () => {
@@ -117,6 +124,73 @@ describe("buildCallEdges (name-based call resolution)", () => {
       { "a.ts": [{ callee: "target", line: 5 }] },
     );
     expect(edges).toEqual([]);
+  });
+
+  it("disambiguates a cross-file callee via the caller's imports", () => {
+    const a = [symN("a.ts", "caller", 1, 10)];
+    const b = [symN("b.ts", "target", 1, 5)];
+    const c = [symN("c.ts", "target", 1, 5)];
+    // Name-only resolution gives up here (2 candidates). a.ts imports b.ts, so
+    // exactly one candidate is actually reachable — that's the edge.
+    const edges = callEdges(
+      { "a.ts": a, "b.ts": b, "c.ts": c },
+      { "a.ts": [{ callee: "target", line: 5 }] },
+      { "a.ts": ["b.ts"] },
+    );
+    expect(edges).toEqual([
+      { from: "symbol:a.ts::caller:1", to: "symbol:b.ts::target:1", kind: "calls" },
+    ]);
+  });
+
+  it("stays ambiguous when imports narrow to more than one candidate", () => {
+    const a = [symN("a.ts", "caller", 1, 10)];
+    const b = [symN("b.ts", "target", 1, 5)];
+    const c = [symN("c.ts", "target", 1, 5)];
+    const edges = callEdges(
+      { "a.ts": a, "b.ts": b, "c.ts": c },
+      { "a.ts": [{ callee: "target", line: 5 }] },
+      { "a.ts": ["b.ts", "c.ts"] },
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("does not invent an edge when imports exclude every candidate", () => {
+    const a = [symN("a.ts", "caller", 1, 10)];
+    const b = [symN("b.ts", "target", 1, 5)];
+    const c = [symN("c.ts", "target", 1, 5)];
+    // a.ts imports neither definer — the unique-name fallback must not fire.
+    const edges = callEdges(
+      { "a.ts": a, "b.ts": b, "c.ts": c },
+      { "a.ts": [{ callee: "target", line: 5 }] },
+      { "a.ts": ["d.ts"] },
+    );
+    expect(edges).toEqual([]);
+  });
+
+  it("still resolves a unique cross-file callee the caller did not import", () => {
+    // Re-exports and ambient globals are common; a single repo-wide definition
+    // stays confident enough on its own, exactly as before imports were used.
+    const a = [symN("a.ts", "caller", 1, 10)];
+    const b = [symN("b.ts", "target", 1, 5)];
+    const edges = callEdges(
+      { "a.ts": a, "b.ts": b },
+      { "a.ts": [{ callee: "target", line: 5 }] },
+      { "a.ts": [] },
+    );
+    expect(edges).toEqual([
+      { from: "symbol:a.ts::caller:1", to: "symbol:b.ts::target:1", kind: "calls" },
+    ]);
+  });
+
+  it("prefers the same-file symbol even when an imported file defines the name", () => {
+    const a = [symN("a.ts", "caller", 1, 10), symN("a.ts", "target", 12, 20)];
+    const b = [symN("b.ts", "target", 1, 5)];
+    const edges = callEdges(
+      { "a.ts": a, "b.ts": b },
+      { "a.ts": [{ callee: "target", line: 5 }] },
+      { "a.ts": ["b.ts"] },
+    );
+    expect(edges[0]?.to).toBe("symbol:a.ts::target:12");
   });
 
   it("skips an external/builtin callee (0 matches)", () => {

@@ -41,6 +41,7 @@ interface DefaultOpts {
   resume?: string;
   "launch-cli"?: boolean;
   full?: boolean;
+  managed?: boolean;
 }
 
 interface BannerInfo {
@@ -86,6 +87,31 @@ function waitForSignal(): Promise<NodeJS.Signals> {
     };
     process.on("SIGINT", handler);
     process.on("SIGTERM", handler);
+  });
+}
+
+/**
+ * Resolve when the parent process goes away, detected as EOF on our stdin.
+ *
+ * This exists for the IDE extension, which spawns `syn . --managed` and must be
+ * able to stop it cleanly when the window closes. A plain `kill()` is not
+ * enough: on Windows, Node has no real signals and `kill()` becomes
+ * TerminateProcess, so the `finally` block below — which unregisters MCP and
+ * releases ownership — never runs. That leaves an `mcp_port` naming a dead port,
+ * and every hook script ends in `catch { exit 0 }`, so the Moat and the
+ * CONTEXT.md refresh would silently stop working with nothing logged.
+ *
+ * stdin EOF is the one shutdown signal that behaves identically on every
+ * platform: the parent exits (or closes the pipe), we observe `end`, and we take
+ * the normal shutdown path. Opt-in via --managed so an interactive `syn .` —
+ * where stdin is a TTY that may legitimately close — is unaffected.
+ */
+function waitForParentExit(): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdin.resume();
+    process.stdin.on("end", () => resolve("stdin EOF (parent exited)"));
+    process.stdin.on("close", () => resolve("stdin closed (parent exited)"));
+    process.stdin.on("error", () => resolve("stdin error (parent exited)"));
   });
 }
 
@@ -152,8 +178,30 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
         dashboardUrl: dashboardHandle?.url ?? null,
         mcpRegistered,
       });
-      const sig = await waitForSignal();
-      log.info(`received ${sig} — shutting down…`);
+      // A machine-readable line for the IDE extension, which parses stdout
+      // rather than re-deriving state from .synthra-graph/. Single line, stable
+      // prefix, JSON payload — safe to log alongside the human banner.
+      if (opts.managed) {
+        process.stdout.write(
+          `[syn:ready] ${JSON.stringify({
+            projectRoot,
+            mcpPort: mcpHandle.port,
+            mcpUrl: mcpHandle.url,
+            dashboardUrl: dashboardHandle?.url ?? null,
+            mcpRegistered,
+            alreadyRunning: mcpHandle.alreadyRunning === true,
+            symbols: scan.symbolCount,
+            files: scan.parsed,
+            edges: scan.edgeCount,
+          })}\n`,
+        );
+      }
+      // Under --managed, ALSO stop when the parent dies: the extension can't
+      // deliver a signal that runs our cleanup on Windows (see waitForParentExit).
+      const reason = opts.managed
+        ? await Promise.race([waitForSignal(), waitForParentExit()])
+        : await waitForSignal();
+      log.info(`received ${reason} — shutting down…`);
     }
   } finally {
     // Only tear down the registration if it still points at OUR server — and
@@ -188,6 +236,11 @@ export function buildProgram() {
     .option("--resume <id>", "Resume an existing Claude session (only with --launch-cli)")
     .option("--launch-cli", "Also spawn `claude` CLI in this terminal (legacy M3 behavior)", false)
     .option("--full", "Re-parse every file, ignoring the incremental parse cache", false)
+    .option(
+      "--managed",
+      "Run under an IDE extension: emit a [syn:ready] JSON line and shut down cleanly when the parent closes stdin",
+      false,
+    )
     .action(async (path: string | undefined, opts: DefaultOpts) => {
       await defaultFlow(path ?? ".", opts);
     });

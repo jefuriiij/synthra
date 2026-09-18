@@ -803,7 +803,15 @@ async function graphContinue(args: Record<string, unknown> | undefined, ctx: Ser
     sessionKnownPaths: getRegisteredEdits(),
     usageScores: ctx.learn?.effectiveScores(),
   });
-  const packed = await pack(retrieval.files, { query, graph });
+  const packed = await pack(retrieval.files, {
+    query,
+    graph,
+    // Honor the configured pack budget. Omitting this silently fell through to
+    // the packer's own hardcoded default, so SYN_PACK_BUDGET_TOKENS (and the
+    // SYN_HARD_MAX_READ_CHARS it replaces) had no effect on graph_continue —
+    // invisible because both constants happened to be 4000.
+    budgetTokens: loadConfig().packBudgetTokens,
+  });
 
   // Log the query (no file, weight 0) as query→outcome fuel for a future
   // mechanism — never count retrieval.files, which would feed ranking its own

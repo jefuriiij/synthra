@@ -1,13 +1,15 @@
 // Environment-variable-driven configuration.
 // All knobs are prefixed SYN_.
 
+/** Default soft budget for a context pack, in tokens. Exported so the packer's
+ *  own fallback and the configured value can't drift apart — they were two
+ *  independent 4000s before, which is how the unused knob went unnoticed. */
+export const DEFAULT_PACK_BUDGET_TOKENS = 4000;
+
 export interface SynthraConfig {
-  hardMaxReadChars: number;
+  packBudgetTokens: number;
   gateHintMaxChars: number;
   readDepsMaxChars: number;
-  turnReadBudgetChars: number;
-  fallbackMaxCallsPerTurn: number;
-  retrieveCacheTtlSec: number;
   reindexDebounceMs: number;
   autoReindex: boolean;
   bashObserve: boolean;
@@ -41,12 +43,17 @@ function list(name: string): string[] {
 
 export function loadConfig(): SynthraConfig {
   return {
-    hardMaxReadChars: num("SYN_HARD_MAX_READ_CHARS", 4000),
+    // Soft budget for a graph_continue / /pack context pack, in TOKENS (the
+    // packer multiplies by 4 for its char accounting). The old name said CHARS
+    // while its documented meaning and its 4000 default were both tokens — it
+    // was also never read, so nothing observed the contradiction. Still honored
+    // as a fallback so an existing export keeps working.
+    packBudgetTokens: num(
+      "SYN_PACK_BUDGET_TOKENS",
+      num("SYN_HARD_MAX_READ_CHARS", DEFAULT_PACK_BUDGET_TOKENS),
+    ),
     gateHintMaxChars: num("SYN_GATE_HINT_CHARS", 1200),
     readDepsMaxChars: num("SYN_READ_DEPS_CHARS", 900),
-    turnReadBudgetChars: num("SYN_TURN_READ_BUDGET_CHARS", 18000),
-    fallbackMaxCallsPerTurn: num("SYN_FALLBACK_MAX_CALLS_PER_TURN", 1),
-    retrieveCacheTtlSec: num("SYN_RETRIEVE_CACHE_TTL_SEC", 900),
     // Auto-reindex: re-run the incremental scan + swap the in-memory graph this
     // many ms after the last source-file change, so graph reads never go stale
     // mid-session. Set SYN_NO_AUTOREINDEX to disable entirely.

@@ -16,7 +16,6 @@ function fileNode(path: string, content: string, keywords: string[] = []) {
     size: content.length,
     keywords,
     content,
-    summary: "",
     file_hash: "x",
   };
 }

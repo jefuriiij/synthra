@@ -20,7 +20,6 @@ export interface FileNode {
   size: number;
   keywords: string[];
   content: string;
-  summary: string;
   file_hash: string;
 }
 
@@ -48,7 +47,10 @@ export interface Edge {
 // Bump when the on-disk info_graph.json shape changes incompatibly. The server
 // auto-rescans on load when a stored graph's schema_version differs (#8).
 // v2: `calls` edges are now populated.
-export const SCHEMA_VERSION = 2;
+// v3: `summary` dropped from FileNode (was computed on every scan, read by
+//     nothing); `calls` edges additionally resolved via the caller's imports,
+//     so a v2 graph under-reports callers/callees.
+export const SCHEMA_VERSION = 3;
 
 export interface GraphSchema {
   root: string;

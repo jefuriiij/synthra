@@ -317,7 +317,9 @@ export interface DashboardData {
   recent_routes: RecentRoute[];
 }
 
-async function readJsonl<T>(path: string): Promise<T[]> {
+/** Read a JSONL file, skipping unparseable lines. Exported for `syn report`,
+ *  which needs the raw per-entry detail this module otherwise aggregates away. */
+export async function readJsonl<T>(path: string): Promise<T[]> {
   try {
     const text = await readFile(path, "utf8");
     return text

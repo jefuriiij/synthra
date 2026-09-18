@@ -29,7 +29,6 @@ function fileNode(path: string): FileNode {
     size: 1,
     keywords: [],
     content: "",
-    summary: "",
     file_hash: "x",
   };
 }
@@ -205,7 +204,6 @@ describe("graph_read — edit footer (v0.5.0)", () => {
       size: 1,
       keywords: [],
       content: "line1\nfunction foo() {\n  return 1;\n}\nline5\nline6\n",
-      summary: "",
       file_hash: "x",
     };
     const s = symNode("src/a.ts", "foo", 2, 4);
@@ -331,7 +329,6 @@ describe("buildDepsFooter — dependency surface (v0.6.0)", () => {
       size: 1,
       keywords: [],
       content: "l1\nl2\nfunction login() {\n  return findUser();\n}\nl6\n",
-      summary: "",
       file_hash: "x",
     };
     const g: GraphSchema = {
@@ -412,7 +409,6 @@ describe("graph_read — test-link footer (v0.11.0)", () => {
       size: 1,
       keywords: [],
       content: "function foo() {\n  return 1;\n}\n",
-      summary: "",
       file_hash: "x",
     };
     const tf = fileNode("src/a.test.ts");

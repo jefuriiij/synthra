@@ -14,7 +14,6 @@ function graphWith(symbolName: string): { graph: GraphSchema; candidates: FileNo
     size: 100,
     keywords: ["auth", "service", "login"],
     content: "",
-    summary: "",
     file_hash: "x",
   };
   const sym: SymbolNode = {
@@ -52,7 +51,6 @@ function mkFileNode(path: string, keywords: string[]): FileNode {
     size: 1,
     keywords,
     content: "",
-    summary: "",
     file_hash: "x",
   };
 }

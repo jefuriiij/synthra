@@ -4,6 +4,7 @@
 import { retrieve } from "../../graph/retrieve.js";
 import { scoreFiles } from "../../graph/rank.js";
 import { pack, type ContextPack } from "../../packer/index.js";
+import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
 
 export interface PackRequest {
@@ -47,7 +48,10 @@ export async function handlePack(req: PackRequest, ctx: ServerContext): Promise<
   const result = await pack(retrieval.files, {
     query: req.query,
     graph,
-    budgetTokens: req.maxTokens,
+    // An explicit maxTokens wins; otherwise fall back to the configured budget
+    // rather than the packer's private default, so the env knob reaches both
+    // entry points (this route and graph_continue) identically.
+    budgetTokens: req.maxTokens ?? loadConfig().packBudgetTokens,
     includeTests: req.includeTests,
     reasons,
   });

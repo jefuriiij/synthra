@@ -40,7 +40,6 @@ function buildGraph(specs: FileSpec[]): GraphSchema {
       size: 100,
       keywords: s.keywords,
       content: "",
-      summary: "",
       file_hash: "x",
     };
     nodes.push(fileNode);
