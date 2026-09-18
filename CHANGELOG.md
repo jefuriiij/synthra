@@ -7,6 +7,31 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.30.2] — 2026-09-19
+
+### Fixed
+
+- **The same project could register twice, and every global total counted it
+  twice.** The project registry matched on an exact path string, but Windows
+  hands the same directory over spelled differently depending on who launched
+  Synthra: a shell gives `C:\…`, an editor's extension host gives `c:\…`. Both
+  resolve to one `.synthra-graph/`, so the dashboard read those logs twice —
+  visible as the same project listed twice in the Projects card, with every
+  global figure inflated.
+
+  The ownership check already normalized paths for exactly this reason; the
+  registry just wasn't using it. `normalizeRoot`/`sameRoot` now live in
+  `shared/paths.ts` and both call sites share them, so they can't drift apart on
+  what counts as the same project.
+
+  `recordProject` also merges any duplicate pairs already on disk (keeping the
+  earliest `first_seen` and the latest `last_seen`), `listProjects` dedupes on
+  read so the dashboard is correct before any write happens, and `forgetProject`
+  matches the same way — `syn remove` previously couldn't delete an entry
+  recorded under a different spelling.
+
+---
+
 ## [0.30.1] — 2026-09-19
 
 ### Fixed

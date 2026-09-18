@@ -130,6 +130,56 @@ describe("listProjects", () => {
     // reading must not quarantine or rewrite — that's recordProject's job
     expect(await readFile(p, "utf8")).toBe("{ broken");
   });
+
+  // Windows hands the same directory over in different spellings depending on
+  // who launched Synthra — a shell gives `C:\…`, an editor extension host gives
+  // `c:\…`. Both resolve to one .synthra-graph/, so a registry holding both
+  // made the dashboard read those logs twice and double every global total.
+  it("collapses the same root recorded under a different drive-letter case", async () => {
+    const p = await regFile();
+    await writeFile(
+      p,
+      JSON.stringify({
+        schema_version: 1,
+        projects: [
+          {
+            path: "C:\\Users\\Jeff\\VelocityCG",
+            name: "VelocityCG",
+            first_seen: "2026-07-23T00:00:00Z",
+            last_seen: "2026-09-18T14:00:00Z",
+          },
+          {
+            path: "c:\\Users\\Jeff\\VelocityCG",
+            name: "VelocityCG",
+            first_seen: "2026-09-18T17:00:00Z",
+            last_seen: "2026-09-18T17:10:00Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const list = await listProjects(p);
+    expect(list).toHaveLength(1);
+    // the merged entry keeps the widest span across both spellings
+    expect(list[0]?.first_seen).toBe("2026-07-23T00:00:00Z");
+    expect(list[0]?.last_seen).toBe("2026-09-18T17:10:00Z");
+  });
+
+  it("treats a trailing separator as the same root", async () => {
+    const p = await regFile();
+    await writeFile(
+      p,
+      JSON.stringify({
+        schema_version: 1,
+        projects: [
+          { path: "/proj/x", name: "x", first_seen: "a", last_seen: "b" },
+          { path: "/proj/x/", name: "x", first_seen: "a", last_seen: "c" },
+        ],
+      }),
+      "utf8",
+    );
+    expect(await listProjects(p)).toHaveLength(1);
+  });
 });
 
 describe("forgetProject", () => {
@@ -151,5 +201,21 @@ describe("forgetProject", () => {
 
   it("reports false for a missing registry", async () => {
     expect(await forgetProject(proj("alpha"), await regFile())).toBe(false);
+  });
+
+  it("removes an entry recorded under a different case", async () => {
+    const p = await regFile();
+    await writeFile(
+      p,
+      JSON.stringify({
+        schema_version: 1,
+        projects: [{ path: "C:\\Work\\App", name: "App", first_seen: "a", last_seen: "b" }],
+      }),
+      "utf8",
+    );
+    // `syn remove` passes whatever spelling the shell gave it — it must still
+    // match, or the dashboard keeps listing a project you just uninstalled.
+    expect(await forgetProject("c:\\Work\\App", p)).toBe(true);
+    expect(await listProjects(p)).toEqual([]);
   });
 });

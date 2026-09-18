@@ -17,6 +17,7 @@ import { unlink } from "node:fs/promises";
 
 import { readJsonFile, updateJsonFile, writeTextAtomic } from "../shared/json-store.js";
 import { log } from "../shared/logger.js";
+import { sameRoot } from "../shared/paths.js";
 import type { SynthraPaths } from "../shared/paths.js";
 
 export interface OwnerRecord {
@@ -127,12 +128,7 @@ export async function releaseOwnership(paths: SynthraPaths): Promise<void> {
   }
 }
 
-/** Path equality that survives Windows' slash direction and drive-letter case. */
-export function sameRoot(a: string, b: string): boolean {
-  const norm = (p: string) =>
-    p
-      .replace(/[\\/]+$/, "")
-      .replace(/\\/g, "/")
-      .toLowerCase();
-  return norm(a) === norm(b);
-}
+/** Path equality that survives Windows' slash direction and drive-letter case.
+ *  Re-exported so the registry and the ownership check can't drift apart on
+ *  what counts as "the same project". */
+export { sameRoot };

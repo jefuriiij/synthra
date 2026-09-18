@@ -2,6 +2,28 @@
 
 import { join } from "node:path";
 
+/**
+ * Canonical form of a project root, for comparison only — never for display or
+ * for building paths.
+ *
+ * Windows hands us the same directory spelled several ways: `C:\…` from a shell,
+ * `c:\…` from an editor's extension host, and either slash direction. The
+ * filesystem treats them as one directory, so anything keyed on the raw string
+ * silently sees two projects where there is one — two registry entries, whose
+ * logs then get read (and counted) twice.
+ */
+export function normalizeRoot(p: string): string {
+  return p
+    .replace(/[\\/]+$/, "")
+    .replace(/\\/g, "/")
+    .toLowerCase();
+}
+
+/** Do these two paths name the same project root? */
+export function sameRoot(a: string, b: string): boolean {
+  return normalizeRoot(a) === normalizeRoot(b);
+}
+
 export interface SynthraPaths {
   projectRoot: string;
   graphDir: string;
