@@ -503,10 +503,35 @@ function dedupeTokens(entries: TokenLogEntry[]): TokenLogEntry[] {
   return out;
 }
 
+/**
+ * How many rows of each recent_* feed the /data payload carries.
+ *
+ * These are deliberately different numbers, because the two kinds of list are
+ * consumed differently:
+ *
+ * - recent_turns is PAGINATED by RecentTurns.svelte (25/page), so every row is
+ *   reachable by the user. Depth here is a feature.
+ * - recent_gates / recent_bash / recent_routes are hard-sliced on arrival —
+ *   Moat.svelte takes 50 and 12, Dispatcher.svelte takes 50. Anything past that
+ *   is serialized, transferred, and dropped.
+ *
+ * Both were 500, which made the four arrays ~96% of a 483 KB payload re-sent
+ * every 10 seconds; roughly 440 KB of that was the unreachable tail of the
+ * three capped feeds. Trimming those to 60 (headroom over the largest 50-row
+ * slice) is a pure win, while turns keep their full history.
+ *
+ * SYN_DASHBOARD_RECENT_N overrides both, preserving the old single-knob
+ * behaviour for anyone who set it.
+ */
+export const RECENT_FEED_N = 60;
+export const RECENT_TURNS_N = 500;
+
 export async function computeDashboardData(
   activePaths: SynthraPaths,
-  recentN = 500,
+  recentN?: number,
 ): Promise<DashboardData> {
+  const feedN = recentN ?? RECENT_FEED_N;
+  const turnsN = recentN ?? RECENT_TURNS_N;
   const registered = await listProjects();
 
   // Always include the active project, even if not yet in the registry.
@@ -691,10 +716,10 @@ export async function computeDashboardData(
       route_agents: g_route_agents,
     },
     projects,
-    recent_turns: allTurns.slice(0, recentN),
-    recent_gates: allGates.slice(0, recentN),
-    recent_bash: allBash.slice(0, recentN),
-    recent_routes: allRoutes.slice(0, recentN),
+    recent_turns: allTurns.slice(0, turnsN),
+    recent_gates: allGates.slice(0, feedN),
+    recent_bash: allBash.slice(0, feedN),
+    recent_routes: allRoutes.slice(0, feedN),
   };
 }
 

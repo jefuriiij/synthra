@@ -39,6 +39,8 @@ Thumbs.db
 .synthra-graph/
 # Claude Code per-project agent memory / local settings — dev-only, never shipped
 .claude/
+# Hermes plan documents — local working notes, same rationale as .claude/
+.hermes/
 
 # Dashboard UI build (vite → inlined by tsup)
 src/dashboard/built/

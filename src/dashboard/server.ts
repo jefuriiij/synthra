@@ -32,10 +32,10 @@ import faviconSvg from "./public/favicon.svg";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
 const VERSION = (pkgJson as { version: string }).version;
-// How many recent turns/gates the /data payload carries. The dashboard
-// paginates turns client-side (25/page); the donut uses the uncapped
-// per-project model aggregate, so it isn't bounded by this.
-const RECENT_N = Number(process.env.SYN_DASHBOARD_RECENT_N) || 500;
+// Per-feed payload budgets live in delta.ts next to the slicing they control
+// (see RECENT_FEED_N / RECENT_TURNS_N). Left undefined here so each feed gets
+// its own default; SYN_DASHBOARD_RECENT_N still overrides both at once.
+const RECENT_N = Number(process.env.SYN_DASHBOARD_RECENT_N) || undefined;
 
 export interface DashboardServerHandle {
   port: number;
