@@ -7,6 +7,48 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.31.1] — 2026-09-23
+
+### Fixed
+
+- **Every hook could be registered several times over, so each one fired several
+  times per event.** The visible symptom was the dashboard's *Recent decisions*
+  showing every prompt twice — and those rows were honest: `route_log.jsonl`
+  really did hold two identical entries, to the millisecond. The quiet half was
+  worse. `PreToolUse` doubled too, so every `Grep`, `Glob` and `Bash` call went
+  through the Moat as many times as there were copies, as did every CONTEXT.md
+  refresh on `Stop` and every prime on `SessionStart`.
+
+  `syn .` is meant to be idempotent: it strips its own hook entries from
+  `.claude/settings.local.json`, then writes one fresh set. It recognized those
+  entries by a `meta: "synthra-hook=true"` key it stamped on each one. But Claude
+  Code owns that file too, and a rewrite drops keys outside its own hook schema —
+  `meta` among them. A marker-less entry read as somebody else's hook, so it was
+  preserved, and a second copy was appended beside it. Every later run that found
+  a stripped marker added another.
+
+  Entries are now matched on the script path inside the command
+  (`.claude/hooks/synthra-*.ps1|sh`), case-insensitively — a string we write and
+  nothing else rewrites. `meta` is still stamped, as a second signal for an entry
+  whose path was hand-edited.
+
+  This was never a legacy problem. Every version since 0.1.1 stamped the marker,
+  so a marker-less entry is not an old install — it is one Claude Code has
+  rewritten, which can happen to any install of any version, however fresh.
+
+  It repairs itself: the next `syn .` in a project removes every copy and
+  registers one. Verified against 14 real projects — one of them carrying
+  **seven** copies of every hook — with foreign hooks and permissions untouched.
+
+- **`syn doctor` reported "no Synthra hooks — run `syn .`" while the hooks were
+  installed and firing**, and `syn remove`'s confirmation prompt left hooks off
+  the list of things it was about to delete. Both detected our entries by the
+  same `meta` marker, so both went blind in exactly the case above. They now use
+  the shared path match. (`syn remove` always *removed* them correctly — it calls
+  `stripOurHooks` unconditionally; only its printed summary was wrong.)
+
+---
+
 ## [0.31.0] — 2026-09-19
 
 ### Changed

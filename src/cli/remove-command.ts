@@ -14,7 +14,7 @@ import { writeJsonAtomic, writeTextAtomic } from "../shared/json-store.js";
 import { basename, join, resolve } from "node:path";
 
 import { onboardingSkeleton, stripPolicyBlock } from "../hooks/claude-md.js";
-import { stripOurHooks, type HooksConfig } from "../hooks/hooks-config.js";
+import { ourHookCounts, stripOurHooks, type HooksConfig } from "../hooks/hooks-config.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths, type SynthraPaths } from "../shared/paths.js";
@@ -207,6 +207,15 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
 }
 
 /** What Synthra artifacts exist here — the summary shown before the confirm. */
+/** Unparseable settings can't be inspected — say nothing rather than guess. */
+function hasOurHooks(settingsRaw: string): boolean {
+  try {
+    return ourHookCounts(JSON.parse(settingsRaw) as HooksConfig).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function inventory(projectRoot: string, paths: SynthraPaths): Promise<string[]> {
   const found: string[] = [];
   if (await exists(paths.graphDir)) found.push(".synthra-graph/  (graph + logs, machine-local)");
@@ -217,8 +226,11 @@ async function inventory(projectRoot: string, paths: SynthraPaths): Promise<stri
   if (gitignore?.includes("added by synthra")) found.push(".gitignore  (synthra entries)");
   const claudeMd = await readIfExists(paths.claudeMd);
   if (claudeMd?.includes("synthra-policy")) found.push("CLAUDE.md  (synthra policy block)");
+  // Same path-based detection the removal itself uses — the `meta` marker alone
+  // went missing whenever Claude Code rewrote the file, which left the hooks off
+  // this "about to delete" list even though they were there and were removed.
   const settings = await readIfExists(paths.claudeSettings);
-  if (settings?.includes("synthra-hook=true")) {
+  if (settings && hasOurHooks(settings)) {
     found.push(".claude/settings.local.json + hooks/synthra-*  (hooks)");
   }
   const mcp = await readIfExists(join(projectRoot, ".mcp.json"));

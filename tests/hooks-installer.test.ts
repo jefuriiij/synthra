@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { stripOurHooks, type HooksConfig } from "../src/hooks/hooks-config.js";
 import { installHooks, normalizeEol } from "../src/hooks/installer.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
@@ -201,5 +202,84 @@ describe("installHooks", () => {
     const remaining = await readdir(paths.claudeHooksDir);
     expect(remaining.filter((n) => n.endsWith(".ps1"))).toEqual([]);
     expect(remaining).toContain("synthra-pre-tool-use.sh");
+  });
+});
+
+// Claude Code owns settings.local.json too, and a rewrite drops keys outside
+// its own hook schema — `meta` among them. Recognizing our entries ONLY by that
+// marker meant a stripped file looked like a clean one, so the next `syn .`
+// registered a second copy of every hook. Both fired: two /route posts per
+// prompt (doubled rows in the dashboard's Recent decisions), two /gate calls
+// per Grep/Glob/Bash. It compounds once per install — a real machine had seven
+// copies in one project. We now match on the script path in the command, which
+// Claude Code never rewrites.
+describe("hooks survive Claude Code dropping the meta marker", () => {
+  /** What a Claude Code rewrite leaves behind: our entries, minus `meta`. */
+  function dropMarkers(config: HooksConfig): HooksConfig {
+    for (const entries of Object.values(config.hooks ?? {})) {
+      for (const entry of entries) {
+        for (const h of entry.hooks ?? []) delete h.meta;
+      }
+    }
+    return config;
+  }
+
+  const ourCommands = (cfg: HooksConfig, event: string) =>
+    (cfg.hooks?.[event] ?? []).flatMap((e) =>
+      (e.hooks ?? []).map((h) => h.command).filter((c) => /synthra-/.test(c)),
+    );
+
+  it("re-registers exactly once after the marker is stripped", async () => {
+    const paths = await project();
+    await installHooks(paths);
+
+    const rewritten = dropMarkers(JSON.parse(await readFile(paths.claudeSettings, "utf8")));
+    await writeFile(paths.claudeSettings, JSON.stringify(rewritten, null, 2), "utf8");
+
+    await installHooks(paths);
+
+    const cfg = JSON.parse(await readFile(paths.claudeSettings, "utf8"));
+    for (const event of ["SessionStart", "PreToolUse", "PreCompact", "Stop", "UserPromptSubmit"]) {
+      expect(ourCommands(cfg, event), `${event} should have one Synthra hook`).toHaveLength(1);
+    }
+  });
+
+  // The second registration on Windows came in with a lower-case drive letter,
+  // because the IDE extension passes a cwd Node spells differently than the
+  // shell does. Path matching has to ignore that.
+  it("strips an unmarked entry that differs only in case", () => {
+    const script = 'powershell.exe -File "C:\\Proj\\.CLAUDE\\HOOKS\\SYNTHRA-ROUTE.PS1"';
+    const stripped = stripOurHooks({
+      hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: script }] }] },
+    });
+    expect(stripped.hooks?.UserPromptSubmit).toBeUndefined();
+  });
+
+  // Pre-0.14 installs predate the marker entirely; they were never cleanable.
+  it("strips a pre-marker entry while keeping a foreign hook beside it", () => {
+    const stripped = stripOurHooks({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              { type: "command", command: 'bash "/home/j/proj/.claude/hooks/synthra-stop.sh"' },
+              { type: "command", command: 'bash "/home/j/proj/.claude/hooks/their-stop.sh"' },
+            ],
+          },
+        ],
+      },
+    });
+    const commands = (stripped.hooks?.Stop ?? []).flatMap((e) =>
+      (e.hooks ?? []).map((h) => h.command),
+    );
+    expect(commands).toEqual(['bash "/home/j/proj/.claude/hooks/their-stop.sh"']);
+  });
+
+  it("leaves a hook that merely mentions synthra in an argument", () => {
+    const command = "node ./tools/audit.js --project synthra --hooks .claude/hooks";
+    const stripped = stripOurHooks({
+      hooks: { Stop: [{ hooks: [{ type: "command", command }] }] },
+    });
+    expect((stripped.hooks?.Stop ?? [])[0]?.hooks?.[0]?.command).toBe(command);
   });
 });

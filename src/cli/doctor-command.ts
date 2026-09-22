@@ -13,6 +13,7 @@ import spawn from "cross-spawn";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import type { GraphSchema } from "../graph/types.js";
 import { POLICY_VERSION } from "../hooks/claude-md.js";
+import { ourHookCounts, type HooksConfig } from "../hooks/hooks-config.js";
 import { probeHealth, sameRoot } from "../server/owner.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
@@ -242,16 +243,43 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
       detail: "no .claude/settings.local.json — run `syn .` to install hooks.",
     });
   } else {
+    // Detect by script path, not by the `meta` marker: Claude Code co-owns this
+    // file and drops that key when it rewrites it, which used to make doctor
+    // report "no hooks" while every hook was installed and firing.
     const s = await readFile(paths.claudeSettings, "utf8");
-    checks.push(
-      s.includes("synthra-hook=true")
-        ? { status: "ok", label: "Hooks", detail: "registered in .claude/settings.local.json" }
-        : {
-            status: "warn",
-            label: "Hooks",
-            detail: "settings.local.json present but no Synthra hooks — run `syn .`.",
-          },
-    );
+    let counts: Map<string, number> | undefined;
+    try {
+      counts = ourHookCounts(JSON.parse(s) as HooksConfig);
+    } catch {
+      counts = undefined;
+    }
+    const worst = counts ? Math.max(0, ...counts.values()) : 0;
+    if (!counts) {
+      checks.push({
+        status: "warn",
+        label: "Hooks",
+        detail: "settings.local.json is not valid JSON — hook state unknown.",
+      });
+    } else if (worst === 0) {
+      checks.push({
+        status: "warn",
+        label: "Hooks",
+        detail: "settings.local.json present but no Synthra hooks — run `syn .`.",
+      });
+    } else if (worst > 1) {
+      checks.push({
+        status: "warn",
+        label: "Hooks",
+        // Each extra copy is another run of the same hook on every event.
+        detail: `registered ${worst}× in .claude/settings.local.json — every hook fires ${worst} times. Run \`syn .\` to repair.`,
+      });
+    } else {
+      checks.push({
+        status: "ok",
+        label: "Hooks",
+        detail: `registered in .claude/settings.local.json (${counts.size} events)`,
+      });
+    }
   }
 
   return checks;

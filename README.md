@@ -244,7 +244,7 @@ your-project/
 │                                # Gitignored by default — remove the line to share with teammates.
 ├── CLAUDE.md                    # appended: <!-- synthra-policy v9 BEGIN/END --> markers
 ├── .claude/
-│   ├── settings.local.json      # 5 hooks merged (tagged meta: "synthra-hook=true")
+│   ├── settings.local.json      # 5 hooks merged (recognized by their script path)
 │   └── hooks/                   # synthra-prime, -pre-tool-use, -pre-compact, -stop, -route (.ps1/.sh)
 ├── .synthra-graph/              # GITIGNORED — heavy machine-local state
 │   ├── info_graph.json
@@ -263,7 +263,7 @@ Five hooks are installed: **SessionStart** (inject the context pack), **PreToolU
 
 ## Coexistence
 
-Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v9 -->` markers, and tags hook entries with `meta: "synthra-hook=true"` so re-runs strip only its own. Your content in shared files **always** survives — `syn remove` proves it, leaving your gitignore lines, CLAUDE.md prose, and other hooks intact. If another tool logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries so totals don't double-count.
+Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v9 -->` markers, and identifies its own hook entries by the script path they run (`.claude/hooks/synthra-*`), so re-runs strip only its own — a `meta: "synthra-hook=true"` tag is written too, but nothing depends on it, since Claude Code co-owns that file and drops unfamiliar keys when it rewrites. Your content in shared files **always** survives — `syn remove` proves it, leaving your gitignore lines, CLAUDE.md prose, and other hooks intact. If another tool logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries so totals don't double-count.
 
 ---
 

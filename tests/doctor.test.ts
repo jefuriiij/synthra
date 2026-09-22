@@ -17,6 +17,26 @@ import { POLICY_VERSION } from "../src/hooks/claude-md.js";
 
 const find = (checks: DoctorCheck[], label: string) => checks.find((c) => c.label === label);
 
+interface HookEntry {
+  hooks: Array<{ type: string; command: string; meta?: string }>;
+}
+
+/** A settings file with `copies` registrations of our Stop hook. Two or more is
+ *  the duplicate-registration bug; the command path is what identifies them. */
+const hookSettings = (copies: number): { hooks: { Stop: HookEntry[] } } => ({
+  hooks: {
+    Stop: Array.from({ length: copies }, () => ({
+      hooks: [
+        {
+          type: "command",
+          command: 'bash "/p/.claude/hooks/synthra-stop.sh"',
+          meta: "synthra-hook=true" as string | undefined,
+        },
+      ],
+    })),
+  },
+});
+
 describe("MCP server check (v0.26)", () => {
   // Every hook script ends in `catch { exit 0 }`, so a dead or hijacked port
   // produces no error anywhere — the Moat just stops gating and CONTEXT.md just
@@ -119,16 +139,38 @@ describe("runDoctorChecks", () => {
       join(dir, "CLAUDE.md"),
       `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->\nx\n`,
     );
-    await writeFile(
-      join(dir, ".claude", "settings.local.json"),
-      JSON.stringify({ hooks: { Stop: [{ hooks: [{ meta: "synthra-hook=true" }] }] } }),
-    );
+    await writeFile(join(dir, ".claude", "settings.local.json"), JSON.stringify(hookSettings(1)));
 
     const checks = await runDoctorChecks(dir);
     expect(find(checks, "Graph")?.status).toBe("ok");
     expect(find(checks, "MCP registration")?.status).toBe("ok");
     expect(find(checks, "CLAUDE.md policy")?.status).toBe("ok");
     expect(find(checks, "Hooks")?.status).toBe("ok");
+  });
+
+  // Claude Code drops the `meta` marker when it rewrites settings.local.json.
+  // Doctor used to look for that key alone, so it announced "no Synthra hooks —
+  // run `syn .`" about an install whose hooks were present and firing.
+  it("still sees the hooks after the meta marker is dropped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "syn-doctor-"));
+    await mkdir(join(dir, ".claude"), { recursive: true });
+    const settings = hookSettings(1);
+    for (const entry of settings.hooks.Stop) for (const h of entry.hooks) h.meta = undefined;
+    await writeFile(join(dir, ".claude", "settings.local.json"), JSON.stringify(settings));
+
+    expect(find(await runDoctorChecks(dir), "Hooks")?.status).toBe("ok");
+  });
+
+  // The duplicate-registration bug that the marker loss caused: each extra copy
+  // is another run of the same hook on every single event.
+  it("warns when a hook is registered more than once", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "syn-doctor-"));
+    await mkdir(join(dir, ".claude"), { recursive: true });
+    await writeFile(join(dir, ".claude", "settings.local.json"), JSON.stringify(hookSettings(3)));
+
+    const hooks = find(await runDoctorChecks(dir), "Hooks");
+    expect(hooks?.status).toBe("warn");
+    expect(hooks?.detail).toContain("3");
   });
 
   it("warns on a stale-schema or 0-symbol graph", async () => {
