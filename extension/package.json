@@ -2,7 +2,7 @@
   "name": "synthra-vscode",
   "displayName": "Synthra",
   "description": "Starts Synthra's context engine automatically when you open a project — no more typing `syn .`. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "publisher": "jefuriiij",
   "license": "MIT",
   "repository": {

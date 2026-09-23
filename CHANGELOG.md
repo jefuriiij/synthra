@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [Unreleased]
+
+### Fixed (extension 0.31.1)
+
+- **Synthra: Show health could show a result from before the problem.** It
+  replayed the last poll, which may be minutes old — found in the first real
+  run, when a deliberately broken `mcp_port` still listed "all good". Opening
+  the list now runs a fresh check first (one local HTTP call), and the title
+  says when it checked.
+
+- **One ignored health warning stopped all later health checks.** The popup's
+  promise only settles when the user clicks or dismisses it, and a toast that
+  auto-hides into the notification centre may never settle. The first check
+  awaited it, and the poll timer and the update check were chained after the
+  first check — so neither started. The popup is no longer awaited.
+
+---
+
 ## [0.32.0] — 2026-09-23
 
 ### Added

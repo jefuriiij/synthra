@@ -91,6 +91,9 @@ let health: DoctorReport | null = null;
 let healthUnsupported = false;
 let healthTimer: ReturnType<typeof setInterval> | null = null;
 let lastHealthAt = 0;
+/** When `health` was last filled in — shown in the health list's title, so an
+ *  answer is never mistaken for a fresh one. */
+let healthCheckedAt: Date | null = null;
 /** Bumped by every stop/start. A /doctor answer from an older generation is
  *  dropped: during shutdown the server deletes mcp_port a moment BEFORE it stops
  *  answering, so a poll landing in that gap would report "mcp_port is missing"
@@ -311,7 +314,7 @@ function runSyn(args: string[], timeoutMs: number): Promise<string | null> {
  * Those are asked for once after start, not on every poll: they don't change
  * minute to minute, and `claude --version` is a Node cold start each time.
  */
-async function checkHealth(full: boolean): Promise<void> {
+async function checkHealth(full: boolean, opts: { quiet?: boolean } = {}): Promise<void> {
   if (state.kind !== "running" || healthUnsupported) return;
   const port = state.info.mcpPort;
   const gen = healthGen;
@@ -348,14 +351,22 @@ async function checkHealth(full: boolean): Promise<void> {
     report.status = worstOf(report.checks);
   }
   health = report;
+  healthCheckedAt = new Date();
   render();
-  await maybeNotifyHealth(report);
+  await maybeNotifyHealth(report, opts.quiet === true);
 }
 
 /** Checks that only `?env=1` returns — carried between light polls. */
 const ENV_LABELS = new Set(["Node", "jq", "claude CLI"]);
 
-async function maybeNotifyHealth(report: DoctorReport): Promise<void> {
+/**
+ * Pop a notification for a problem set the user hasn't been shown yet.
+ *
+ * `quiet`: the user is looking at the health list right now, so a popup would
+ * only cover it — record the problems as seen instead, so the next poll
+ * doesn't announce what they just read.
+ */
+async function maybeNotifyHealth(report: DoctorReport, quiet: boolean): Promise<void> {
   const signature = problemSignature(report.checks);
   const last = extContext.workspaceState.get<string>(NOTIFIED_KEY);
   if (signature === "") {
@@ -365,6 +376,7 @@ async function maybeNotifyHealth(report: DoctorReport): Promise<void> {
   }
   if (!shouldNotify(signature, last)) return;
   await extContext.workspaceState.update(NOTIFIED_KEY, signature);
+  if (quiet) return;
 
   const problems = report.checks.filter((c) => c.status !== "ok");
   const first = problems[0];
@@ -373,9 +385,15 @@ async function maybeNotifyHealth(report: DoctorReport): Promise<void> {
   const text = `Synthra: ${first.label} — ${first.detail}${more}`;
   const show =
     report.status === "fail" ? vscode.window.showErrorMessage : vscode.window.showWarningMessage;
-  const pick = await show(text, "Repair", "Details");
-  if (pick === "Repair") await repair();
-  else if (pick === "Details") await showHealth();
+  // NOT awaited. The promise only settles when the user clicks or dismisses,
+  // and a toast that auto-hides into the notification centre may never settle.
+  // Awaiting it held checkHealth open — and at startup the poll timer and the
+  // update check are chained after the first checkHealth, so one ignored
+  // warning meant neither ever ran.
+  void show(text, "Repair", "Details").then((pick) => {
+    if (pick === "Repair") void repair();
+    else if (pick === "Details") void showHealth();
+  });
 }
 
 function startHealthPolling(): void {
@@ -390,12 +408,20 @@ function stopHealthPolling(): void {
   healthTimer = null;
 }
 
-async function showHealth(): Promise<void> {
+/**
+ * The health list. It always checks first — opening it IS asking "how is it
+ * now?", and the last poll may be minutes old. (Found in the first real run:
+ * a deliberately broken mcp_port still showed "all good", because the list
+ * replayed the result from before the break.) A light check is one local HTTP
+ * call; `full` also re-runs the process-spawning environment checks.
+ */
+async function showHealth(full = false): Promise<void> {
   if (state.kind !== "running") {
     vscode.window.showInformationMessage("Synthra isn't running.");
     return;
   }
-  if (!health) await checkHealth(true);
+  // Quiet: the list itself is the report, so no popup on top of it.
+  await checkHealth(full || !health, { quiet: true });
   if (!health) {
     vscode.window.showInformationMessage(
       healthUnsupported
@@ -420,15 +446,15 @@ async function showHealth(): Promise<void> {
       detail: c.detail,
     })),
   ];
+  const verdict = health.status === "ok" ? "all good" : "needs attention";
+  const at = healthCheckedAt ? ` · checked ${healthCheckedAt.toLocaleTimeString()}` : "";
   const pick = await vscode.window.showQuickPick(items, {
-    title: `Synthra ${health.version} — ${health.status === "ok" ? "all good" : "needs attention"}`,
+    title: `Synthra ${health.version} — ${verdict}${at}`,
     matchOnDetail: true,
   });
   if (pick?.action === "repair") await repair();
-  else if (pick?.action === "recheck") {
-    await checkHealth(true);
-    await showHealth();
-  } else if (pick?.action === "doctor") await vscode.commands.executeCommand("synthra.runDoctor");
+  else if (pick?.action === "recheck") await showHealth(true);
+  else if (pick?.action === "doctor") await vscode.commands.executeCommand("synthra.runDoctor");
 }
 
 /** Nearly every doctor warning says "run `syn .`". A restart IS `syn .` — the
