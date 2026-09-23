@@ -7,6 +7,97 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.32.0] — 2026-09-23
+
+### Added
+
+- **The IDE extension now shows whether Synthra is healthy, not just whether it
+  is running.** The status-bar item turns yellow or red when a doctor check
+  fails, lists the problems on hover, and a click opens every check with a
+  **Repair** button.
+
+  Every serious Synthra failure so far has been silent. 0.31.1's duplicate hooks
+  sat in one project at seven copies apiece; a dead `mcp_port` turns every hook
+  into a no-op; 0.27.0's CRLF hook scripts broke bash outright. `syn doctor`
+  could see most of it, but nobody runs doctor without a reason — so now the
+  extension runs it: once at start, every 5 minutes (`synthra.healthCheckMinutes`),
+  and again when you come back to the window.
+
+  **Repair** restarts Synthra. A managed start *is* `syn .` — it reinstalls hooks,
+  refreshes the policy block and re-registers MCP — which is the remedy nearly
+  every doctor warning names.
+
+  A popup fires only for a problem set you haven't been shown yet, remembered per
+  workspace. A warning you can't act on right now (no `claude` on PATH, say)
+  would otherwise toast on every window open, and a toast that always fires is
+  one that gets ignored the time it matters. The status bar tells the truth
+  either way.
+
+- **`GET /doctor`** on the MCP server — `syn doctor`'s checks as JSON, plus the
+  server's version and its worst status. This is what the extension polls.
+  `?env=1` adds the checks that spawn processes (Node, jq, `claude --version`);
+  the extension asks for those once, not per poll, since `claude --version`
+  alone is a Node cold start.
+
+  From inside the server the `MCP server` check changes meaning. Probing our own
+  `/health` would prove only that we are answering, which we are. So it checks
+  what the hooks will actually do instead: if `mcp_port` is missing or names a
+  different port, every hook in the project is talking to someone else while
+  this server looks healthy — and that is now a **fail**.
+
+- **The extension offers updates.** It starts `syn` with no terminal and
+  `SYN_NO_UPDATE_CHECK=1`, so the CLI's `Update now? [y/N]` prompt could never
+  appear under it: anyone who opened projects only from the editor was never
+  told a new version existed. The extension now checks npm itself, once per
+  window, in the background after the server is up — never on the startup path.
+
+  It compares **three** versions, not two: what npm has, what `syn --version`
+  says is on disk, and what the live server reports. The third is what makes
+  several windows behave. Update from one, and the others still run the old
+  code in memory; compared with npm alone they would offer an install that is
+  already done, forever. Compared with the disk, they offer what actually helps
+  — *Restart*.
+
+  **Update** stops the server (on Windows a running process can hold files npm
+  needs to replace), runs `npm install -g @jefuriiij/synthra@latest` with its
+  output in the Synthra log, and starts it again. If npm fails — usually a
+  permissions problem on macOS/Linux — a button runs the same command in a
+  terminal. *Skip this version* is remembered across windows; **Synthra: Check
+  for updates** ignores it. Off with `synthra.checkForUpdates`.
+
+- **`version` in the `[syn:ready]` line**, and in `syn serve`'s owner record.
+
+- Extension **0.31.0**: new commands *Show health*, *Repair*, *Check for
+  updates*; new settings `synthra.healthCheckMinutes` and
+  `synthra.checkForUpdates`. With a CLI older than 0.32 there is no `/doctor`:
+  the extension notices the 404 and turns the health light off. The update
+  check keeps working — it needs only `syn --version` and npm — which is the
+  point: an old CLI is exactly the one that should be told to update.
+
+### Fixed
+
+- **Two servers starting at the same moment could leave one project's hooks
+  talking to the other project's server.** `reserveFreePort()` holds its probe
+  socket, but has to let go of it for the real listen, and in that gap another
+  server can take the port. Nothing waited for the listen to succeed: the
+  `EADDRINUSE` arrived later as an uncaught error, while `mcp_port` had already
+  been written naming a port that someone else now answered on. Every hook in
+  the project then read and wrote another project's state — silently.
+
+  Starting several at once is ordinary, and the IDE extension makes it more so:
+  an editor restoring three windows starts three servers together. The server
+  now waits until the port is really bound before writing `mcp_port`, and a lost
+  race simply moves on to the next free port. This is also the case 0.32's
+  health light shows in red, from the other side.
+
+  Found by the release audit as a one-off test failure (`EADDRINUSE`) that would
+  not reproduce — the kind of flake that is really a product race.
+
+- **`GET /` reported version `0.0.1`** — a literal from the first commit, never
+  updated. It now reports the running version.
+
+---
+
 ## [0.31.1] — 2026-09-23
 
 ### Fixed
