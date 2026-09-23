@@ -27,6 +27,8 @@ git ops     │   Git watcher           │──┐
                             │  /prime /pack /log │  per project (mcp_owner.json)
                             │  /gate /route /mcp │
                             │  /activity /health │  ← Claude Code hooks + MCP
+                            │  /context-update   │
+                            │  /doctor           │  ← IDE extension health light
                             └─────────┬──────────┘
                                       │
                                       ▼

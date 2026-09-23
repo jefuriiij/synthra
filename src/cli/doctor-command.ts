@@ -99,13 +99,71 @@ async function checkMcpServer(portFile: string, projectRoot: string): Promise<Do
   return { status: "ok", label, detail: `listening on :${port} (pid ${health.pid})` };
 }
 
+/**
+ * The `MCP server` check as run BY the server, about itself (`GET /doctor`).
+ *
+ * Probing our own /health over HTTP from inside a request handler would work,
+ * but it proves nothing — we are obviously alive, we are answering. The failure
+ * that matters from in here is the port file naming somebody else: the hooks
+ * read `mcp_port`, so if it no longer says our port, every hook in this project
+ * is talking to another process while we sit here looking healthy.
+ */
+async function checkSelfPort(portFile: string, selfPort: number): Promise<DoctorCheck> {
+  const label = "MCP server";
+  let raw: string;
+  try {
+    raw = (await readFile(portFile, "utf8")).trim();
+  } catch {
+    return {
+      status: "fail",
+      label,
+      detail: `mcp_port is missing — this server is up on :${selfPort}, but the hooks can't find it, so every hook silently no-ops. Restart Synthra.`,
+    };
+  }
+  if (Number(raw) !== selfPort) {
+    return {
+      status: "fail",
+      label,
+      detail: `mcp_port says :${raw || "(empty)"} but this server is :${selfPort} — the hooks are talking to someone else. Restart Synthra.`,
+    };
+  }
+  return { status: "ok", label, detail: `listening on :${selfPort} (pid ${process.pid})` };
+}
+
+export interface DoctorCheckOptions {
+  /** Include the checks that spawn processes (Node, jq, `claude --version`).
+   *  Default true. The IDE extension polls with this off: the environment
+   *  doesn't change between polls, and `claude --version` alone is a Node
+   *  cold start every few minutes for nothing. */
+  environment?: boolean;
+  /** Set when the server runs the checks about itself — swaps the HTTP
+   *  self-probe for a direct port-file comparison (see checkSelfPort). */
+  selfPort?: number;
+}
+
+/** The worst status in a set of checks — what the IDE status bar shows. */
+export function worstStatus(checks: DoctorCheck[]): CheckStatus {
+  if (checks.some((c) => c.status === "fail")) return "fail";
+  if (checks.some((c) => c.status === "warn")) return "warn";
+  return "ok";
+}
+
 /** Collect the diagnostic checks for a project. Pure of console output so it can
  *  be tested; doctorCommand() wraps it with printing. */
-export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[]> {
+export async function runDoctorChecks(
+  projectRoot: string,
+  opts: DoctorCheckOptions = {},
+): Promise<DoctorCheck[]> {
   const paths = resolvePaths(projectRoot);
   const cfg = loadConfig();
   const checks: DoctorCheck[] = [];
+  if (opts.environment !== false) await environmentChecks(checks, cfg.claudeBin);
 
+  await projectChecks(checks, projectRoot, paths, opts.selfPort);
+  return checks;
+}
+
+async function environmentChecks(checks: DoctorCheck[], claudeBin: string): Promise<void> {
   // Node version
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push(
@@ -142,17 +200,24 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
   }
 
   // claude CLI — needed for MCP registration + IDE integration.
-  const hasClaude = await binWorks(cfg.claudeBin, ["--version"]);
+  const hasClaude = await binWorks(claudeBin, ["--version"]);
   checks.push(
     hasClaude
-      ? { status: "ok", label: "claude CLI", detail: `'${cfg.claudeBin}' on PATH` }
+      ? { status: "ok", label: "claude CLI", detail: `'${claudeBin}' on PATH` }
       : {
           status: "warn",
           label: "claude CLI",
-          detail: `'${cfg.claudeBin}' not found — MCP registration + IDE need it (set SYN_CLAUDE_BIN to override).`,
+          detail: `'${claudeBin}' not found — MCP registration + IDE need it (set SYN_CLAUDE_BIN to override).`,
         },
   );
+}
 
+async function projectChecks(
+  checks: DoctorCheck[],
+  projectRoot: string,
+  paths: ReturnType<typeof resolvePaths>,
+  selfPort: number | undefined,
+): Promise<void> {
   // Graph
   if (!(await exists(paths.infoGraph))) {
     checks.push({
@@ -191,7 +256,11 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
   // Worth its own check because the failure is invisible: every hook script
   // ends in `catch { exit 0 }`, so a dead port means the Moat stops gating and
   // CONTEXT.md stops refreshing with nothing logged anywhere.
-  checks.push(await checkMcpServer(paths.mcpPort, projectRoot));
+  checks.push(
+    selfPort === undefined
+      ? await checkMcpServer(paths.mcpPort, projectRoot)
+      : await checkSelfPort(paths.mcpPort, selfPort),
+  );
 
   // MCP registration for the IDE (.mcp.json at the project root)
   checks.push(
@@ -281,8 +350,6 @@ export async function runDoctorChecks(projectRoot: string): Promise<DoctorCheck[
       });
     }
   }
-
-  return checks;
 }
 
 /** Replace the user's home directory (either slash direction) with `~` so a

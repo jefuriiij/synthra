@@ -2,7 +2,7 @@
   "name": "synthra-vscode",
   "displayName": "Synthra",
   "description": "Starts Synthra's context engine automatically when you open a project — no more typing `syn .`. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "publisher": "jefuriiij",
   "license": "MIT",
   "repository": {
@@ -58,6 +58,21 @@
         "command": "synthra.runDoctor",
         "title": "Synthra: Run doctor",
         "category": "Synthra"
+      },
+      {
+        "command": "synthra.showHealth",
+        "title": "Synthra: Show health",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.repair",
+        "title": "Synthra: Repair (re-run syn .)",
+        "category": "Synthra"
+      },
+      {
+        "command": "synthra.checkForUpdates",
+        "title": "Synthra: Check for updates",
+        "category": "Synthra"
       }
     ],
     "configuration": {
@@ -82,6 +97,17 @@
           "type": "boolean",
           "default": false,
           "description": "Show a notification with the dashboard link each time Synthra starts. Off by default — the status bar already shows it."
+        },
+        "synthra.healthCheckMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "How often to re-check Synthra's health while it runs (the status bar turns yellow or red when something is wrong). 0 turns polling off; a check still runs at start and when the window regains focus. The health light needs Synthra 0.32+."
+        },
+        "synthra.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check npm for a newer Synthra once per window and offer to install it. The CLI's own update prompt can't appear under the extension, so without this you are never told."
         }
       }
     }

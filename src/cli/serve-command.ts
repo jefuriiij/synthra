@@ -9,7 +9,10 @@ import { startServer } from "../server/http.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
 
-export async function serveCommand(rawPath: string): Promise<void> {
+export async function serveCommand(
+  rawPath: string,
+  opts: { version?: string } = {},
+): Promise<void> {
   const projectRoot = resolve(rawPath);
   const paths = resolvePaths(projectRoot);
 
@@ -21,7 +24,9 @@ export async function serveCommand(rawPath: string): Promise<void> {
     process.exit(2);
   }
 
-  const handle = await startServer(paths);
+  // The version reaches /doctor and the owner record — the IDE extension reads
+  // it to tell "installed" from "running" after an update in another window.
+  const handle = await startServer(paths, { version: opts.version });
   if (handle.alreadyRunning) {
     // Starting a rival would orphan the live one: it keeps watching files and
     // writing state while every hook talks to whoever wrote mcp_port last.

@@ -316,12 +316,12 @@ The acceptance test for "Synthra works": run `syn .` in a real repo (`windsor-st
 
 ## Out of scope for v0.1 (deferred)
 
-_This list described what M1–M6 didn't build. Re-checked 2026-08-09 against the
-current codebase (now at v0.26.0) — two items have since shipped; struck
+_This list described what M1–M6 didn't build. Re-checked 2026-09-23 against the
+current codebase (now at v0.32.0) — three items have since shipped; struck
 through rather than deleted, so the historical plan stays intact. For what's
 still ahead, see the living backlog at `Updates/Roadmap/roadmap.md`._
 
-- IDE companion extension (VS Code / Antigravity / Cursor) — designed for, not built yet
+- ~~IDE companion extension (VS Code / Antigravity / Cursor) — designed for, not built yet~~ — **shipped.** `extension/` since v0.30.0: starts Synthra on folder open and shuts it down cleanly; since v0.32.0 it also shows a health light and offers updates. Installed from a `.vsix` — not yet on the Marketplace or Open VSX.
 - Diff-tracked incremental graph updates + lazy on-disk graph — **partially shipped.** A content-hash parse cache (only changed files re-parse on rescan) landed in v0.3.0, and the MCP server auto-reindexes on file/git changes without a manual re-scan (v0.9.0). Still true: the full graph, file contents included, stays in memory each run — comfortable into the low thousands of files; a lazy on-disk graph for very large monorepos is not built.
 - Embedding-based semantic retrieval (keyword scoring is enough to start)
 - Codex CLI / Cursor / Gemini support (same MCP, different launcher — fast follow-on)

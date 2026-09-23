@@ -184,6 +184,9 @@ async function defaultFlow(rawPath: string, opts: DefaultOpts): Promise<void> {
       if (opts.managed) {
         process.stdout.write(
           `[syn:ready] ${JSON.stringify({
+            // The version of THIS process. When alreadyRunning, the server that
+            // actually answers is another process — ask its /doctor instead.
+            version: VERSION,
             projectRoot,
             mcpPort: mcpHandle.port,
             mcpUrl: mcpHandle.url,
@@ -255,7 +258,7 @@ export function buildProgram() {
   prog
     .command("serve [path]", "Start the HTTP MCP server against a scanned project.")
     .action(async (path: string | undefined) => {
-      await serveCommand(path ?? ".");
+      await serveCommand(path ?? ".", { version: VERSION });
     });
 
   prog

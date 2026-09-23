@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { ActivityStore } from "../activity/activity-log.js";
 import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js";
 import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
+import { runDoctorChecks, worstStatus } from "../cli/doctor-command.js";
 import { scanProject } from "../cli/scan-command.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
@@ -93,7 +94,7 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
   }
 }
 
-function buildApp(ctx: ServerContext, port: number): Hono {
+function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   const app = new Hono();
 
   // First, and on every route rather than per-handler — a guard you have to
@@ -112,7 +113,7 @@ function buildApp(ctx: ServerContext, port: number): Hono {
   app.get("/", (c) =>
     c.json({
       service: "synthra",
-      version: "0.0.1",
+      version,
       port,
       file_count: ctx.graph.file_count,
       symbol_count: ctx.graph.symbol_count,
@@ -127,6 +128,22 @@ function buildApp(ctx: ServerContext, port: number): Hono {
   app.get("/health", (c) =>
     c.json({ ok: true, project_root: ctx.paths.projectRoot, pid: process.pid, port }),
   );
+
+  // `syn doctor`, served live — the IDE extension polls this to drive its
+  // status-bar health light. Every serious Synthra failure so far has been
+  // silent (hooks registered seven times, a dead port file no-oping every hook,
+  // CRLF hook scripts), and doctor could see most of them; nobody runs doctor
+  // without a reason. `?env=1` adds the checks that spawn processes (Node, jq,
+  // `claude --version`) — the extension asks for those once, not per poll.
+  // `version` is the version of THIS server process, which is not necessarily
+  // what's installed: another window may have upgraded the package since.
+  app.get("/doctor", async (c) => {
+    const checks = await runDoctorChecks(ctx.paths.projectRoot, {
+      environment: c.req.query("env") === "1",
+      selfPort: port,
+    });
+    return c.json({ version, status: worstStatus(checks), checks });
+  });
 
   app.get("/prime", async (c) => c.json(await handlePrime(ctx, port)));
 
@@ -176,6 +193,72 @@ function buildApp(ctx: ServerContext, port: number): Hono {
   return app;
 }
 
+/** How many ports to try when another server wins the race for the one we
+ *  picked. Each loss means someone else just bound it, so the next free port is
+ *  a fresh draw; a handful covers several editor windows restoring at once. */
+const BIND_ATTEMPTS = 5;
+
+type NodeServer = ReturnType<typeof serve>;
+
+/** Resolves once the server is really listening; false if the bind failed
+ *  because the port was taken, and rethrows anything else. */
+function awaitListening(server: NodeServer): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const onListening = () => {
+      server.off("error", onError);
+      resolve(true);
+    };
+    const onError = (err: NodeJS.ErrnoException) => {
+      server.off("listening", onListening);
+      if (err.code === "EADDRINUSE") resolve(false);
+      else reject(err);
+    };
+    server.once("listening", onListening);
+    server.once("error", onError);
+  });
+}
+
+/**
+ * Bind the HTTP server, and don't return until the port is genuinely ours.
+ *
+ * reserveFreePort() holds the probe socket, but it has to release it for the
+ * real listen, and in that gap another server can take the port. Two `syn`
+ * starting at the same moment is ordinary — an editor restoring three windows
+ * starts three. Previously nothing waited for the listen: the EADDRINUSE landed
+ * later as an uncaught error, and mcp_port had ALREADY been written naming a
+ * port that another project's server now owned — so every hook in this project
+ * quietly talked to the wrong server. Now a lost race just means the next port.
+ */
+async function bindServer(
+  ctx: ServerContext,
+  version: string,
+  explicitPort: number | undefined,
+): Promise<{ port: number; nodeServer: NodeServer }> {
+  const attempts = explicitPort ? 1 : BIND_ATTEMPTS;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let port: number;
+    if (explicitPort) {
+      port = explicitPort;
+    } else {
+      const reservation: PortReservation = await reserveFreePort();
+      port = reservation.port;
+      await reservation.release();
+    }
+    // The app is per-port: the Host guard only accepts requests for the port it
+    // was built for.
+    const app = buildApp(ctx, port, version);
+    const nodeServer = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
+    if (await awaitListening(nodeServer)) return { port, nodeServer };
+    log.debug(`port ${port} was taken between probe and bind — trying another`);
+    nodeServer.close();
+  }
+  throw new Error(
+    explicitPort
+      ? `Synthra: port ${explicitPort} is already in use`
+      : `Synthra: lost the race for a free port ${BIND_ATTEMPTS} times in a row`,
+  );
+}
+
 export async function startServer(
   paths: SynthraPaths,
   options: StartOptions = {},
@@ -204,16 +287,11 @@ export async function startServer(
   }
 
   const ctx = await loadContext(paths);
-  // Hold the port across the gap between choosing it and binding it, so two
-  // servers starting together can't both pick the same one.
-  const reservation = options.port ? null : await reserveFreePort();
-  const port = options.port ?? (reservation as PortReservation).port;
-  await reservation?.release();
+  const version = options.version ?? "unknown";
+  const { port, nodeServer } = await bindServer(ctx, version, options.port);
 
-  const app = buildApp(ctx, port);
-  const nodeServer = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
-
-  await claimOwnership(paths, port, options.version ?? "unknown");
+  // Only now — with the port genuinely ours — tell the hooks where we are.
+  await claimOwnership(paths, port, version);
 
   // Auto-reindex: a source edit re-runs the incremental scan + swaps the
   // in-memory graph so reads never go stale mid-session (debounced; opt out with

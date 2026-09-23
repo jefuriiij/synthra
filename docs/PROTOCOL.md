@@ -25,6 +25,7 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 |---|---|---|---|
 | `GET` | `/` | diagnostics | Service info: name, version, port, file/symbol counts, graph generation time. |
 | `GET` | `/health` | `checkOwner` in `src/server/owner.ts` (v0.26) | Liveness **and identity**: `{ ok, project_root, pid, port }`. A port answering is not proof it's *this* project's server — callers compare `project_root` before trusting it, because ports are machine-global and a stale `mcp_port` file can now name a port a *different* project's Synthra serves. |
+| `GET` | `/doctor` | IDE extension health light (v0.32) | `syn doctor`'s checks, live: `{ version, status, checks[] }`, `status` = worst of `ok`/`warn`/`fail`. `version` is this server process's — not necessarily what's installed. `?env=1` adds the checks that spawn processes (Node, jq, `claude --version`). The `MCP server` check here compares `mcp_port` to this server's own port instead of probing itself: missing or different = `fail`, since the hooks are then talking to someone else. |
 | `GET` | `/prime` | SessionStart hook, PreCompact hook | Returns priming text + recent stored context, including the "Since you were last here" resume digest. |
 | `POST` | `/pack` | MCP tools, internal | Returns a context pack for a query. |
 | `POST` | `/log` | Stop hook | Append a token usage entry to `token_log.jsonl`. |
@@ -34,7 +35,7 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
 | `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
 
-10 routes total (verified against `src/server/http.ts`, 2026-08-09).
+11 routes total (verified against `src/server/http.ts`, 2026-09-23).
 
 ## HTTP routes — dashboard server (port 8901, fallback 8901–8910)
 
