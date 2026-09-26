@@ -92,6 +92,24 @@ async function ctxWith(graph: GraphSchema): Promise<ServerContext> {
   return { paths, graph, symbolIndex: {}, activity: new ActivityStore(paths.activityLog) };
 }
 
+// Claude Code reads serverInfo from this handshake. It said "0.0.1" — a literal
+// from the first commit — through every release up to 0.32.0.
+describe("initialize", () => {
+  it("reports the real package version, not a hard-coded one", async () => {
+    const pkg = JSON.parse(await readFile(join(__dirname, "..", "package.json"), "utf8")) as {
+      version: string;
+    };
+    const res = await handleMcpRequest(
+      { jsonrpc: "2.0", id: 1, method: "initialize" },
+      await ctxWith(graphOf("src/a.ts")),
+    );
+    const info = (res.result as { serverInfo: { name: string; version: string } }).serverInfo;
+    expect(info.name).toBe("synthra");
+    expect(info.version).toBe(pkg.version);
+    expect(info.version).not.toBe("0.0.1");
+  });
+});
+
 describe("per-file usage capture", () => {
   it("graph_read records a 'read' access in access_log.jsonl", async () => {
     const ctx = await ctxWith(graphOf("src/a.ts", "src/b.ts"));

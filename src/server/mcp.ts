@@ -21,13 +21,21 @@ import type { ContextEntry, EntryAnchor, EntryKind } from "../memory/context-sto
 import { pack } from "../packer/index.js";
 import { findTestsForFile } from "../packer/tests.js";
 import { computeArsenal } from "../dashboard/arsenal.js";
+import pkgJson from "../../package.json" with { type: "json" };
 import { loadConfig } from "../shared/config.js";
 import type { ServerContext } from "./context.js";
 import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
 import { graphExtCounts } from "./routes/route.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "synthra", version: "0.0.1" } as const;
+// What Claude Code sees in the `initialize` handshake. This was the literal
+// "0.0.1" from the first commit, never updated — the same stale value GET /
+// reported until 0.32.0. Read from package.json (inlined at build time, as the
+// CLI and dashboard already do) so it can't drift again.
+const SERVER_INFO = {
+  name: "synthra",
+  version: (pkgJson as { version: string }).version,
+} as const;
 
 type JsonRpcId = string | number | null;
 

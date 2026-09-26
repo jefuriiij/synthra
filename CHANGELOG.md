@@ -9,6 +9,13 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MCP server told Claude Code it was version `0.0.1`.** The `initialize`
+  handshake's `serverInfo` carried a literal from the first commit, never
+  updated — the same stale value `GET /` reported until 0.32.0. It now reads
+  the version from `package.json` at build time, as the CLI and dashboard do.
+
 ### Fixed (extension 0.31.1)
 
 - **Synthra: Show health could show a result from before the problem.** It
