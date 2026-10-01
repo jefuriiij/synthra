@@ -17,6 +17,9 @@ export interface DelegationEvent {
   agent?: string | null;
   /** model override of the Task/Agent call, when present. */
   model?: string | null;
+  /** The call's short task name (`input.description`), shown in the IDE's
+   *  Agents panel. 0.33+ hooks only. */
+  description?: string | null;
   /** Transcript filename minus .jsonl — anchors events to a session. */
   session_id?: string;
 }

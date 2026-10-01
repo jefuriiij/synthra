@@ -1,7 +1,7 @@
 {
   "name": "synthra-vscode",
   "displayName": "Synthra",
-  "description": "Starts Synthra's context engine automatically when you open a project — no more typing `syn .`. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
+  "description": "Starts Synthra's context engine automatically when you open a project, and shows what it knows in the sidebar: memory, skills and tools, and the helper agents Claude used. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
   "version": "0.31.1",
   "publisher": "jefuriiij",
   "license": "MIT",
@@ -28,6 +28,31 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "synthra",
+          "title": "Synthra",
+          "icon": "resources/synthra.svg"
+        }
+      ]
+    },
+    "views": {
+      "synthra": [
+        {
+          "id": "synthra.memory",
+          "name": "Memory"
+        },
+        {
+          "id": "synthra.capabilities",
+          "name": "Capabilities"
+        },
+        {
+          "id": "synthra.agents",
+          "name": "Agents"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "synthra.start",
@@ -73,8 +98,34 @@
         "command": "synthra.checkForUpdates",
         "title": "Synthra: Check for updates",
         "category": "Synthra"
+      },
+      {
+        "command": "synthra.panels.refresh",
+        "title": "Synthra: Refresh panels",
+        "category": "Synthra",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "synthra.panels.open",
+        "title": "Synthra: Open",
+        "category": "Synthra"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "synthra.panels.refresh",
+          "when": "view =~ /^synthra\\./",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "synthra.panels.open",
+          "when": "false"
+        }
+      ]
+    },
     "configuration": {
       "title": "Synthra",
       "properties": {

@@ -47,10 +47,11 @@ foreach ($line in $lines) {
         if ($ts -is [DateTime]) { $ts = $ts.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
         if (-not $ts) { $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
         [void]$delegations.Add(@{
-            ts         = "$ts"
-            agent      = $blk.input.subagent_type
-            model      = $blk.input.model
-            session_id = $sessionId
+            ts          = "$ts"
+            agent       = $blk.input.subagent_type
+            model       = $blk.input.model
+            description = $blk.input.description
+            session_id  = $sessionId
         })
     }
 

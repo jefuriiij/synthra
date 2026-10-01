@@ -38,6 +38,7 @@ import {
   shouldNotify,
   worstOf,
 } from "./logic";
+import { SynthraPanels } from "./panels";
 
 /** Matches the CLI's machine-readable ready line (see cli/index.ts). */
 const READY_RE = /^\[syn:ready\] (\{.*\})$/m;
@@ -84,6 +85,10 @@ let state: State = { kind: "idle" };
 let status: vscode.StatusBarItem;
 let out: vscode.OutputChannel;
 let extContext: vscode.ExtensionContext;
+let panels: SynthraPanels | null = null;
+/** What the panels last saw: "running:<port>", or the state kind. A change
+ *  means they must read again — the server came up, went away, or moved. */
+let panelsKey = "";
 
 /** The last /doctor answer for the running server. */
 let health: DoctorReport | null = null;
@@ -191,6 +196,13 @@ function render(): void {
         "synthra.showOutput",
       );
       break;
+  }
+
+  // render() runs on every health poll too; only a real change reaches the panels.
+  const key = state.kind === "running" ? `running:${state.info.mcpPort}` : state.kind;
+  if (key !== panelsKey) {
+    panelsKey = key;
+    panels?.refresh();
   }
 }
 
@@ -776,6 +788,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   out = vscode.window.createOutputChannel("Synthra");
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   context.subscriptions.push(out, status);
+
+  panels = new SynthraPanels(targetFolder(), {
+    port: () => (state.kind === "running" ? state.info.mcpPort : null),
+    notRunning: () =>
+      state.kind === "starting"
+        ? "Synthra is starting…"
+        : state.kind === "failed"
+          ? "Synthra could not start. See the log (Synthra: Show log)."
+          : 'Synthra is not running for this folder. Run "Synthra: Start for this project".',
+    getJson,
+    log: (line) => out.appendLine(line),
+  });
+  context.subscriptions.push(panels);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("synthra.start", () => start(true)),

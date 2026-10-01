@@ -735,6 +735,25 @@ export async function computeArsenal(
   return data;
 }
 
+/** Forget the memo so the next computeArsenal rescans. The IDE panels call
+ *  this when a skill or agent file changed — waiting out the 15s TTL would show
+ *  a skill that was just written as missing. */
+export function clearArsenalCache(): void {
+  cache = null;
+}
+
+/**
+ * The absolute path an item was scanned from, out of the last scan's index.
+ * For the IDE extension, which opens the file in the editor. The dashboard
+ * never gets this (see ArsenalSource), and like computeArsenalDetail it builds
+ * no path from its input. Call it right after computeArsenal, in the same tick:
+ * a later scan replaces the index.
+ */
+export function arsenalItemFile(kind: ArsenalKind, item: ArsenalItem): string | undefined {
+  if (kind === "mcp") return undefined;
+  return cache?.sources.get(itemKey(kind, item.scope, item.source, item.name))?.file;
+}
+
 /** `C:\Users\Jeff\.claude\…` → `~/.claude/…` for display. */
 function collapseHome(path: string, homeDir: string): string {
   const normal = path.replace(/\\/g, "/");

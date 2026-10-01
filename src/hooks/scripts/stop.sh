@@ -61,6 +61,7 @@ DELEG=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
       | { ts: ($e.timestamp // ""),
           agent: (.input.subagent_type // null),
           model: (.input.model // null),
+          description: (.input.description // null),
           session_id: $s }
     ' 2>/dev/null | jq -s '.' 2>/dev/null)
 DELEG=${DELEG:-[]}

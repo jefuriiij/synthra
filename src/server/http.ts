@@ -27,6 +27,7 @@ import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
 import { handleLog } from "./routes/log.js";
 import { handlePack } from "./routes/pack.js";
+import { handlePanels } from "./routes/panels.js";
 import { handlePrime } from "./routes/prime.js";
 import { handleRoute } from "./routes/route.js";
 
@@ -174,6 +175,13 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     const sinceMs = sinceParam ? Number(sinceParam) : undefined;
     return c.json(await handleActivity(Number.isFinite(sinceMs) ? sinceMs : undefined, ctx));
   });
+
+  // The IDE extension's sidebar (Memory, Capabilities, Agents). `?fresh=1`
+  // rescans skills and agents now — the extension asks for that when one of
+  // their files changed.
+  app.get("/panels", async (c) =>
+    c.json(await handlePanels(ctx, { fresh: c.req.query("fresh") === "1" })),
+  );
 
   app.post("/context-update", async (c) => {
     const body = await c.req.json().catch(() => ({}));

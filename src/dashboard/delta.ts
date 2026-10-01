@@ -104,6 +104,8 @@ export interface DelegationLogEntry {
   ts: string;
   agent?: string | null;
   model?: string | null;
+  /** The Task/Agent call's short task name (0.33+; absent in older lines). */
+  description?: string | null;
   session_id?: string;
 }
 

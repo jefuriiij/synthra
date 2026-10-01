@@ -26,6 +26,18 @@ If `syn` lives somewhere unusual, set `synthra.path`.
 
 The health light needs **Synthra 0.32 or later**. With an older `syn` it stays off, and everything else works as before — including the update check, which only needs `syn --version` and npm, and will offer you 0.32.
 
+The sidebar panels need **Synthra 0.33 or later**. With an older `syn` they say so and stay empty.
+
+## Sidebar
+
+Click the Synthra icon in the activity bar to see what Synthra knows about this project:
+
+- **Memory:** the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
+- **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins). Click one to open its file.
+- **Agents:** the helper agents Claude started in the last 7 days, with the task it gave each one, and which ones it uses most.
+
+The panels refresh by themselves when the files behind them change. The ↻ button in each panel's title rescans now.
+
 ## Status bar
 
 | Item | Meaning |
@@ -71,6 +83,7 @@ Turn it off with `synthra.checkForUpdates`, or check any time with **Synthra: Ch
 - **Synthra: Show health** — every check, with Repair
 - **Synthra: Repair (re-run syn .)**
 - **Synthra: Check for updates**
+- **Synthra: Refresh panels** — rescans skills and agents for the sidebar
 
 ## Settings
 

@@ -9,6 +9,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Added
+
+- **The IDE extension has a sidebar: Memory, Capabilities, Agents.** Click the
+  Synthra icon in the activity bar to browse what Synthra knows about the
+  project, the way Hermes Studio shows Hermes:
+  - **Memory:** this branch's notes, grouped as current task, blockers, next
+    steps, decisions and facts, with a ⚠ on a note whose file changed since it
+    was saved. A click opens the file the note is about.
+  - **Capabilities:** skills, agents, MCP servers and plugins, grouped by where
+    they come from. A click opens the skill or agent file.
+  - **Agents:** the helper agents Claude started in the last 7 days, and which
+    ones it uses most.
+
+  The panels refresh when the files behind them change. They read a new
+  server route, `GET /panels`, so they need the 0.33 CLI; an older `syn` gets a
+  message saying so.
+
+- **The Stop hook records each helper agent's task name** (the Task/Agent
+  call's `description`), so the Agents panel can say what a helper was for,
+  not only which agent it was.
+
 ### Fixed
 
 - **The MCP server told Claude Code it was version `0.0.1`.** The `initialize`

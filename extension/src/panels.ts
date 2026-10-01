@@ -1,0 +1,239 @@
+// The Synthra panels in the activity bar: Memory, Capabilities, Agents. Native
+// tree views over the running server's GET /panels. What each tree contains is
+// decided in panelTrees.ts (pure, tested); this file renders it, watches the
+// files behind it, and runs the clicks.
+
+import { homedir } from "node:os";
+import * as vscode from "vscode";
+
+import {
+  agentsView,
+  capabilitiesView,
+  memoryView,
+  PANELS_VERSION,
+  type PanelNode,
+  type PanelsPayload,
+  type PanelTarget,
+  type PanelView,
+} from "./panelTrees";
+
+export const PANEL_IDS = {
+  memory: "synthra.memory",
+  capabilities: "synthra.capabilities",
+  agents: "synthra.agents",
+} as const;
+type Panel = keyof typeof PANEL_IDS;
+const PANELS = Object.keys(PANEL_IDS) as Panel[];
+
+export const OPEN_COMMAND = "synthra.panels.open";
+
+/** Synthra and Claude rewrite several files per change: read once after they settle. */
+const DEBOUNCE_MS = 800;
+
+class NodeTree implements vscode.TreeDataProvider<PanelNode> {
+  private readonly changed = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.changed.event;
+  private roots: PanelNode[] = [];
+
+  set(nodes: PanelNode[]): void {
+    this.roots = nodes;
+    this.changed.fire();
+  }
+
+  getChildren(node?: PanelNode): PanelNode[] {
+    return node ? (node.children ?? []) : this.roots;
+  }
+
+  getTreeItem(n: PanelNode): vscode.TreeItem {
+    const state = n.children?.length
+      ? n.expanded
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.None;
+    const item = new vscode.TreeItem(n.label, state);
+    item.id = n.id;
+    if (n.description) item.description = n.description;
+    // A plain string, never a MarkdownString (see PanelNode.tooltip).
+    if (n.tooltip) item.tooltip = n.tooltip;
+    if (n.icon) {
+      item.iconPath = new vscode.ThemeIcon(
+        n.icon.id,
+        n.icon.color ? new vscode.ThemeColor(n.icon.color) : undefined,
+      );
+    }
+    if (n.open) item.command = { command: OPEN_COMMAND, title: "Open", arguments: [n.open] };
+    return item;
+  }
+
+  dispose(): void {
+    this.changed.dispose();
+  }
+}
+
+export interface PanelDeps {
+  /** The running server's port, or null when Synthra is not running. */
+  port(): number | null;
+  /** What the panels say while there is no port: starting, failed, or stopped. */
+  notRunning(): string;
+  getJson<T>(url: string, timeoutMs: number): Promise<{ status: number; body: T | null }>;
+  log(line: string): void;
+}
+
+export class SynthraPanels implements vscode.Disposable {
+  private readonly trees: Record<Panel, NodeTree> = {
+    memory: new NodeTree(),
+    capabilities: new NodeTree(),
+    agents: new NodeTree(),
+  };
+  private readonly views: Record<Panel, vscode.TreeView<PanelNode>>;
+  private readonly disposables: vscode.Disposable[] = [];
+  private timer?: ReturnType<typeof setTimeout>;
+  /** A skill or agent file changed since the last read: rescan them. */
+  private fresh = false;
+  private reading = false;
+  private again = false;
+
+  /** `folder` is the project Synthra runs for; null when no folder is open. */
+  constructor(
+    private readonly folder: string | null,
+    private readonly deps: PanelDeps,
+  ) {
+    const make = (p: Panel) =>
+      vscode.window.createTreeView(PANEL_IDS[p], {
+        treeDataProvider: this.trees[p],
+        showCollapseAll: p !== "agents",
+      });
+    this.views = {
+      memory: make("memory"),
+      capabilities: make("capabilities"),
+      agents: make("agents"),
+    };
+    this.disposables.push(...Object.values(this.views), ...Object.values(this.trees));
+    for (const v of Object.values(this.views)) {
+      this.disposables.push(v.onDidChangeVisibility((e) => e.visible && this.refresh()));
+    }
+    this.disposables.push(
+      vscode.commands.registerCommand(OPEN_COMMAND, (t: PanelTarget) => this.open(t)),
+      vscode.commands.registerCommand("synthra.panels.refresh", () =>
+        this.refresh({ fresh: true }),
+      ),
+    );
+
+    if (folder) {
+      // The files behind each panel. A skill, agent or MCP change needs a
+      // rescan (`fresh`): the server keeps its skill list for 15 seconds.
+      const project = vscode.Uri.file(folder);
+      const home = vscode.Uri.file(homedir());
+      const watch = (base: vscode.Uri, glob: string, fresh: boolean) => {
+        const w = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(base, glob));
+        const fire = () => this.refresh({ fresh });
+        w.onDidCreate(fire);
+        w.onDidChange(fire);
+        w.onDidDelete(fire);
+        this.disposables.push(w);
+      };
+      watch(project, ".synthra/**/context-store.json", false);
+      watch(project, ".synthra-graph/delegation_log.jsonl", false);
+      watch(project, ".claude/{skills,agents}/**", true);
+      watch(project, ".mcp.json", true);
+      watch(home, ".claude/{skills,agents}/**", true);
+    }
+    this.refresh();
+  }
+
+  /** Read the panels again (debounced; one read at a time). */
+  refresh(opts: { fresh?: boolean } = {}): void {
+    if (opts.fresh) this.fresh = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.read();
+    }, DEBOUNCE_MS);
+  }
+
+  private async read(): Promise<void> {
+    if (this.reading) {
+      this.again = true;
+      return;
+    }
+    this.reading = true;
+    try {
+      await this.load();
+    } catch (e) {
+      this.deps.log(`[ext] could not read the panels: ${(e as Error).message}`);
+    } finally {
+      this.reading = false;
+      if (this.again) {
+        this.again = false;
+        void this.read();
+      }
+    }
+  }
+
+  private async load(): Promise<void> {
+    if (!this.folder) return this.showOnly("Open a folder to see what Synthra knows about it.");
+    const port = this.deps.port();
+    if (port === null) return this.showOnly(this.deps.notRunning());
+
+    const fresh = this.fresh;
+    this.fresh = false;
+    const r = await this.deps.getJson<PanelsPayload>(
+      `http://127.0.0.1:${port}/panels${fresh ? "?fresh=1" : ""}`,
+      10_000,
+    );
+    // Stopped or restarted while we waited: the next state change reads again.
+    if (this.deps.port() !== port) return;
+
+    if (r.status === 404) {
+      return this.showOnly(
+        "This version of Synthra has no panels. Update Synthra to 0.33 or later.",
+      );
+    }
+    if (r.status !== 200 || !r.body) {
+      if (fresh) this.fresh = true; // the rescan still has to happen
+      this.deps.log(`[ext] panels: no answer (status ${r.status || "no response"}).`);
+      return this.showOnly("Synthra did not answer. See the log (Synthra: Show log).");
+    }
+    if (r.body.version !== PANELS_VERSION) {
+      return this.showOnly(
+        r.body.version > PANELS_VERSION
+          ? "This Synthra is newer than the extension. Update the Synthra extension."
+          : "This Synthra is older than the extension. Update Synthra.",
+      );
+    }
+
+    const now = Date.now();
+    this.show("memory", memoryView(r.body, now));
+    this.show("capabilities", capabilitiesView(r.body));
+    this.show("agents", agentsView(r.body, now));
+  }
+
+  private show(p: Panel, v: PanelView): void {
+    this.trees[p].set(v.nodes);
+    this.views[p].message = v.message;
+    this.views[p].description = v.description;
+  }
+
+  /** The same line in every panel, and no rows. */
+  private showOnly(message: string): void {
+    for (const p of PANELS) this.show(p, { nodes: [], message });
+  }
+
+  private async open(t: PanelTarget): Promise<void> {
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(t.path));
+      const pos = t.line ? new vscode.Position(Math.max(0, t.line - 1), 0) : undefined;
+      await vscode.window.showTextDocument(doc, {
+        preview: true,
+        ...(pos ? { selection: new vscode.Range(pos, pos) } : {}),
+      });
+    } catch {
+      void vscode.window.showInformationMessage(`That file is not there any more: ${t.path}`);
+    }
+  }
+
+  dispose(): void {
+    if (this.timer) clearTimeout(this.timer);
+    for (const d of this.disposables) d.dispose();
+  }
+}
