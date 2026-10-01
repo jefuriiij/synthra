@@ -203,20 +203,70 @@ export function memoryView(p: PanelsPayload, now: number): PanelView {
   // The store is append-ordered, so its index is a stable id and the newest
   // entry is the last one.
   const indexed = m.entries.map((e, i) => ({ e, i }));
+  type Indexed = (typeof indexed)[number];
+  const group = (
+    id: string,
+    label: string,
+    icon: string,
+    tooltip: string,
+    list: Indexed[],
+    expanded: boolean,
+    count = true,
+  ): PanelNode => {
+    const stale = list.filter((x) => x.e.stale.length > 0).length;
+    const description = count
+      ? stale
+        ? `${list.length} · ${stale} may be out of date`
+        : String(list.length)
+      : stale
+        ? "may be out of date"
+        : undefined;
+    return {
+      id,
+      label,
+      ...(description ? { description } : {}),
+      tooltip,
+      icon: { id: icon },
+      expanded,
+      children: list.map((x) => memoryEntryNode(x.e, x.i, p.project_root, now)),
+    };
+  };
+
   const nodes: PanelNode[] = [];
+  let earlierTasks: Indexed[] = [];
   for (const k of KINDS) {
     const list = indexed.filter((x) => x.e.kind === k.kind).reverse();
-    if (list.length === 0) continue;
-    const stale = list.filter((x) => x.e.stale.length > 0).length;
-    nodes.push({
-      id: `mem:kind:${k.kind}`,
-      label: k.label,
-      description: stale ? `${list.length} · ${stale} may be out of date` : String(list.length),
-      tooltip: k.tooltip,
-      icon: { id: k.icon },
-      expanded: k.kind === "task" || k.kind === "blocker" || k.kind === "next",
-      children: list.map((x) => memoryEntryNode(x.e, x.i, p.project_root, now)),
-    });
+    const [newest, ...older] = list;
+    if (!newest) continue;
+    if (k.kind === "task") {
+      // Only the newest task is current — CONTEXT.md says the same. A task
+      // saved weeks ago is history, not what is being worked on now.
+      nodes.push(group("mem:kind:task", k.label, k.icon, k.tooltip, [newest], true, false));
+      earlierTasks = older;
+      continue;
+    }
+    nodes.push(
+      group(
+        `mem:kind:${k.kind}`,
+        k.label,
+        k.icon,
+        k.tooltip,
+        list,
+        k.kind === "blocker" || k.kind === "next",
+      ),
+    );
+  }
+  if (earlierTasks.length > 0) {
+    nodes.push(
+      group(
+        "mem:kind:task-earlier",
+        "Earlier tasks",
+        "history",
+        "Tasks saved before the current one, newest first.",
+        earlierTasks,
+        false,
+      ),
+    );
   }
   nodes.push({
     id: "mem:contextmd",

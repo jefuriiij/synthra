@@ -96,6 +96,32 @@ describe("Memory panel", () => {
     expect(v.message).toBeUndefined();
   });
 
+  // Found in the first real run: "Current task · 2" listed a milestone finished
+  // weeks ago. CONTEXT.md only ever calls the newest task current.
+  it("shows only the newest task as current; older ones go to Earlier tasks", () => {
+    const v = memoryView(
+      payload({
+        memory: {
+          ...payload().memory,
+          entries: [
+            entry({ kind: "task", content: "Milestone 2", date: "2026-08-16T00:00:00.000Z" }),
+            entry({ kind: "fact", content: "A fact" }),
+            entry({ kind: "task", content: "Milestone 1", date: "2026-08-01T00:00:00.000Z" }),
+            entry({ kind: "task", content: "Milestone 3", stale: ["src/a.ts"] }),
+          ],
+        },
+      }),
+      NOW,
+    );
+    expect(labels(v.nodes)).toEqual(["Current task", "Facts", "Earlier tasks", "CONTEXT.md"]);
+    const current = find(v.nodes, "mem:kind:task");
+    expect(labels(current?.children)).toEqual(["Milestone 3"]);
+    expect(current?.description).toBe("may be out of date");
+    const earlier = find(v.nodes, "mem:kind:task-earlier");
+    expect(labels(earlier?.children)).toEqual(["Milestone 1", "Milestone 2"]);
+    expect(earlier?.expanded).toBe(false);
+  });
+
   it("marks entries whose files changed, and opens the file a note is about", () => {
     const v = memoryView(
       payload({

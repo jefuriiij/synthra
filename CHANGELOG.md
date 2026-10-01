@@ -26,6 +26,12 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   server route, `GET /panels`, so they need the 0.33 CLI; an older `syn` gets a
   message saying so.
 
+- **Skills synced from your claude.ai account now show up.** They live one
+  level deeper than personal skills (`~/.claude/skills/synced/<bucket>/`), so
+  the Arsenal, the Dispatcher and the new sidebar all missed them — 13 skills
+  on the machine where this was found. They are listed the way Claude Code
+  names them, under `anthropic-skills`.
+
 - **The Stop hook records each helper agent's task name** (the Task/Agent
   call's `description`), so the Agents panel can say what a helper was for,
   not only which agent it was.

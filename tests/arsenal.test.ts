@@ -267,6 +267,59 @@ describe("computeArsenal", () => {
   });
 });
 
+// Found on a real machine: 13 skills synced from claude.ai, none in the
+// Arsenal. They live one level deeper than personal skills, per bucket.
+describe("claude.ai synced skills", () => {
+  const skill = (name: string, description: string) =>
+    `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`;
+
+  async function syncedFixture(): Promise<{ home: string; proj: string }> {
+    const home = await mkdtemp(join(tmpdir(), "syn-arsenal-sync-home-"));
+    const proj = await mkdtemp(join(tmpdir(), "syn-arsenal-sync-proj-"));
+    const bucket = join(home, ".claude", "skills", "synced", "org_user");
+    await write(join(bucket, "docs", "SKILL.md"), skill("docs", "Editable docs."));
+    await write(join(bucket, "pdf", "SKILL.md"), skill("pdf", "Work with PDFs."));
+    await write(join(bucket, "manifest.json"), JSON.stringify({ skills: [] }));
+    await write(join(home, ".claude", "skills", "synced", ".bucket-org_user"), "");
+    await write(join(home, ".claude", "skills", "mine", "SKILL.md"), skill("mine", "My own."));
+    return { home, proj };
+  }
+
+  it("lists them under the namespace Claude Code shows them with", async () => {
+    const { home, proj } = await syncedFixture();
+    const a = await computeArsenal(proj, home);
+    const synced = a.skills.filter((s) => s.source === "anthropic-skills");
+    expect(synced.map((s) => [s.name, s.scope, s.description])).toEqual([
+      ["docs", "plugin", "Editable docs."],
+      ["pdf", "plugin", "Work with PDFs."],
+    ]);
+    // Personal skills are unaffected, and `synced` itself is not a skill.
+    expect(a.skills.filter((s) => s.scope === "personal").map((s) => s.name)).toEqual(["mine"]);
+  });
+
+  it("opens their real file in the detail view", async () => {
+    const { home, proj } = await syncedFixture();
+    await computeArsenal(proj, home);
+    const d = await computeArsenalDetail(
+      proj,
+      { kind: "skills", scope: "plugin", source: "anthropic-skills", name: "docs" },
+      home,
+    );
+    expect(d?.path).toBe("~/.claude/skills/synced/org_user/docs/SKILL.md");
+    expect(d?.body).toContain("# docs");
+  });
+
+  it("leaves a personal skill that is itself named `synced` alone", async () => {
+    const home = await mkdtemp(join(tmpdir(), "syn-arsenal-sync-home-"));
+    const proj = await mkdtemp(join(tmpdir(), "syn-arsenal-sync-proj-"));
+    const dir = join(home, ".claude", "skills", "synced");
+    await write(join(dir, "SKILL.md"), skill("synced", "A skill called synced."));
+    await write(join(dir, "notes", "SKILL.md"), skill("notes", "Its own file, not a bucket."));
+    const a = await computeArsenal(proj, home);
+    expect(a.skills.map((s) => [s.name, s.scope])).toEqual([["synced", "personal"]]);
+  });
+});
+
 /** A pinned shortcut exactly as impeccable's pin.mjs writes one. */
 async function writePin(home: string, pack: string, command: string): Promise<void> {
   await write(

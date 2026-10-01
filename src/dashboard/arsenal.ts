@@ -453,6 +453,34 @@ async function scanSkillsDir(
   }
 }
 
+/** The namespace Claude Code lists claude.ai-synced skills under
+ *  (`anthropic-skills:docs`) — the same `<source>:<name>` shape as a plugin's
+ *  skills, so they are scanned as one. */
+export const SYNCED_SKILLS_SOURCE = "anthropic-skills";
+
+/**
+ * Skills synced from the user's claude.ai account. They sit one level deeper
+ * than personal skills, in `~/.claude/skills/synced/<bucket>/<name>/SKILL.md`
+ * (one bucket per org and user), so the personal scan never sees them — it
+ * skips `synced/` for having no SKILL.md of its own. Before this, an account
+ * with 13 synced skills showed none in the Arsenal or the Dispatcher.
+ *
+ * A personal skill that happens to be NAMED `synced` has a SKILL.md there and
+ * was already listed; its subfolders are its own files, not buckets.
+ */
+async function scanSyncedSkills(
+  dir: string,
+  out: ArsenalItem[],
+  index: SourceIndex,
+  pins: PinnedShortcut[],
+): Promise<void> {
+  if ((await readText(join(dir, "SKILL.md"))) !== null) return;
+  for (const bucket of await listNames(dir)) {
+    if (bucket.startsWith(".")) continue;
+    await scanSkillsDir(join(dir, bucket), "plugin", SYNCED_SKILLS_SOURCE, out, index, pins);
+  }
+}
+
 /** Shape of `~/.agents/.skill-lock.json`, written by the `npx skills` CLI. Only
  *  `source` (the repo slug, e.g. "emilkowalski/skills") is read here. */
 interface SkillLock {
@@ -620,6 +648,7 @@ export async function computeArsenal(
   // --- own files: project, then personal ---
   await scanSkillsDir(join(projClaude, "skills"), "project", undefined, skills, sources, pins);
   await scanSkillsDir(join(homeClaude, "skills"), "personal", undefined, skills, sources, pins);
+  await scanSyncedSkills(join(homeClaude, "skills", "synced"), skills, sources, pins);
   // `npx skills` COPIES a skill into .claude/skills — no symlink, no marker in
   // the file. Its lock file is the only record of which repo it came from, so
   // read it to group those skills by repo the way plugin skills group by plugin.
