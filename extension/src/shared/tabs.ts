@@ -33,7 +33,24 @@ export interface MemoryTab {
   store?: string;
   /** Opens CONTEXT.md. */
   contextMd?: string;
+  /** MEMORY.md and USER.md, in that order (Synthra 0.33+). */
+  files: KnowledgeCard[];
   sections: MemorySection[];
+}
+
+export interface KnowledgeCard {
+  target: "project" | "user";
+  title: string;
+  /** ".synthra/MEMORY.md", "~/.synthra/USER.md". */
+  shownPath: string;
+  hint: string;
+  exists: boolean;
+  /** Model-written: render as text, never as HTML. */
+  entries: string[];
+  chars: number;
+  limit: number;
+  /** Opens the file. */
+  key?: string;
 }
 
 export type MemoryKind = "task" | "blocker" | "next" | "decision" | "fact" | "earlier";

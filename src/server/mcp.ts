@@ -18,6 +18,14 @@ import { appendAccess } from "../learn/store.js";
 import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
 import type { ContextEntry, EntryAnchor, EntryKind } from "../memory/context-store.js";
+import {
+  type KnowledgeFile,
+  type KnowledgeOp,
+  type KnowledgeTarget,
+  knowledgeLocation,
+  readKnowledge,
+  updateKnowledge,
+} from "../memory/knowledge.js";
 import { pack } from "../packer/index.js";
 import { findTestsForFile } from "../packer/tests.js";
 import { computeArsenal } from "../dashboard/arsenal.js";
@@ -147,6 +155,51 @@ const TOOLS = [
         },
       },
       required: ["text", "kind"],
+    },
+  },
+  {
+    name: "memory",
+    description:
+      "Keep lasting knowledge that every AI working here should see. Two small Markdown files, both loaded at the start of every session: target 'project' = `.synthra/MEMORY.md` (this project: conventions, gotchas, how to build/test/run, where things live — shared with the team in git) and target 'user' = `~/.synthra/USER.md` (the person: role, preferences, how they like to work — private to this machine, all projects). Each has a character limit (project 3,500, user 2,000 by default), so keep entries short and high-signal: one fact per entry. When a file is full, consolidate in ONE call with `operations`: 'replace' to merge overlapping entries into a shorter one, 'remove' for what no longer matters, then 'add'. Never store secrets. Not for task progress or decisions about the current work — use context_remember for those. 'read' returns the current entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          enum: ["project", "user"],
+          description: "'project' (.synthra/MEMORY.md) or 'user' (~/.synthra/USER.md).",
+        },
+        action: {
+          type: "string",
+          enum: ["read", "add", "replace", "remove"],
+          description: "One change, or 'read'. Omit when using `operations`.",
+        },
+        content: {
+          type: "string",
+          description:
+            "The entry text, for add and replace. For replace it is the COMPLETE new entry: the matched entry is overwritten.",
+        },
+        old_text: {
+          type: "string",
+          description:
+            "For replace and remove: a short piece of the existing entry that identifies it uniquely.",
+        },
+        operations: {
+          type: "array",
+          description:
+            "Several changes applied together and checked against the final size — the way to consolidate a full file.",
+          items: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["add", "replace", "remove"] },
+              content: { type: "string" },
+              old_text: { type: "string" },
+            },
+            required: ["action"],
+          },
+        },
+      },
+      required: ["target"],
     },
   },
   {
@@ -288,6 +341,8 @@ async function callTool(
       return contextRemember(args, ctx);
     case "context_recall":
       return contextRecall(args, ctx);
+    case "memory":
+      return memoryTool(args, ctx);
     case "recent_activity":
       return recentActivity(args, ctx);
     case "count_tokens":
@@ -1284,6 +1339,53 @@ function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerCo
     }
   }
   return textContent(lines.join("\n"));
+}
+
+const KNOWLEDGE_TITLE: Record<KnowledgeTarget, string> = {
+  project: ".synthra/MEMORY.md",
+  user: "~/.synthra/USER.md",
+};
+
+function knowledgeListing(f: KnowledgeFile): string {
+  const head = `${KNOWLEDGE_TITLE[f.target]} — ${f.entries.length} ${f.entries.length === 1 ? "entry" : "entries"}, ${f.chars.toLocaleString("en-US")}/${f.limit.toLocaleString("en-US")} chars`;
+  if (f.entries.length === 0) return `${head}\n(empty)`;
+  return [head, ...f.entries.map((e) => `- ${e.split("\n").join("\n  ")}`)].join("\n");
+}
+
+async function memoryTool(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const target = args?.target;
+  if (target !== "project" && target !== "user") {
+    return errorContent("memory: `target` must be 'project' or 'user'.");
+  }
+  const { path, limit } = knowledgeLocation(ctx.paths, target);
+
+  const raw = Array.isArray(args?.operations)
+    ? (args.operations as unknown[])
+    : args?.action === undefined
+      ? []
+      : [args];
+  if (
+    raw.length === 0 ||
+    (raw.length === 1 && (raw[0] as { action?: unknown }).action === "read")
+  ) {
+    return textContent(knowledgeListing(await readKnowledge(target, path, limit)));
+  }
+  const ops: KnowledgeOp[] = [];
+  for (const r of raw) {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const content = typeof o.content === "string" ? o.content : "";
+    const oldText = typeof o.old_text === "string" ? o.old_text : "";
+    if (o.action === "add") ops.push({ action: "add", content });
+    else if (o.action === "replace") ops.push({ action: "replace", old_text: oldText, content });
+    else if (o.action === "remove") ops.push({ action: "remove", old_text: oldText });
+    else return errorContent("memory: each change needs an action: add, replace or remove.");
+  }
+
+  const r = await updateKnowledge(target, path, ops, limit);
+  if (!r.ok) {
+    return errorContent(`memory: ${r.error}\n\nCurrent file:\n${knowledgeListing(r.file)}`);
+  }
+  return textContent(`Saved.\n\n${knowledgeListing(r.file)}`);
 }
 
 async function contextRecall(args: Record<string, unknown> | undefined, ctx: ServerContext) {

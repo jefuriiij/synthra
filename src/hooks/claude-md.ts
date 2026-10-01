@@ -6,7 +6,9 @@
 import { updateTextFile } from "../shared/json-store.js";
 import { basename, dirname } from "node:path";
 
-export const POLICY_VERSION = 9;
+import { writeTarget } from "./agents-md.js";
+
+export const POLICY_VERSION = 10;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -156,6 +158,18 @@ export function policyBlock(): string {
     'they touch (`files: ["src/auth.ts"]`) so later `context_recall` queries',
     "can filter. Keep each `text` to 1–2 sentences.",
     "",
+    "### Memory files",
+    "",
+    "The primer also loads two small files: `.synthra/MEMORY.md` (this project —",
+    "shared in git, and read by other AI tools through AGENTS.md) and",
+    "`~/.synthra/USER.md` (the user — private, all projects). When you learn",
+    "something that will matter in later sessions — a convention, a gotcha, how",
+    "to build or run something, how the user likes to work — save it with",
+    "`mcp__synthra__memory` (target `project` or `user`). One short fact per",
+    "entry. When a file is full, consolidate in one call (`operations`). Never",
+    "store secrets. Task progress and this session's decisions still go to",
+    "`context_remember`.",
+    "",
     "_This block is managed by Synthra. Edits inside the BEGIN/END markers",
     "are overwritten on every `syn .` run._",
     "",
@@ -208,7 +222,7 @@ export async function patchClaudeMd(path: string, projectName?: string): Promise
   // Through updateTextFile: CLAUDE.md is user-authored, git-tracked, and read by
   // Claude itself, so prose the user writes between our read and our write must
   // survive. The mutate is pure and re-runs against whatever actually landed.
-  const result = await updateTextFile(path, (existing) => {
+  const result = await updateTextFile(await writeTarget(path), (existing) => {
     if (existing === null) {
       // First creation: scaffold the onboarding skeleton (user-owned, written
       // once) followed by Synthra's managed policy block.

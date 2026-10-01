@@ -50,6 +50,15 @@ export interface PanelDelegation {
   session_id?: string;
 }
 
+/** .synthra/MEMORY.md or ~/.synthra/USER.md. */
+export interface PanelKnowledgeFile {
+  path: string;
+  exists: boolean;
+  entries: string[];
+  chars: number;
+  limit: number;
+}
+
 export interface PanelsPayload {
   version: number;
   project_root: string;
@@ -59,6 +68,8 @@ export interface PanelsPayload {
     context_md_path: string;
     unreadable?: string;
     entries: PanelMemoryEntry[];
+    /** Synthra 0.33+. */
+    files?: { project: PanelKnowledgeFile; user: PanelKnowledgeFile };
   };
   capabilities: {
     skills: PanelItem[];
@@ -156,28 +167,83 @@ function memoryEntryNode(e: PanelMemoryEntry, index: number, root: string, now: 
   };
 }
 
+const kChars = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/** "12 · 2.1k / 3.5k chars", or why there's no count. */
+export function knowledgeUsage(f: PanelKnowledgeFile): string {
+  if (!f.exists) return "not created yet";
+  const usage = `${f.entries.length} · ${kChars(f.chars)} / ${kChars(f.limit)} chars`;
+  return f.chars > f.limit ? `${usage} · over the limit` : usage;
+}
+
+const KNOWLEDGE = {
+  project: {
+    label: "Project memory",
+    icon: "book",
+    tooltip:
+      "What every AI should know about this project (.synthra/MEMORY.md). Loaded at the start of every session, shared with the team in git, and read by other AI tools through AGENTS.md.",
+  },
+  user: {
+    label: "About you",
+    icon: "account",
+    tooltip:
+      "What AIs should know about you (~/.synthra/USER.md). Loaded at the start of every session, in every project. Private to this computer.",
+  },
+} as const;
+
+function knowledgeNode(target: "project" | "user", f: PanelKnowledgeFile): PanelNode {
+  const k = KNOWLEDGE[target];
+  const over = f.chars > f.limit;
+  return {
+    id: `mem:file:${target}`,
+    label: k.label,
+    description: knowledgeUsage(f),
+    tooltip: `${k.tooltip}\n\n${f.path}`,
+    icon: over ? { id: "warning", color: "editorWarning.foreground" } : { id: k.icon },
+    expanded: false,
+    children: f.entries.map((e, i) => ({
+      id: `mem:file:${target}:${i}`,
+      label: clip(firstLine(e), 90),
+      tooltip: `${clip(e, 1200)}\n\nClick to open the file.`,
+      icon: { id: "circle-small" },
+      open: { kind: "file", path: f.path } as const,
+    })),
+    // An empty file still opens, so it can be filled by hand.
+    ...(f.exists && f.entries.length === 0
+      ? { open: { kind: "file", path: f.path } as const }
+      : {}),
+  };
+}
+
 export function memoryView(p: PanelsPayload, now: number): PanelView {
   const m = p.memory;
+  const files = m.files
+    ? [knowledgeNode("project", m.files.project), knowledgeNode("user", m.files.user)]
+    : [];
   if (m.unreadable) {
     return {
-      nodes: m.store_path
-        ? [
-            {
-              id: "mem:store",
-              label: "Open the memory file",
-              tooltip: m.store_path,
-              icon: { id: "go-to-file" },
-              open: { kind: "file", path: m.store_path },
-            },
-          ]
-        : [],
-      message: `Synthra can't read this branch's memory file: ${m.unreadable}`,
+      nodes: [
+        ...files,
+        ...(m.store_path
+          ? [
+              {
+                id: "mem:store",
+                label: "Open the session notes file",
+                tooltip: m.store_path,
+                icon: { id: "go-to-file" },
+                open: { kind: "file", path: m.store_path } as const,
+              },
+            ]
+          : []),
+      ],
+      message: `Synthra can't read this branch's session notes: ${m.unreadable}`,
     };
   }
   if (m.entries.length === 0) {
     return {
-      nodes: [],
-      message: `Nothing remembered on ${m.branch ? `branch ${m.branch}` : "this branch"} yet. Claude saves notes here with context_remember.`,
+      nodes: files,
+      message: `No session notes on ${m.branch ? `branch ${m.branch}` : "this branch"} yet. Claude saves them with context_remember.`,
+      ...(m.branch ? { description: m.branch } : {}),
     };
   }
 
@@ -213,7 +279,7 @@ export function memoryView(p: PanelsPayload, now: number): PanelView {
     };
   };
 
-  const nodes: PanelNode[] = [];
+  const nodes: PanelNode[] = [...files];
   let earlierTasks: Indexed[] = [];
   for (const k of MEMORY_KINDS) {
     const list = indexed.filter((x) => x.e.kind === k.kind).reverse();

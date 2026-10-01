@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -21,6 +23,9 @@ export default defineConfig({
     // trigger a full PATH+PATHEXT scan). Locally the suite finishes in ~2s;
     // the default 5s per-test limit only ever trips on shared runners.
     testTimeout: 20_000,
+    // Never the real ~/.synthra/USER.md: a test that forgets to pass its own
+    // path reads nothing and writes into a throwaway folder.
+    env: { SYN_USER_MEMORY: join(tmpdir(), `synthra-test-user-${process.pid}`, "USER.md") },
     hookTimeout: 20_000,
     coverage: {
       provider: "v8",

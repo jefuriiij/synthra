@@ -1,12 +1,16 @@
-// Project bootstrap: creates .synthra-graph/, .synthra/, updates .gitignore,
-// patches CLAUDE.md with the versioned policy block.
+// Project bootstrap: creates .synthra-graph/, .synthra/ (with an empty
+// MEMORY.md), updates .gitignore, patches CLAUDE.md with the versioned policy
+// block and AGENTS.md with the block other AI tools read.
 
 import { mkdir, stat } from "node:fs/promises";
 
 import { updateTextFile } from "../shared/json-store.js";
 import { basename } from "node:path";
 
+import { patchAgentsMd } from "../hooks/agents-md.js";
 import { patchClaudeMd } from "../hooks/claude-md.js";
+import { ensureProjectKnowledge } from "../memory/knowledge.js";
+import { loadConfig } from "../shared/config.js";
 import type { SynthraPaths } from "../shared/paths.js";
 
 export interface BootstrapResult {
@@ -15,6 +19,9 @@ export interface BootstrapResult {
   gitignoreUpdated: boolean;
   claudeMdUpdated: boolean;
   claudeMdCreated: boolean;
+  agentsMdUpdated: boolean;
+  agentsMdCreated: boolean;
+  memoryMdCreated: boolean;
 }
 
 // Entries Synthra appends to the project .gitignore on bootstrap.
@@ -78,6 +85,8 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
 
   const claudeMdExistedBefore = await exists(paths.claudeMd);
   const patch = await patchClaudeMd(paths.claudeMd, basename(paths.projectRoot));
+  const agents = await patchAgentsMd(paths.agentsMd);
+  const memoryMdCreated = await ensureProjectKnowledge(paths.memoryMd, loadConfig().memoryChars);
 
   return {
     graphCreated,
@@ -85,5 +94,8 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
     gitignoreUpdated,
     claudeMdUpdated: patch.updated,
     claudeMdCreated: patch.created && !claudeMdExistedBefore,
+    agentsMdUpdated: agents.updated,
+    agentsMdCreated: agents.created,
+    memoryMdCreated,
   };
 }

@@ -4,7 +4,8 @@
 # POSTs the totals to /log. Since v0.20 the same pass also collects Task/Agent
 # tool_use events (subagent delegations) so the dashboard can compute the
 # Dispatcher follow-rate. Uses a per-transcript .stopoffset file to avoid
-# double-counting on session resume.
+# double-counting on session resume. Since v0.33 it ends by asking /nudge
+# whether Claude should save what it learned before it stops.
 
 $ErrorActionPreference = "SilentlyContinue"
 
@@ -92,6 +93,21 @@ $ctxPayload = @{ transcript_path = $transcript } | ConvertTo-Json -Compress
 try {
     Invoke-RestMethod -Uri "http://127.0.0.1:$port/context-update" -Method POST `
         -Body $ctxPayload -ContentType "application/json" -TimeoutSec 3 | Out-Null
+} catch {
+    # silent
+}
+
+# Memory nudge (v0.33): every N replies without a change to MEMORY.md/USER.md,
+# the server answers with a reason, and this hook asks Claude Code to keep
+# Claude for one more step ({"decision":"block"}). stop_hook_active is passed
+# through so the step Claude takes because of a nudge is never nudged again.
+$nudgePayload = @{ stop_hook_active = ($hookInput.stop_hook_active -eq $true) } | ConvertTo-Json -Compress
+try {
+    $nudge = Invoke-RestMethod -Uri "http://127.0.0.1:$port/nudge" -Method POST `
+        -Body $nudgePayload -ContentType "application/json" -TimeoutSec 3
+    if ($nudge -and $nudge.reason) {
+        [Console]::Out.Write((@{ decision = "block"; reason = [string]$nudge.reason } | ConvertTo-Json -Compress))
+    }
 } catch {
     # silent
 }

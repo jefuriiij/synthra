@@ -1,6 +1,7 @@
 // `syn remove [path]` — the uninstall mirror of `syn .`. Deletes Synthra's
 // state dirs and strips its pieces out of shared files (.gitignore, CLAUDE.md,
-// .claude/settings.local.json, .mcp.json) without touching user content; those
+// AGENTS.md, .claude/settings.local.json, .mcp.json) without touching user
+// content; those
 // files are deleted only when nothing else remains. Also deregisters the MCP
 // entry (via the claude CLI, with a direct .mcp.json fallback) and forgets the
 // project in the global dashboard registry.
@@ -13,6 +14,7 @@ import { readFile, readdir, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { writeJsonAtomic, writeTextAtomic } from "../shared/json-store.js";
 import { basename, join, resolve } from "node:path";
 
+import { AGENTS_TITLE, stripAgentsBlock } from "../hooks/agents-md.js";
 import { onboardingSkeleton, stripPolicyBlock } from "../hooks/claude-md.js";
 import { ourHookCounts, stripOurHooks, type HooksConfig } from "../hooks/hooks-config.js";
 import { loadConfig } from "../shared/config.js";
@@ -128,6 +130,24 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
         await writeTextAtomic(paths.claudeMd, remainder.trimEnd() + "\n");
         result.kept.push("CLAUDE.md (policy block stripped, your content kept)");
       }
+    }
+  }
+
+  // 3b. AGENTS.md — the same, for the block other AI tools read. Deleted only
+  // when what's left is nothing, or just the title Synthra created it with.
+  const agentsMd = await readIfExists(paths.agentsMd);
+  if (agentsMd === null) {
+    result.skipped.push("AGENTS.md");
+  } else {
+    const remainder = stripAgentsBlock(agentsMd);
+    if (remainder === agentsMd) {
+      result.skipped.push("AGENTS.md (no synthra block)");
+    } else if (remainder.trim().length === 0 || remainder.trim() === AGENTS_TITLE) {
+      await unlink(paths.agentsMd);
+      result.removed.push("AGENTS.md (was synthra-generated)");
+    } else {
+      await writeTextAtomic(paths.agentsMd, remainder.trimEnd() + "\n");
+      result.kept.push("AGENTS.md (synthra block stripped, your content kept)");
     }
   }
 

@@ -168,6 +168,52 @@ describe("Memory panel", () => {
   });
 });
 
+describe("Memory panel — the two knowledge files", () => {
+  const file = (entries: string[], limit: number, exists = true) => ({
+    path: "/proj/.synthra/MEMORY.md",
+    exists,
+    entries,
+    chars: entries.join("\n").length,
+    limit,
+  });
+
+  it("shows both files first, with how full each is", () => {
+    const v = memoryView(
+      payload({
+        memory: {
+          ...payload().memory,
+          files: {
+            project: file(["Use pnpm", "x".repeat(1200)], 3500),
+            user: file([], 2000, false),
+          },
+        },
+      }),
+      NOW,
+    );
+    expect(labels(v.nodes)).toEqual(["Project memory", "About you"]);
+    expect(v.nodes[0]?.description).toBe("2 · 1.2k / 3.5k chars");
+    expect(v.nodes[1]?.description).toBe("not created yet");
+    expect(v.nodes[1]?.open).toBeUndefined();
+    // No session notes: the files still show, and the line says what's missing.
+    expect(v.message).toContain("No session notes");
+  });
+
+  it("warns when a file is over its limit, and opens an empty file to fill it", () => {
+    const v = memoryView(
+      payload({
+        memory: {
+          ...payload().memory,
+          files: { project: file(["x".repeat(50)], 20), user: file([], 2000) },
+        },
+      }),
+      NOW,
+    );
+    expect(v.nodes[0]?.description).toMatch(/over the limit$/);
+    expect(v.nodes[0]?.icon?.id).toBe("warning");
+    expect(v.nodes[1]?.open).toEqual({ kind: "file", path: "/proj/.synthra/MEMORY.md" });
+  });
+});
+
 describe("Capabilities panel", () => {
   const item = (over: Partial<PanelItem>): PanelItem => ({
     name: "x",
@@ -281,7 +327,8 @@ describe("extension ↔ server contract", () => {
       await writeFile(path, text, "utf8");
     };
     await write(join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
-    const paths = resolvePaths(project);
+    const paths = resolvePaths(project, join(home, ".synthra", "USER.md"));
+    await write(paths.memoryMd, "# Project memory\n\n- Use pnpm\n- Tests: vitest\n");
     await write(
       join(paths.contextDir, "context-store.json"),
       JSON.stringify({
@@ -327,8 +374,17 @@ describe("extension ↔ server contract", () => {
     )) as PanelsPayload;
 
     const memory = memoryView(p, NOW);
-    expect(labels(memory.nodes)).toEqual(["Current task", "CONTEXT.md"]);
-    expect(memory.nodes[0]?.children?.[0]?.open).toEqual({
+    expect(labels(memory.nodes)).toEqual([
+      "Project memory",
+      "About you",
+      "Current task",
+      "CONTEXT.md",
+    ]);
+    const projectFile = find(memory.nodes, "mem:file:project");
+    expect(labels(projectFile?.children)).toEqual(["Use pnpm", "Tests: vitest"]);
+    expect(projectFile?.children?.[0]?.open).toEqual({ kind: "file", path: paths.memoryMd });
+    expect(find(memory.nodes, "mem:file:user")?.description).toBe("not created yet");
+    expect(find(memory.nodes, "mem:kind:task")?.children?.[0]?.open).toEqual({
       kind: "file",
       path: join(project, "extension/src/panels.ts"),
     });

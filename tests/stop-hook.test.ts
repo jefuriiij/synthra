@@ -20,6 +20,8 @@ describe("stop hook delegation scan — script parity", () => {
     expect(ps1).toContain('"Agent"');
     expect(ps1).toContain("subagent_type");
     expect(ps1).toContain("$blk.input.description");
+    expect(ps1).toContain("/nudge");
+    expect(ps1).toContain('decision = "block"');
     expect(ps1).toContain("delegations");
     expect(ps1).toContain("session_id");
   });
@@ -29,6 +31,8 @@ describe("stop hook delegation scan — script parity", () => {
     expect(sh).toContain('.name == "Task" or .name == "Agent"');
     expect(sh).toContain(".input.subagent_type");
     expect(sh).toContain(".input.description");
+    expect(sh).toContain("/nudge");
+    expect(sh).toContain('{decision:"block", reason:$r}');
     expect(sh).toContain("delegations:$d");
     expect(sh).toContain("session_id");
   });
@@ -37,15 +41,27 @@ describe("stop hook delegation scan — script parity", () => {
 const hasTools = (...tools: string[]) =>
   tools.every((t) => spawnSync(t, ["--version"], { stdio: "ignore" }).status === 0);
 
+interface HookRun {
+  /** What it POSTed, by route. */
+  bodies: Record<string, unknown[]>;
+  /** What it printed — what Claude Code reads as the hook's answer. */
+  stdout: string;
+}
+
 /**
  * Run one stop script against a one-turn transcript and a capture server
- * standing in for `syn serve`; returns what it POSTed, by route.
+ * standing in for `syn serve`. `nudge` is what the server's /nudge answers;
+ * `input` is merged into the hook JSON Claude Code would send.
  */
-async function runStopHook(command: string, args: string[]): Promise<Record<string, unknown[]>> {
+async function runStopHook(
+  command: string,
+  args: string[],
+  opts: { nudge?: Record<string, unknown>; input?: Record<string, unknown> } = {},
+): Promise<HookRun> {
   const proj = await mkdtemp(join(tmpdir(), "syn-stop-e2e-"));
   await mkdir(join(proj, ".synthra-graph"), { recursive: true });
 
-  const bodies: Record<string, unknown[]> = { "/log": [], "/context-update": [] };
+  const bodies: Record<string, unknown[]> = { "/log": [], "/context-update": [], "/nudge": [] };
   const server: Server = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
@@ -56,7 +72,7 @@ async function runStopHook(command: string, args: string[]): Promise<Record<stri
         // ignore
       }
       res.writeHead(200, { "content-type": "application/json" });
-      res.end("{}");
+      res.end(req.url === "/nudge" ? JSON.stringify(opts.nudge ?? {}) : "{}");
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,18 +104,38 @@ async function runStopHook(command: string, args: string[]): Promise<Record<stri
   const user = { timestamp: "2026-07-15T10:01:00.000Z", message: { content: "hi" } };
   await writeFile(transcript, `${JSON.stringify(assistant)}\n${JSON.stringify(user)}\n`, "utf8");
 
+  let stdout = "";
   await new Promise<void>((resolve, reject) => {
-    const p = spawn(command, args, { cwd: proj, stdio: ["pipe", "ignore", "ignore"] });
+    const p = spawn(command, args, { cwd: proj, stdio: ["pipe", "pipe", "ignore"] });
+    p.stdout?.on("data", (d: Buffer) => (stdout += d.toString()));
     p.on("error", reject);
     p.on("exit", () => resolve());
-    p.stdin?.write(JSON.stringify({ transcript_path: transcript }));
+    p.stdin?.write(JSON.stringify({ transcript_path: transcript, ...opts.input }));
     p.stdin?.end();
   });
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  return bodies;
+  return { bodies, stdout };
 }
 
-function expectUsageAndDelegation(bodies: Record<string, unknown[]>): void {
+const REASON = "[Synthra memory check - every 10 replies] Save what you learned.";
+
+/** The nudge round trip, for either script. */
+async function expectNudge(command: string, args: string[]): Promise<void> {
+  // Nothing to say: the hook prints nothing, and Claude stops as usual.
+  const quiet = await runStopHook(command, args);
+  expect(quiet.stdout.trim()).toBe("");
+  expect(quiet.bodies["/nudge"]).toEqual([{ stop_hook_active: false }]);
+
+  // A reason: the hook asks Claude Code to keep Claude for one more step.
+  const held = await runStopHook(command, args, { nudge: { reason: REASON } });
+  expect(JSON.parse(held.stdout.trim())).toEqual({ decision: "block", reason: REASON });
+
+  // Already continuing because of a Stop hook: the server is told so.
+  const again = await runStopHook(command, args, { input: { stop_hook_active: true } });
+  expect(again.bodies["/nudge"]).toEqual([{ stop_hook_active: true }]);
+}
+
+function expectUsageAndDelegation({ bodies }: HookRun): void {
   expect(bodies["/log"]).toHaveLength(1);
   const log = bodies["/log"]?.[0] as {
     input_tokens: number;
@@ -127,25 +163,27 @@ function expectUsageAndDelegation(bodies: Record<string, unknown[]>): void {
   expect(bodies["/context-update"]).toHaveLength(1);
 }
 
+const PS1 = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(SCRIPTS, "stop.ps1")];
+
 describe.runIf(process.platform === "win32")("stop.ps1 live e2e (Windows)", () => {
   it("POSTs usage + delegation events parsed from a real transcript window", async () => {
-    const bodies = await runStopHook("powershell.exe", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      join(SCRIPTS, "stop.ps1"),
-    ]);
-    expectUsageAndDelegation(bodies);
+    expectUsageAndDelegation(await runStopHook("powershell.exe", PS1));
   }, 20_000);
+
+  it("passes a memory nudge on to Claude Code", async () => {
+    await expectNudge("powershell.exe", PS1);
+  }, 30_000);
 });
 
 describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
   "stop.sh live e2e",
   () => {
     it("POSTs usage + delegation events parsed from a real transcript window", async () => {
-      const bodies = await runStopHook("bash", [join(SCRIPTS, "stop.sh")]);
-      expectUsageAndDelegation(bodies);
+      expectUsageAndDelegation(await runStopHook("bash", [join(SCRIPTS, "stop.sh")]));
     }, 20_000);
+
+    it("passes a memory nudge on to Claude Code", async () => {
+      await expectNudge("bash", [join(SCRIPTS, "stop.sh")]);
+    }, 30_000);
   },
 );

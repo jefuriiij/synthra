@@ -11,6 +11,7 @@ import type {
   AgentsTab,
   CapabilitiesTab,
   CapabilityRow,
+  KnowledgeCard,
   MemoryNote,
   MemorySection,
   MemoryTab,
@@ -59,8 +60,36 @@ export function buildTabs(folder: string, p: PanelsPayload): BuiltTabs {
 
 // ─── Memory ─────────────────────────────────────────────────────────────────
 
+const CARDS = {
+  project: {
+    title: "Project memory",
+    shownPath: ".synthra/MEMORY.md",
+    hint: "What every AI should know about this project. Loaded at the start of every session, shared with the team in git, and read by other AI tools through AGENTS.md.",
+  },
+  user: {
+    title: "About you",
+    shownPath: "~/.synthra/USER.md",
+    hint: "What AIs should know about you. Loaded in every project. Private to this computer.",
+  },
+} as const;
+
+function knowledgeCards(p: PanelsPayload, keys: Keys): KnowledgeCard[] {
+  const f = p.memory.files;
+  if (!f) return [];
+  return (["project", "user"] as const).map((t) => ({
+    target: t,
+    ...CARDS[t],
+    exists: f[t].exists,
+    entries: f[t].entries,
+    chars: f[t].chars,
+    limit: f[t].limit,
+    ...(f[t].exists ? { key: keys.open(f[t].path) } : {}),
+  }));
+}
+
 function memoryTab(p: PanelsPayload, keys: Keys): MemoryTab {
   const m = p.memory;
+  const files = knowledgeCards(p, keys);
   if (m.unreadable) {
     return {
       branch: m.branch,
@@ -68,6 +97,7 @@ function memoryTab(p: PanelsPayload, keys: Keys): MemoryTab {
       stale: 0,
       unreadable: m.unreadable,
       ...(m.store_path ? { store: keys.open(m.store_path) } : {}),
+      files,
       sections: [],
     };
   }
@@ -127,6 +157,7 @@ function memoryTab(p: PanelsPayload, keys: Keys): MemoryTab {
     total: m.entries.length,
     stale: m.entries.filter((e) => e.stale.length > 0).length,
     ...(m.entries.length > 0 ? { contextMd: keys.open(m.context_md_path) } : {}),
+    files,
     sections,
   };
 }

@@ -21,6 +21,9 @@ export interface SynthraConfig {
   allowedHosts: string[];
   logLevel: "debug" | "info" | "warn" | "error";
   claudeBin: string;
+  memoryChars: number;
+  userChars: number;
+  memoryNudgeEvery: number;
 }
 
 function num(name: string, fallback: number): number {
@@ -85,5 +88,14 @@ export function loadConfig(): SynthraConfig {
     allowedHosts: list("SYN_ALLOWED_HOSTS"),
     logLevel: str("SYN_LOG_LEVEL", "info" as const),
     claudeBin: str("SYN_CLAUDE_BIN", "claude" as const),
+    // Character limits of the two knowledge files every session loads
+    // (.synthra/MEMORY.md and ~/.synthra/USER.md). Small on purpose, as in
+    // Hermes: a full file gets consolidated instead of growing stale.
+    memoryChars: num("SYN_MEMORY_CHARS", 3500),
+    userChars: num("SYN_USER_CHARS", 2000),
+    // Every this many Claude replies without a change to either file, the Stop
+    // hook asks Claude — in the same chat — whether anything is worth keeping.
+    // 0 turns the nudge off.
+    memoryNudgeEvery: num("SYN_MEMORY_NUDGE_EVERY", 10),
   };
 }

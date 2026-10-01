@@ -32,7 +32,7 @@ The sidebar panels need **Synthra 0.33 or later**. With an older `syn` they say 
 
 Click the Synthra icon in the activity bar to see what Synthra knows about this project:
 
-- **Memory:** the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
+- **Memory:** first the two files every session loads — **Project memory** (`.synthra/MEMORY.md`) and **About you** (`~/.synthra/USER.md`) — with how full each is. Then the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
 - **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins). Click one to open its file.
 - **Agents:** the helper agents Claude started in the last 7 days, with the task it gave each one, and which ones it uses most.
 

@@ -103,6 +103,51 @@ describe("Memory tab", () => {
   });
 });
 
+describe("Memory tab — knowledge cards", () => {
+  it("gives MEMORY.md and USER.md a card each, with a key only for a file that exists", () => {
+    const { view, targets } = buildTabs(
+      ROOT,
+      payload({
+        memory: {
+          ...payload().memory,
+          files: {
+            project: {
+              path: `${ROOT}/.synthra/MEMORY.md`,
+              exists: true,
+              entries: ["Use pnpm"],
+              chars: 8,
+              limit: 3500,
+            },
+            user: {
+              path: "/home/me/.synthra/USER.md",
+              exists: false,
+              entries: [],
+              chars: 0,
+              limit: 2000,
+            },
+          },
+        },
+      }),
+    );
+    const [project, user] = view.memory!.files;
+    expect(project).toMatchObject({
+      target: "project",
+      shownPath: ".synthra/MEMORY.md",
+      entries: ["Use pnpm"],
+    });
+    expect(targets.get(project!.key!)).toEqual({
+      kind: "file",
+      path: `${ROOT}/.synthra/MEMORY.md`,
+    });
+    expect(user).toMatchObject({ target: "user", exists: false });
+    expect(user?.key).toBeUndefined();
+  });
+
+  it("has no cards from a server older than 0.33", () => {
+    expect(buildTabs(ROOT, payload()).view.memory?.files).toEqual([]);
+  });
+});
+
 describe("Capabilities tab", () => {
   it("groups by source, keeps plugin names, and opens only items with a file", () => {
     const { view, targets } = buildTabs(

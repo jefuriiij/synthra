@@ -143,6 +143,8 @@ export class SynthraPanels implements vscode.Disposable {
         this.disposables.push(w);
       };
       watch(project, ".synthra/**/context-store.json", false);
+      watch(project, ".synthra/MEMORY.md", false);
+      watch(home, ".synthra/USER.md", false);
       watch(project, ".synthra-graph/delegation_log.jsonl", false);
       watch(project, ".claude/{skills,agents}/**", true);
       watch(project, ".mcp.json", true);

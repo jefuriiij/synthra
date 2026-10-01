@@ -99,6 +99,12 @@ export async function scanProject(
     } else if (boot.claudeMdUpdated) {
       log.info("  updated CLAUDE.md");
     }
+    if (boot.agentsMdCreated) {
+      log.info("  created AGENTS.md — points other AI tools at the project's knowledge");
+    } else if (boot.agentsMdUpdated) {
+      log.info("  updated AGENTS.md");
+    }
+    if (boot.memoryMdCreated) log.info("  created .synthra/MEMORY.md (empty)");
   }
 
   const walked: WalkedFile[] = [];

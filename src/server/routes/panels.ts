@@ -1,6 +1,7 @@
 // GET /panels — everything the IDE extension's sidebar shows, in one read:
 //
-//   memory        this branch's context entries, each with its stale files
+//   memory        MEMORY.md and USER.md, and this branch's context entries,
+//                 each with its stale files
 //   capabilities  the arsenal (skills, agents, MCP servers), plus the file each
 //                 item came from so a click in the editor can open it
 //   agents        the helpers Claude started in the last week (the Stop hook's
@@ -22,6 +23,7 @@ import {
 import { type DelegationLogEntry, readJsonl } from "../../dashboard/delta.js";
 import { type EntryKind, readStore } from "../../memory/context-store.js";
 import { resolveActiveBranch } from "../../memory/index.js";
+import { knowledgeLocation, readKnowledge } from "../../memory/knowledge.js";
 import type { ServerContext } from "../context.js";
 import { staleAnchorPaths } from "../mcp.js";
 
@@ -68,6 +70,14 @@ export interface PanelDelegation {
   session_id?: string;
 }
 
+export interface PanelKnowledgeFile {
+  path: string;
+  exists: boolean;
+  entries: string[];
+  chars: number;
+  limit: number;
+}
+
 export interface PanelsPayload {
   version: number;
   project_root: string;
@@ -79,6 +89,9 @@ export interface PanelsPayload {
      *  "unreadable", not "nothing remembered". */
     unreadable?: string;
     entries: PanelMemoryEntry[];
+    /** The two knowledge files every session loads (0.33+). Read apart from
+     *  the store, so a damaged store or a git hiccup can't hide them. */
+    files?: { project: PanelKnowledgeFile; user: PanelKnowledgeFile };
   };
   capabilities: {
     skills: PanelItem[];
@@ -106,7 +119,7 @@ export async function handlePanels(
   opts: PanelsOptions = {},
 ): Promise<PanelsPayload> {
   const now = opts.now ?? Date.now();
-  const [memory, capabilities, agents] = await Promise.all([
+  const [memory, files, capabilities, agents] = await Promise.all([
     readMemory(ctx).catch((err): PanelsPayload["memory"] => ({
       branch: "",
       store_path: "",
@@ -114,16 +127,29 @@ export async function handlePanels(
       unreadable: err instanceof Error ? err.message : String(err),
       entries: [],
     })),
+    readKnowledgeFiles(ctx),
     readCapabilities(ctx, opts),
     readAgents(ctx, now),
   ]);
   return {
     version: PANELS_VERSION,
     project_root: ctx.paths.projectRoot,
-    memory,
+    memory: { ...memory, files },
     capabilities,
     agents,
   };
+}
+
+async function readKnowledgeFiles(
+  ctx: ServerContext,
+): Promise<{ project: PanelKnowledgeFile; user: PanelKnowledgeFile }> {
+  const read = async (t: "project" | "user"): Promise<PanelKnowledgeFile> => {
+    const { path, limit } = knowledgeLocation(ctx.paths, t);
+    const f = await readKnowledge(t, path, limit);
+    return { path: f.path, exists: f.exists, entries: f.entries, chars: f.chars, limit: f.limit };
+  };
+  const [project, user] = await Promise.all([read("project"), read("user")]);
+  return { project, user };
 }
 
 async function readMemory(ctx: ServerContext): Promise<PanelsPayload["memory"]> {

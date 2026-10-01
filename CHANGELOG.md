@@ -11,6 +11,33 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ### Added
 
+- **Each project gets a knowledge base any AI can use, not only Claude.**
+  - `.synthra/MEMORY.md` holds what every AI should know about the project:
+    conventions, gotchas, how to build and run it. It is git-tracked, so the
+    team shares it and each project keeps its own.
+  - `~/.synthra/USER.md` holds what AIs should know about you. It lives in
+    your home folder, never in a repo, and every project reads it.
+  - Both are plain Markdown bullets with a size limit (3,500 and 2,000
+    characters, as Hermes keeps its own small). A full file gets merged
+    instead of growing stale.
+  - Both load at the start of every Claude session.
+  - `syn .` adds a block to `AGENTS.md` (created if missing) that points
+    Codex, Cursor, Copilot, Gemini CLI and other tools at the same files,
+    and at your skills.
+
+- **The `memory` MCP tool** reads and changes the two files: add, replace or
+  remove entries, several at once to consolidate. It refuses to grow a file
+  past its limit, and refuses anything that looks like a key, token or
+  password.
+
+- **The memory nudge.** Every 10 Claude replies without a change to either
+  file, the Stop hook keeps Claude for one more step and asks whether
+  anything from the conversation is worth keeping — Hermes' memory nudge, in
+  the same chat. `SYN_MEMORY_NUDGE_EVERY=0` turns it off.
+
+- **The sidebar and the large panel show both files first**, with how full
+  each one is.
+
 - **The IDE extension has a sidebar: Memory, Capabilities, Agents.** Click the
   Synthra icon in the activity bar to browse what Synthra knows about the
   project, the way Hermes Studio shows Hermes:
@@ -43,6 +70,13 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 - **The Stop hook records each helper agent's task name** (the Task/Agent
   call's `description`), so the Agents panel can say what a helper was for,
   not only which agent it was.
+
+### Changed
+
+- **CLAUDE.md policy block v10** adds a "Memory files" section telling Claude
+  when to use `memory` versus `context_remember`.
+- **CLAUDE.md and AGENTS.md are written through a symlink** when one links
+  to the other, instead of replacing the link with a plain file.
 
 ### Fixed
 

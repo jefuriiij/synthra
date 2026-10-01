@@ -6,9 +6,11 @@
 // commits, files touched, open next-steps, recent decisions — so a fresh session
 // arrives oriented instead of re-paying tokens to rediscover recent work. With
 // no snapshot (first session, or none survived), it falls back to the legacy
-// graph-counts primer verbatim.
+// graph-counts primer verbatim. Since v0.33 both forms also carry the two
+// knowledge files (.synthra/MEMORY.md, ~/.synthra/USER.md), after the digest.
 
 import { currentBranch } from "../../memory/branches.js";
+import { knowledgeLocation, knowledgeSection, readKnowledge } from "../../memory/knowledge.js";
 import { getChangedLineRanges } from "../../memory/git-snapshot.js";
 import { readSession, type SessionState } from "../../memory/session.js";
 import type { GraphSchema, SymbolNode } from "../../graph/types.js";
@@ -142,6 +144,27 @@ function buildResumeDigest(
   ).trimEnd();
 }
 
+/**
+ * The two knowledge files, as every session sees them: project memory, then
+ * the user. Read once per session start — a frozen snapshot, as in Hermes, so
+ * nothing changes under the session's feet. An empty project file gets one
+ * line instead, so the habit of filling it starts in the first session.
+ */
+async function knowledgeBlock(ctx: ServerContext): Promise<string> {
+  const read = (t: "project" | "user") => {
+    const { path, limit } = knowledgeLocation(ctx.paths, t);
+    return readKnowledge(t, path, limit);
+  };
+  const [project, user] = await Promise.all([read("project"), read("user")]);
+  const parts = [
+    project.entries.length
+      ? knowledgeSection(project, "Project memory", ".synthra/MEMORY.md").join("\n")
+      : "_Project memory (`.synthra/MEMORY.md`) is empty. When you learn something about this project that will matter in later sessions, save it with the `memory` tool._",
+    knowledgeSection(user, "About the user", "~/.synthra/USER.md").join("\n"),
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
+
 export async function handlePrime(ctx: ServerContext, port: number): Promise<PrimeResponse> {
   // Pin the same generation legacyPrimer just read (it runs before any await),
   // so the resume digest and the primer below it can't describe two different
@@ -149,9 +172,12 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
   const graph = ctx.graph;
   const legacy = legacyPrimer(ctx);
 
+  const knowledge = await knowledgeBlock(ctx);
+  const tail = `${knowledge}\n\n---\n\n${legacy}`;
+
   const snap = await readSession(ctx.paths.sessionState);
   if (!snap || !hasContent(snap)) {
-    return { primer: legacy, port };
+    return { primer: tail, port };
   }
 
   const branchNow = await currentBranch(ctx.paths.projectRoot);
@@ -161,5 +187,5 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
     changedSymbolLines = changedSymbolsSection(ranges, graph);
   }
   const digest = buildResumeDigest(snap, branchNow, changedSymbolLines);
-  return { primer: `${digest}\n\n---\n\n${legacy}`, port };
+  return { primer: `${digest}\n\n---\n\n${tail}`, port };
 }

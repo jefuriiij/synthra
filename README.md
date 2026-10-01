@@ -41,6 +41,7 @@ Synthra fixes all four — locally, with zero config.
 
 - **Pre-loaded context.** At session start Claude gets a ~4K-token pack of the signatures, top function bodies, and linked tests most relevant to your project.
 - **A second brain that talks back.** Decisions and notes you save resurface *automatically* when you touch the relevant file — and get flagged if the code changed since you saved them.
+- **Knowledge every AI can read.** Two small files load at the start of every session: `.synthra/MEMORY.md` (this project — conventions, gotchas, how to build and run it; shared in git) and `~/.synthra/USER.md` (you — private, every project). An `AGENTS.md` block points Codex, Cursor, Copilot, Gemini CLI and other tools at the same files, so each project's knowledge works with any AI, not only Claude.
 - **Difficulty-aware routing.** Hard tasks (races, leaks, migrations, security…) are kept on your primary model instead of being cheaped-out.
 - **Knows what you just edited.** A file + git watcher means Claude isn't answering from a stale snapshot.
 
@@ -71,6 +72,7 @@ The newer, bigger lever is **model routing**: on heavy usage the assistant can d
 | **The Dispatcher** | `route_task` scores a task against your installed agents/skills + project language and names the best fit + model. Runs in shadow mode passively (records, doesn't interrupt) | Right tool, right-priced model — when you ask |
 | **Difficulty escalation** | Flags complex tasks (races, leaks, security…) to stay on your primary model | Cheap where safe, powerful where it matters |
 | **Branch-aware memory** | `context_remember` / `context_recall` persist decisions per git branch in `.synthra/` (git-tracked) | Teammates inherit context; it merges naturally |
+| **Knowledge files** | `.synthra/MEMORY.md` (project, git-tracked) and `~/.synthra/USER.md` (you, private), each with a size limit; Claude saves to them with `memory` and is nudged every 10 replies; `AGENTS.md` points other AI tools at them | One small, current knowledge base per project that any AI can use |
 | **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
 | **Activity awareness** | Watches file saves, branch switches, uncommitted diffs | Claude knows what you changed between turns |
 | **Live token dashboard** | Cost, model breakdown, savings floor, Moat blocks, hot files | See exactly where your spend goes |
@@ -170,7 +172,7 @@ Live at **http://127.0.0.1:8901** (falls back through 8901–8910 if the port is
 
 ## MCP tools
 
-Thirteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
+Fourteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
 
 | Tool | Purpose |
 |---|---|
@@ -179,6 +181,7 @@ Thirteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude call
 | `graph_register_edit(files)` | Tell Synthra you edited files — boosts ranking, avoids stale snapshots. |
 | `context_remember(text, kind)` | Persist a decision / task / next-step / fact / blocker, branch-aware, into git-tracked `.synthra/`. |
 | `context_recall(kind?)` | Read previously-stored entries (defaults to the current branch). |
+| `memory(target, action \| operations)` | Read or change the knowledge files every session loads: `project` = `.synthra/MEMORY.md`, `user` = `~/.synthra/USER.md`. Add, replace or remove entries; refuses past the size limit (3,500 / 2,000 characters) and anything that looks like a secret. |
 | `recent_activity(since_ms?)` | What the human just saved / branch-switched / changed. |
 | `count_tokens(text)` | Char/4 estimate for prompt budgeting. |
 | `blast_radius(target, depth?)` | What could break before an edit — dependent files, or the exact caller symbols + guarding tests for a `file::symbol` target. |
@@ -242,7 +245,8 @@ your-project/
 ├── .gitignore                   # appended: .synthra-graph/, .mcp.json (with comments)
 ├── .mcp.json                    # Synthra registers here at --scope project so the IDE sees it.
 │                                # Gitignored by default — remove the line to share with teammates.
-├── CLAUDE.md                    # appended: <!-- synthra-policy v9 BEGIN/END --> markers
+├── CLAUDE.md                    # appended: <!-- synthra-policy v10 BEGIN/END --> markers
+├── AGENTS.md                    # appended: <!-- synthra-agents v1 BEGIN/END --> — for Codex, Cursor, Copilot, …
 ├── .claude/
 │   ├── settings.local.json      # 5 hooks merged (recognized by their script path)
 │   └── hooks/                   # synthra-prime, -pre-tool-use, -pre-compact, -stop, -route (.ps1/.sh)
@@ -252,18 +256,19 @@ your-project/
 │   ├── activity.jsonl · token_log.jsonl · gate_log.jsonl · route_log.jsonl
 │   └── mcp_port
 └── .synthra/                    # GIT-TRACKED — the team's shared memory
+    ├── MEMORY.md                # what every AI should know about the project (size-limited)
     ├── context-store.json       # decisions, tasks, facts (default branch)
     ├── CONTEXT.md               # narrative summary (Stop hook re-renders this)
     └── branches/<sanitized>/    # per-branch overrides
 ```
 
-Five hooks are installed: **SessionStart** (inject the context pack), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens + refresh CONTEXT.md), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats.
+Five hooks are installed: **SessionStart** (inject the context pack and the knowledge files), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens, refresh CONTEXT.md, and the memory nudge), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats. `~/.synthra/USER.md` sits next to it: it is about you, so it stays out of every repo.
 
 ---
 
 ## Coexistence
 
-Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v9 -->` markers, and identifies its own hook entries by the script path they run (`.claude/hooks/synthra-*`), so re-runs strip only its own — a `meta: "synthra-hook=true"` tag is written too, but nothing depends on it, since Claude Code co-owns that file and drops unfamiliar keys when it rewrites. Your content in shared files **always** survives — `syn remove` proves it, leaving your gitignore lines, CLAUDE.md prose, and other hooks intact. If another tool logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries so totals don't double-count.
+Synthra plays nicely alongside other AI-context tools. It only writes to its own `.synthra/`, `.synthra-graph/`, and a single `synthra` entry inside `.mcp.json` (existing entries preserved). It only modifies `CLAUDE.md` inside `<!-- synthra-policy v10 -->` markers and `AGENTS.md` inside `<!-- synthra-agents v1 -->` markers (writing through a symlink if one links to the other), and identifies its own hook entries by the script path they run (`.claude/hooks/synthra-*`), so re-runs strip only its own — a `meta: "synthra-hook=true"` tag is written too, but nothing depends on it, since Claude Code co-owns that file and drops unfamiliar keys when it rewrites. Your content in shared files **always** survives — `syn remove` proves it, leaving your gitignore lines, CLAUDE.md and AGENTS.md prose, and other hooks intact. If another tool logs to a shared `token_log.jsonl`, the dashboard dedupes overlapping entries so totals don't double-count.
 
 ---
 
@@ -285,6 +290,10 @@ Everything works with zero config. Environment variables (all optional):
 | `SYN_NO_UPDATE_CHECK` | `0` | Set to `1` to skip the daily version-check ping |
 | `SYN_DASHBOARD_DEDUPE` | `1` | Set to `0`/`off`/`false` to see every raw token-log entry |
 | `SYN_DASHBOARD_RECENT_N` | _(unset)_ | Rows per `recent_*` feed in the `/data` payload. Unset, the capped feeds (gates/bash/routes) send 60 and the paginated turn history sends 500 |
+| `SYN_MEMORY_CHARS` | `3500` | Size limit of `.synthra/MEMORY.md` (characters of bullets) |
+| `SYN_USER_CHARS` | `2000` | Size limit of `~/.synthra/USER.md` |
+| `SYN_MEMORY_NUDGE_EVERY` | `10` | Ask Claude to save what it learned every N replies without a change to either file; `0` turns it off |
+| `SYN_USER_MEMORY` | `~/.synthra/USER.md` | Where USER.md lives |
 | `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Disk cap for `activity.jsonl`, truncated to its recent half when exceeded. Queries read the in-memory ring, so the file is for eyeball debugging only; `0` disables the cap |
 
 Advanced tuning knobs (read budgets, cache TTLs, gate-hint size, usage-learning decay) also exist as `SYN_*` vars — see `src/shared/config.ts` if you need to fine-tune retrieval.

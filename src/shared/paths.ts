@@ -1,5 +1,6 @@
 // Resolves Synthra's storage locations inside a project root.
 
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
@@ -47,15 +48,32 @@ export interface SynthraPaths {
   mcpServerErrLog: string;
   contextStore: string;
   contextMd: string;
+  /** .synthra/MEMORY.md — what every AI should know about this project. */
+  memoryMd: string;
+  /** ~/.synthra/USER.md — about the user; private, shared by all projects. */
+  userMemory: string;
   branchesDir: string;
   claudeDir: string;
   claudeSettings: string;
   claudeHooksDir: string;
   claudeMd: string;
+  /** AGENTS.md — the cross-tool instructions file (Codex, Cursor, Copilot, …). */
+  agentsMd: string;
   gitignore: string;
 }
 
-export function resolvePaths(projectRoot: string): SynthraPaths {
+/**
+ * Where USER.md lives. SYN_USER_MEMORY moves it (the test suite points it at a
+ * path that doesn't exist, so no test ever reads or writes the real one).
+ */
+export function defaultUserMemory(home: string = homedir()): string {
+  return process.env.SYN_USER_MEMORY || join(home, ".synthra", "USER.md");
+}
+
+export function resolvePaths(
+  projectRoot: string,
+  userMemory: string = defaultUserMemory(),
+): SynthraPaths {
   const graphDir = join(projectRoot, ".synthra-graph");
   const contextDir = join(projectRoot, ".synthra");
   const claudeDir = join(projectRoot, ".claude");
@@ -83,11 +101,14 @@ export function resolvePaths(projectRoot: string): SynthraPaths {
     mcpServerErrLog: join(graphDir, "mcp_server.err.log"),
     contextStore: join(contextDir, "context-store.json"),
     contextMd: join(contextDir, "CONTEXT.md"),
+    memoryMd: join(contextDir, "MEMORY.md"),
+    userMemory,
     branchesDir: join(contextDir, "branches"),
     claudeDir,
     claudeSettings: join(claudeDir, "settings.local.json"),
     claudeHooksDir: join(claudeDir, "hooks"),
     claudeMd: join(projectRoot, "CLAUDE.md"),
+    agentsMd: join(projectRoot, "AGENTS.md"),
     gitignore: join(projectRoot, ".gitignore"),
   };
 }

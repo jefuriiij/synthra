@@ -26,6 +26,7 @@ import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
 import { handleLog } from "./routes/log.js";
+import { handleNudge } from "./routes/nudge.js";
 import { handlePack } from "./routes/pack.js";
 import { handlePanels } from "./routes/panels.js";
 import { handlePrime } from "./routes/prime.js";
@@ -156,6 +157,13 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   app.post("/log", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleLog(body, ctx));
+  });
+
+  // The Stop hook, after /log: should Claude take one more step to save what
+  // it learned? Answers {} or {reason}.
+  app.post("/nudge", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleNudge(body, ctx));
   });
 
   app.post("/gate", async (c) => {

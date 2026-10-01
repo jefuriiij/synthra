@@ -26,16 +26,18 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `GET` | `/` | diagnostics | Service info: name, version, port, file/symbol counts, graph generation time. |
 | `GET` | `/health` | `checkOwner` in `src/server/owner.ts` (v0.26) | Liveness **and identity**: `{ ok, project_root, pid, port }`. A port answering is not proof it's *this* project's server — callers compare `project_root` before trusting it, because ports are machine-global and a stale `mcp_port` file can now name a port a *different* project's Synthra serves. |
 | `GET` | `/doctor` | IDE extension health light (v0.32) | `syn doctor`'s checks, live: `{ version, status, checks[] }`, `status` = worst of `ok`/`warn`/`fail`. `version` is this server process's — not necessarily what's installed. `?env=1` adds the checks that spawn processes (Node, jq, `claude --version`). The `MCP server` check here compares `mcp_port` to this server's own port instead of probing itself: missing or different = `fail`, since the hooks are then talking to someone else. |
-| `GET` | `/prime` | SessionStart hook, PreCompact hook | Returns priming text + recent stored context, including the "Since you were last here" resume digest. |
+| `GET` | `/prime` | SessionStart hook, PreCompact hook | Returns priming text + recent stored context, including the "Since you were last here" resume digest and (v0.33) the two knowledge files, `.synthra/MEMORY.md` and `~/.synthra/USER.md`. |
 | `POST` | `/pack` | MCP tools, internal | Returns a context pack for a query. |
 | `POST` | `/log` | Stop hook | Append a token usage entry to `token_log.jsonl`. |
+| `POST` | `/nudge` | Stop hook (v0.33) | `{ stop_hook_active? }` → `{ reason? }`. Every `SYN_MEMORY_NUDGE_EVERY` replies (default 10) without a change to either knowledge file, `reason` asks Claude to save what it learned; the hook passes it on as `{"decision":"block","reason":…}`. A reply made because of a Stop hook neither counts nor is nudged. |
 | `POST` | `/gate` | PreToolUse hook | Decide block/allow for a `Grep`/`Glob` call (THE MOAT). `Bash` calls are also POSTed here but only observed (logged, never blocked). |
 | `POST` | `/route` | UserPromptSubmit hook (the Dispatcher, v0.16.0+) | Scores the prompt against the installed Arsenal; returns `{ hint }`. `hint` is `""` unless `SYN_ROUTE_HINTS=1` — injection has been off by default since v0.21's "shadow mode" (a field window measured a 1.2% follow-rate on injected hints). |
 | `GET` | `/activity` | MCP tool `recent_activity` | Returns recent human-activity events. |
+| `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations. Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
 | `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
 
-11 routes total (verified against `src/server/http.ts`, 2026-09-23).
+13 routes total (verified against `src/server/http.ts`, 2026-10-02).
 
 ## HTTP routes — dashboard server (port 8901, fallback 8901–8910)
 
@@ -57,7 +59,7 @@ A second, independent Hono process (`src/dashboard/server.ts`) — outside the M
 
 ## MCP tools
 
-Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 13 tools total (verified against the `TOOLS` array in `src/server/mcp.ts`, 2026-08-09):
+Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 14 tools total (verified against the `TOOLS` array in `src/server/mcp.ts`, 2026-10-02):
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -66,6 +68,7 @@ Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 13 tools total (verified agai
 | `graph_register_edit` | `{ files: string[] }` | Ack — records the AI's edits so subsequent retrieval ranks them higher. |
 | `context_remember` | `{ text: string, kind: "decision"\|"task"\|"next"\|"fact"\|"blocker", tags?: string[], files?: string[] }` | Persists an entry to the branch-aware context store; re-renders `CONTEXT.md`. Linked `files` become staleness anchors. |
 | `context_recall` | `{ kind?, branch?, limit? }` | Reads stored context entries, flagging any whose anchored files have since changed. |
+| `memory` | `{ target: "project"\|"user", action?: "read"\|"add"\|"replace"\|"remove", content?, old_text?, operations?: [{ action, content?, old_text? }] }` | Reads or changes `.synthra/MEMORY.md` (`project`) or `~/.synthra/USER.md` (`user`). `old_text` finds the entry by a unique piece; `operations` apply together, checked against the final size. Refuses growth past the limit (`SYN_MEMORY_CHARS` 3500 / `SYN_USER_CHARS` 2000) and entries that look like secrets, and answers with the file's current entries either way. |
 | `recent_activity` | `{ since_ms?: number, limit?: number }` | Recent human-activity events (saves, branch switches, diffs). |
 | `count_tokens` | `{ text: string }` | `{ tokens: number }` — char/4 estimate. |
 | `blast_radius` | `{ target: string, depth?: number }` | A bare-file `target` returns all files that transitively depend on it; a `file::symbol` target returns the exact caller *symbols* (name → file:line) — the rename-safety view. |
@@ -112,6 +115,8 @@ The hook reads `$hookInput.transcript_path`, parses recent assistant turns out o
 ```
 
 Uses an offset file (`<transcript>.stopoffset`) to avoid double-counting on resume.
+
+After `/log` and `/context-update`, the hook POSTs `{ "stop_hook_active": <bool> }` to `/nudge` (v0.33). When the answer has a `reason`, the hook prints `{"decision":"block","reason":"…"}` and exits 0 — Claude Code then keeps Claude for one more step and hands it the reason.
 
 ### UserPromptSubmit → POST `/route` (the Dispatcher, v0.16.0+)
 

@@ -3,6 +3,8 @@
 # POSTs totals to /log. Since v0.20 the same window is also scanned for
 # Task/Agent tool_use events (subagent delegations) feeding the dashboard's
 # Dispatcher follow-rate. Uses a .stopoffset file to avoid double-counting.
+# Since v0.33 it ends by asking /nudge whether Claude should save what it
+# learned before it stops (see the end of the file).
 # Requires `jq` for robust JSON parsing; falls back to silent no-op if absent.
 
 set +e
@@ -88,5 +90,17 @@ curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
   --data "$(jq -nc --arg t "$TRANSCRIPT" '{transcript_path:$t}')" \
   "http://127.0.0.1:$PORT/context-update" >/dev/null 2>&1
+
+# Memory nudge (v0.33): every N replies without a change to MEMORY.md/USER.md,
+# the server answers with a reason, and this hook asks Claude Code to keep
+# Claude for one more step ({"decision":"block"}). stop_hook_active is passed
+# through so the step Claude takes because of a nudge is never nudged again.
+ACTIVE=$(printf '%s' "$INPUT" | jq -r 'if .stop_hook_active == true then "true" else "false" end' 2>/dev/null)
+REASON=$(curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
+  --data "{\"stop_hook_active\":${ACTIVE:-false}}" \
+  "http://127.0.0.1:$PORT/nudge" 2>/dev/null | jq -r '.reason // empty' 2>/dev/null)
+if [ -n "$REASON" ]; then
+  jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
+fi
 
 exit 0
