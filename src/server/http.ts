@@ -31,6 +31,7 @@ import { handlePack } from "./routes/pack.js";
 import { handlePanels } from "./routes/panels.js";
 import { handlePrime } from "./routes/prime.js";
 import { handleRoute } from "./routes/route.js";
+import { handleSettingsPost, settingsView } from "./routes/settings.js";
 
 export interface ServerHandle {
   port: number;
@@ -194,6 +195,14 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   app.post("/context-update", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleContextUpdate(body, ctx));
+  });
+
+  // The IDE's Settings tab: ~/.synthra/settings.json, with where each value
+  // comes from. POST {key, value} sets one (value null = back to default).
+  app.get("/settings", (c) => c.json(settingsView()));
+  app.post("/settings", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleSettingsPost(body, ctx));
   });
 
   app.post("/mcp", async (c) => {

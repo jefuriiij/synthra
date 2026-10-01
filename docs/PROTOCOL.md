@@ -33,11 +33,13 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `POST` | `/gate` | PreToolUse hook | Decide block/allow for a `Grep`/`Glob` call (THE MOAT). `Bash` calls are also POSTed here but only observed (logged, never blocked). |
 | `POST` | `/route` | UserPromptSubmit hook (the Dispatcher, v0.16.0+) | Scores the prompt against the installed Arsenal; returns `{ hint }`. `hint` is `""` unless `SYN_ROUTE_HINTS=1` — injection has been off by default since v0.21's "shadow mode" (a field window measured a 1.2% follow-rate on injected hints). |
 | `GET` | `/activity` | MCP tool `recent_activity` | Returns recent human-activity events. |
-| `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations. Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
+| `GET` | `/settings` | IDE extension Settings tab (v0.33) | `{ path, settings[] }`: every user-facing setting in `~/.synthra/settings.json` with its `value`, `default`, range and `source` (`default` / `file` / `env` — an environment variable wins and locks the control). |
+| `POST` | `/settings` | IDE extension Settings tab (v0.33) | `{ key, value }` sets one setting (`value: null` = back to the default); answers `{ ok, error?, path, settings[] }`. Changing a memory limit rewrites the AGENTS.md block at once. |
+| `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations, plus the same `settings` as `GET /settings`. Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
 | `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
 
-13 routes total (verified against `src/server/http.ts`, 2026-10-02).
+15 routes total (verified against `src/server/http.ts`, 2026-10-02).
 
 ## HTTP routes — dashboard server (port 8901, fallback 8901–8910)
 

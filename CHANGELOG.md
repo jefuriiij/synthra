@@ -38,6 +38,14 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 - **The sidebar and the large panel show both files first**, with how full
   each one is.
 
+- **A Settings tab** in the large panel (and a ⚙ on the sidebar) for the
+  memory nudge (on or off, every how many replies), the two memory limits,
+  and the Dispatcher's in-chat hints. They are saved in
+  `~/.synthra/settings.json`, so they apply to every project and work from a
+  terminal too. An environment variable still wins, and the tab shows the
+  setting as locked when one does. Changing a limit rewrites the AGENTS.md
+  block at once.
+
 - **The IDE extension has a sidebar: Memory, Capabilities, Agents.** Click the
   Synthra icon in the activity bar to browse what Synthra knows about the
   project, the way Hermes Studio shows Hermes:

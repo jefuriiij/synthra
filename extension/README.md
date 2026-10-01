@@ -42,6 +42,16 @@ The panels refresh by themselves when the files behind them change. The ↻ butt
 
 For more room, open the same content as tabs in an editor: click the Synthra button in the editor's title bar, or the ⧉ button in a sidebar panel, or run **Synthra: Open panel**. It has the same Memory, Capabilities and Agents, laid out like Hermes Studio's panel tabs (there is no chat — Claude Code has that), with a filter box on Memory and Capabilities. It stays open across window reloads. Turn the title-bar button off with `synthra.showEditorButton`.
 
+### Settings
+
+The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory panel) changes how Synthra behaves:
+
+- **Memory nudge:** on or off, and after how many Claude replies without new notes.
+- **Project memory limit** and **About-you limit:** the size limits of `.synthra/MEMORY.md` and `~/.synthra/USER.md`.
+- **Suggest agents in chat:** the Dispatcher's hint before Claude answers.
+
+They are saved in `~/.synthra/settings.json`, so they apply to every project and also work when you run `syn` from a terminal. An environment variable (`SYN_MEMORY_NUDGE_EVERY`, `SYN_MEMORY_CHARS`, `SYN_USER_CHARS`, `SYN_ROUTE_HINTS`) wins over the file; the tab then shows the setting as locked. Settings need Synthra running.
+
 ## Status bar
 
 | Item | Meaning |
@@ -89,6 +99,7 @@ Turn it off with `synthra.checkForUpdates`, or check any time with **Synthra: Ch
 - **Synthra: Check for updates**
 - **Synthra: Refresh panels** — rescans skills and agents for the sidebar
 - **Synthra: Open panel** — the large panel, in an editor tab
+- **Synthra: Settings** — the large panel's Settings tab
 
 ## Settings
 

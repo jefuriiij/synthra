@@ -274,7 +274,7 @@ Synthra plays nicely alongside other AI-context tools. It only writes to its own
 
 ## Configuration
 
-Everything works with zero config. Environment variables (all optional):
+Everything works with zero config. The everyday settings — the memory nudge, the two memory limits, and Dispatcher hints — can be changed in the IDE extension's **Settings** tab or in `~/.synthra/settings.json`; an environment variable wins over the file. Environment variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|

@@ -119,6 +119,12 @@
           "light": "resources/synthra-light.svg",
           "dark": "resources/synthra-dark.svg"
         }
+      },
+      {
+        "command": "synthra.openSettings",
+        "title": "Synthra: Settings",
+        "category": "Synthra",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -132,6 +138,11 @@
           "command": "synthra.openPanel",
           "when": "view =~ /^synthra\\./",
           "group": "navigation@1"
+        },
+        {
+          "command": "synthra.openSettings",
+          "when": "view == synthra.memory",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [

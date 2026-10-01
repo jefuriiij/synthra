@@ -23,7 +23,7 @@ export function post(msg: WebviewToHost): void {
   api.postMessage(msg);
 }
 
-const TABS: readonly string[] = ["memory", "capabilities", "agents"];
+const TABS: readonly string[] = ["memory", "capabilities", "agents", "settings"];
 
 export function getState(): PersistedState {
   // Whatever an older build stored comes back verbatim; never trust its shape.

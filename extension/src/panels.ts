@@ -76,6 +76,11 @@ export interface PanelDeps {
   /** What the panels say while there is no port: starting, failed, or stopped. */
   notRunning(): string;
   getJson<T>(url: string, timeoutMs: number): Promise<{ status: number; body: T | null }>;
+  postJson<T>(
+    url: string,
+    body: unknown,
+    timeoutMs: number,
+  ): Promise<{ status: number; body: T | null }>;
   log(line: string): void;
 }
 
@@ -240,6 +245,27 @@ export class SynthraPanels implements vscode.Disposable {
   private showOnly(message: string): void {
     for (const p of PANELS) this.show(p, { nodes: [], message });
     this.publish({ kind: "message", text: message });
+  }
+
+  /**
+   * Change one setting (value null = back to its default) through the running
+   * server, then read again so every view shows it. Resolves to "" on
+   * success, or the reason it was refused.
+   */
+  async setSetting(key: string, value: number | boolean | null): Promise<string> {
+    const port = this.deps.port();
+    if (port === null) return "Synthra is not running, so settings can't be changed right now.";
+    const r = await this.deps.postJson<{ ok?: boolean; error?: string }>(
+      `http://127.0.0.1:${port}/settings`,
+      { key, value },
+      10_000,
+    );
+    if (r.status === 404)
+      return "This version of Synthra has no settings. Update Synthra to 0.33 or later.";
+    if (r.status !== 200 || !r.body)
+      return "Synthra did not answer. See the log (Synthra: Show log).";
+    this.refresh();
+    return r.body.ok ? "" : (r.body.error ?? "The setting was not saved.");
   }
 
   /** Open a file a row points at. The large panel's clicks land here too. */

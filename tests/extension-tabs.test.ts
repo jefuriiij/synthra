@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 
 import { buildCsp, buildHtml } from "../extension/src/html.js";
-import { buildTabs, messageTabs } from "../extension/src/panelTabs.js";
+import { buildTabs, messageTabs, tildify } from "../extension/src/panelTabs.js";
 import type { PanelsPayload } from "../extension/src/panelTrees.js";
 
 const ROOT = "/work/aster";
@@ -239,6 +239,59 @@ describe("Agents tab", () => {
       { agent: "Explore", count: 2 },
       { agent: "general-purpose", count: 1 },
     ]);
+  });
+});
+
+describe("Settings tab", () => {
+  it("groups the server's settings, keeping each one's value and source", () => {
+    const row = (key: string, group: string, extra: Record<string, unknown> = {}) => ({
+      key,
+      group,
+      label: key,
+      help: "",
+      type: "number" as const,
+      value: 1,
+      default: 1,
+      source: "default" as const,
+      env: `SYN_${key}`,
+      ...extra,
+    });
+    const { view } = buildTabs(
+      ROOT,
+      payload({
+        settings: {
+          path: "/home/me/.synthra/settings.json",
+          settings: [
+            row("memoryNudgeEvery", "Memory", { value: 4, source: "file" }),
+            row("memoryChars", "Memory"),
+            row("routeHints", "Dispatcher", { type: "boolean", value: true, source: "env" }),
+          ],
+        },
+      }),
+    );
+    expect(view.settings?.path).toBe("/home/me/.synthra/settings.json");
+    expect(
+      view.settings?.groups.map((g) => [g.name, g.rows.map((r) => [r.key, r.value, r.source])]),
+    ).toEqual([
+      [
+        "Memory",
+        [
+          ["memoryNudgeEvery", 4, "file"],
+          ["memoryChars", 1, "default"],
+        ],
+      ],
+      ["Dispatcher", [["routeHints", true, "env"]]],
+    ]);
+  });
+
+  it("is absent with a server older than 0.33", () => {
+    expect(buildTabs(ROOT, payload()).view.settings).toBeUndefined();
+  });
+
+  it("shows the home folder as ~", () => {
+    expect(tildify("/home/me/.synthra/settings.json", "/home/me")).toBe("~/.synthra/settings.json");
+    expect(tildify("C:\\Users\\me\\.synthra\\s.json", "C:\\Users\\me")).toBe("~\\.synthra\\s.json");
+    expect(tildify("/home/meg/x", "/home/me")).toBe("/home/meg/x");
   });
 });
 

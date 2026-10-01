@@ -82,6 +82,24 @@ export interface PanelsPayload {
     since: string;
     delegations: PanelDelegation[];
   };
+  /** Synthra 0.33+. */
+  settings?: { path: string; settings: PanelSetting[] };
+}
+
+/** One row of GET /settings (src/server/routes/settings.ts). */
+export interface PanelSetting {
+  key: string;
+  group: string;
+  label: string;
+  help: string;
+  type: "number" | "boolean";
+  value: number | boolean;
+  default: number | boolean;
+  source: "default" | "file" | "env";
+  env: string;
+  min?: number;
+  max?: number;
+  unit?: string;
 }
 
 // ─── nodes ──────────────────────────────────────────────────────────────────

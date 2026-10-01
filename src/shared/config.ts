@@ -1,5 +1,9 @@
 // Environment-variable-driven configuration.
-// All knobs are prefixed SYN_.
+// All knobs are prefixed SYN_. The user-facing ones (memory nudge and limits,
+// Dispatcher hints) can also be set in ~/.synthra/settings.json — the IDE's
+// Settings tab — with the environment variable still winning; see settings.ts.
+
+import { settingValues } from "./settings.js";
 
 /** Default soft budget for a context pack, in tokens. Exported so the packer's
  *  own fallback and the configured value can't drift apart — they were two
@@ -45,6 +49,7 @@ function list(name: string): string[] {
 }
 
 export function loadConfig(): SynthraConfig {
+  const settings = settingValues();
   return {
     // Soft budget for a graph_continue / /pack context pack, in TOKENS (the
     // packer multiplies by 4 for its char accounting). The old name said CHARS
@@ -73,8 +78,9 @@ export function loadConfig(): SynthraConfig {
     // it would have recommended so precision can be graded from route_log,
     // without spending a line of your context on it. The first field window
     // measured a 1.2% follow-rate on injected hints, so they have to earn the
-    // right to speak again. SYN_ROUTE_HINTS=1 re-enables injection.
-    routeHints: process.env.SYN_ROUTE_HINTS === "1",
+    // right to speak again. SYN_ROUTE_HINTS=1 (or the Settings tab)
+    // re-enables injection.
+    routeHints: settings.routeHints,
     // A strong name hit (3) plus two description hits, or five description
     // hits. Raised from 3 in v0.21 alongside the precision fixes.
     routeMinScore: num("SYN_ROUTE_MIN_SCORE", 5),
@@ -91,11 +97,11 @@ export function loadConfig(): SynthraConfig {
     // Character limits of the two knowledge files every session loads
     // (.synthra/MEMORY.md and ~/.synthra/USER.md). Small on purpose, as in
     // Hermes: a full file gets consolidated instead of growing stale.
-    memoryChars: num("SYN_MEMORY_CHARS", 3500),
-    userChars: num("SYN_USER_CHARS", 2000),
+    memoryChars: settings.memoryChars,
+    userChars: settings.userChars,
     // Every this many Claude replies without a change to either file, the Stop
     // hook asks Claude — in the same chat — whether anything is worth keeping.
     // 0 turns the nudge off.
-    memoryNudgeEvery: num("SYN_MEMORY_NUDGE_EVERY", 10),
+    memoryNudgeEvery: settings.memoryNudgeEvery,
   };
 }

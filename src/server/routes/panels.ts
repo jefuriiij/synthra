@@ -25,6 +25,7 @@ import { type EntryKind, readStore } from "../../memory/context-store.js";
 import { resolveActiveBranch } from "../../memory/index.js";
 import { knowledgeLocation, readKnowledge } from "../../memory/knowledge.js";
 import type { ServerContext } from "../context.js";
+import { type SettingsView, settingsView } from "./settings.js";
 import { staleAnchorPaths } from "../mcp.js";
 
 /** Bumped on a breaking change to the payload. The extension checks it, so an
@@ -104,6 +105,8 @@ export interface PanelsPayload {
     since: string;
     delegations: PanelDelegation[];
   };
+  /** The Settings tab (0.33+); changes go to POST /settings. */
+  settings?: SettingsView;
 }
 
 export interface PanelsOptions {
@@ -137,6 +140,7 @@ export async function handlePanels(
     memory: { ...memory, files },
     capabilities,
     agents,
+    settings: settingsView(),
   };
 }
 

@@ -3,6 +3,7 @@
 // view the webview renders, and what each of its keys opens: the host opens
 // only those (see shared/tabs.ts).
 
+import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
 import { MEMORY_KINDS, type PanelItem, type PanelsPayload, type PanelTarget } from "./panelTrees";
@@ -16,6 +17,7 @@ import type {
   MemorySection,
   MemoryTab,
   PluginRow,
+  SettingsTab,
   TabsView,
 } from "./shared/tabs";
 
@@ -53,6 +55,7 @@ export function buildTabs(folder: string, p: PanelsPayload): BuiltTabs {
       memory: memoryTab(p, keys),
       capabilities: capabilitiesTab(p, keys),
       agents: agentsTab(p),
+      ...(p.settings ? { settings: settingsTab(p.settings) } : {}),
     },
     targets: keys.targets,
   };
@@ -249,4 +252,27 @@ function agentsTab(p: PanelsPayload): AgentsTab {
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
       .map(([agent, count]) => ({ agent, count })),
   };
+}
+
+// ─── Settings ───────────────────────────────────────────────────────────────
+
+function settingsTab(s: NonNullable<PanelsPayload["settings"]>): SettingsTab {
+  const groups: SettingsTab["groups"] = [];
+  for (const row of s.settings) {
+    let g = groups.find((x) => x.name === row.group);
+    if (!g) {
+      g = { name: row.group, rows: [] };
+      groups.push(g);
+    }
+    g.rows.push({ ...row });
+  }
+  return { path: tildify(s.path), groups };
+}
+
+/** `/home/me/.synthra/settings.json` → `~/.synthra/settings.json`, for display. */
+export function tildify(path: string, home: string = homedir()): string {
+  const h = home.replace(/[\\/]+$/, "");
+  return h && (path === h || path.startsWith(`${h}/`) || path.startsWith(`${h}\\`))
+    ? `~${path.slice(h.length)}`
+    : path;
 }

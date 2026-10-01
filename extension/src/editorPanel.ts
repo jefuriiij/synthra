@@ -13,7 +13,7 @@ import { buildHtml } from "./html";
 import { buildTabs, messageTabs } from "./panelTabs";
 import type { PanelTarget } from "./panelTrees";
 import type { PanelsState, SynthraPanels } from "./panels";
-import type { HostToWebview, WebviewToHost } from "./shared/tabs";
+import type { HostToWebview, Tab, WebviewToHost } from "./shared/tabs";
 
 export const PANEL_VIEW_TYPE = "synthra.panel";
 
@@ -38,12 +38,17 @@ export class SynthraEditorPanel implements vscode.Disposable {
     );
   }
 
-  /** Open the panel, or bring it to the front. */
-  show(): void {
+  /** A tab to bring up once the page has loaded (it can't hear us before). */
+  private pendingTab?: Tab;
+
+  /** Open the panel, or bring it to the front — on `tab`, when given. */
+  show(tab?: Tab): void {
     if (this.panel) {
       this.panel.reveal(undefined, false);
+      if (tab) this.post({ type: "showTab", tab });
       return;
     }
+    this.pendingTab = tab;
     const panel = vscode.window.createWebviewPanel(
       PANEL_VIEW_TYPE,
       "Synthra",
@@ -108,7 +113,18 @@ export class SynthraEditorPanel implements vscode.Disposable {
     switch (msg.type) {
       case "ready":
         this.publish(this.source.state);
+        if (this.pendingTab) this.post({ type: "showTab", tab: this.pendingTab });
+        this.pendingTab = undefined;
         return;
+      case "setSetting": {
+        if (typeof msg.key !== "string") return;
+        const value =
+          typeof msg.value === "number" || typeof msg.value === "boolean" ? msg.value : null;
+        void this.source
+          .setSetting(msg.key, value)
+          .then((error) => this.post({ type: "settingResult", key: msg.key, error }));
+        return;
+      }
       case "refresh":
         this.post({ type: "refreshing", on: true });
         this.source.refresh({ fresh: true });

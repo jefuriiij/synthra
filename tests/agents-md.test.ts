@@ -181,21 +181,24 @@ describe("the memory MCP tool", () => {
 
   it("consolidates in one call, and refuses past the limit with the file's entries", async () => {
     const c = await ctx();
-    process.env.SYN_MEMORY_CHARS = "40";
+    // 500 is the smallest limit the setting accepts.
+    process.env.SYN_MEMORY_CHARS = "500";
     try {
       await call(c, { target: "project", action: "add", content: "Build: npm run build" });
+      await call(c, { target: "project", action: "add", content: `Notes: ${"x".repeat(460)}` });
       const full = await call(c, {
         target: "project",
         action: "add",
         content: "Test: npm test -- --run",
       });
       expect(full.isError).toBe(true);
-      expect(full.text).toContain("limit is 40");
+      expect(full.text).toContain("limit is 500");
       expect(full.text).toContain("- Build: npm run build");
 
       const merged = await call(c, {
         target: "project",
         operations: [
+          { action: "remove", old_text: "Notes:" },
           { action: "replace", old_text: "Build", content: "Build/test: npm run build, npm test" },
         ],
       });

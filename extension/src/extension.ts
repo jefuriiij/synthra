@@ -25,7 +25,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { get as httpGet } from "node:http";
+import { get as httpGet, request as httpRequest } from "node:http";
 import { get as httpsGet } from "node:https";
 import { delimiter, join } from "node:path";
 import * as vscode from "vscode";
@@ -285,6 +285,43 @@ function getJson<T>(url: string, timeoutMs: number): Promise<{ status: number; b
     });
     req.on("timeout", () => req.destroy());
     req.on("error", () => resolve({ status: 0, body: null }));
+  });
+}
+
+/** POST a JSON body to the local server and read the JSON answer. Same shape
+ *  as getJson; only ever used for 127.0.0.1. */
+function postJson<T>(
+  url: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<{ status: number; body: T | null }> {
+  return new Promise((resolve) => {
+    const data = JSON.stringify(body);
+    const req = httpRequest(
+      url,
+      {
+        method: "POST",
+        timeout: timeoutMs,
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data) },
+      },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (c: string) => (raw += c));
+        res.on("end", () => {
+          let parsed: T | null = null;
+          try {
+            parsed = JSON.parse(raw) as T;
+          } catch {
+            parsed = null;
+          }
+          resolve({ status: res.statusCode ?? 0, body: parsed });
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve({ status: 0, body: null }));
+    req.end(data);
   });
 }
 
@@ -799,6 +836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? "Synthra could not start. See the log (Synthra: Show log)."
           : 'Synthra is not running for this folder. Run "Synthra: Start for this project".',
     getJson,
+    postJson,
     log: (line) => out.appendLine(line),
   });
   const editorPanel = new SynthraEditorPanel(context.extensionUri, targetFolder(), panels, (line) =>
@@ -808,6 +846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     panels,
     editorPanel,
     vscode.commands.registerCommand("synthra.openPanel", () => editorPanel.show()),
+    vscode.commands.registerCommand("synthra.openSettings", () => editorPanel.show("settings")),
   );
 
   context.subscriptions.push(

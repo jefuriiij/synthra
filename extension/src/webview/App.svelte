@@ -6,6 +6,7 @@
   import CapabilitiesTab from "./components/CapabilitiesTab.svelte";
   import Icon, { type IconName } from "./components/Icon.svelte";
   import MemoryTab from "./components/MemoryTab.svelte";
+  import SettingsTab from "./components/SettingsTab.svelte";
   import SynthraMark from "./components/SynthraMark.svelte";
   import { store } from "./lib/store.svelte";
 
@@ -13,6 +14,7 @@
     { id: "memory", label: "Memory", icon: "memory" },
     { id: "capabilities", label: "Capabilities", icon: "capabilities" },
     { id: "agents", label: "Agents", icon: "agents" },
+    { id: "settings", label: "Settings", icon: "gear" },
   ];
 
   const view = $derived(store.view);
@@ -24,6 +26,7 @@
       ? view.capabilities.skills.length + view.capabilities.agents.length + view.capabilities.mcp.length
       : undefined,
     agents: view?.agents?.recent.length,
+    settings: undefined,
   });
 
   /** Re-read once a minute so "12 min ago" keeps moving while the page is open. */
@@ -104,6 +107,12 @@
         <CapabilitiesTab capabilities={view.capabilities} />
       {:else if store.tab === "agents" && view.agents}
         <AgentsTab agents={view.agents} {now} />
+      {:else if store.tab === "settings"}
+        {#if view.settings}
+          <SettingsTab settings={view.settings} />
+        {:else}
+          <p class="empty">This version of Synthra has no settings. Update Synthra to 0.33 or later.</p>
+        {/if}
       {/if}
     </div>
   </div>

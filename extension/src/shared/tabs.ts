@@ -8,7 +8,7 @@
 // host opens only keys of the view it last sent — the page can never ask for
 // an arbitrary path.
 
-export type Tab = "memory" | "capabilities" | "agents";
+export type Tab = "memory" | "capabilities" | "agents" | "settings";
 
 export interface TabsView {
   /** The project folder's name, for the header. */
@@ -18,6 +18,7 @@ export interface TabsView {
   memory?: MemoryTab;
   capabilities?: CapabilitiesTab;
   agents?: AgentsTab;
+  settings?: SettingsTab;
 }
 
 // ─── Memory ─────────────────────────────────────────────────────────────────
@@ -126,11 +127,43 @@ export interface AgentRow {
   at: number;
 }
 
+// ─── Settings ───────────────────────────────────────────────────────────────
+
+export interface SettingsTab {
+  /** ~/.synthra/settings.json */
+  path: string;
+  groups: { name: string; rows: SettingRow[] }[];
+}
+
+export interface SettingRow {
+  key: string;
+  label: string;
+  help: string;
+  type: "number" | "boolean";
+  value: number | boolean;
+  default: number | boolean;
+  /** "env": an environment variable sets it, so the control is read-only. */
+  source: "default" | "file" | "env";
+  env: string;
+  min?: number;
+  max?: number;
+  unit?: string;
+}
+
 // ─── messages ───────────────────────────────────────────────────────────────
 
 export type HostToWebview =
   | { type: "view"; view: TabsView }
   /** A refresh the user asked for is running (the button spins). */
-  | { type: "refreshing"; on: boolean };
+  | { type: "refreshing"; on: boolean }
+  /** Bring a tab to the front (the sidebar's gear opens Settings). */
+  | { type: "showTab"; tab: Tab }
+  /** A setting change the server refused; `error` is "" once one succeeds. */
+  | { type: "settingResult"; key: string; error: string };
 
-export type WebviewToHost = { type: "ready" } | { type: "open"; key: string } | { type: "refresh" };
+export type WebviewToHost =
+  | { type: "ready" }
+  | { type: "open"; key: string }
+  | { type: "refresh" }
+  /** value null = back to the default. */
+  | { type: "setSetting"; key: string; value: number | boolean | null };
