@@ -25,10 +25,13 @@ export default defineConfig({
     testTimeout: 20_000,
     // Never the real ~/.synthra/USER.md: a test that forgets to pass its own
     // path reads nothing and writes into a throwaway folder.
-    // The same for ~/.synthra/settings.json.
+    // The same for ~/.synthra/settings.json, ~/.claude/skills and
+    // ~/.synthra/skills.
     env: {
       SYN_USER_MEMORY: join(tmpdir(), `synthra-test-user-${process.pid}`, "USER.md"),
       SYN_SETTINGS: join(tmpdir(), `synthra-test-user-${process.pid}`, "settings.json"),
+      SYN_GLOBAL_SKILLS: join(tmpdir(), `synthra-test-user-${process.pid}`, "claude-skills"),
+      SYN_SKILL_STATE: join(tmpdir(), `synthra-test-user-${process.pid}`, "skill-state"),
     },
     hookTimeout: 20_000,
     coverage: {

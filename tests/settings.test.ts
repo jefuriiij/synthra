@@ -42,6 +42,7 @@ describe("settings file", () => {
       memoryNudgeEvery: 10,
       memoryChars: 3500,
       userChars: 2000,
+      skillApproval: true,
       routeHints: false,
     });
     expect(source("memoryChars")).toBe("default");
@@ -118,6 +119,7 @@ describe("settings routes", () => {
       ["memoryNudgeEvery", 10, "default"],
       ["memoryChars", 3500, "default"],
       ["userChars", 2000, "default"],
+      ["skillApproval", true, "default"],
       ["routeHints", true, "env"],
     ]);
     expect(v.settings[0]).toMatchObject({ type: "number", min: 0, max: 100, unit: "replies" });
@@ -138,7 +140,7 @@ describe("settings routes", () => {
     const r = await handleSettingsPost({ key: "memoryChars", value: "lots" }, await ctx());
     expect(r.ok).toBe(false);
     expect(r.error).toContain("number from 500 to 20000");
-    expect(r.settings).toHaveLength(4);
+    expect(r.settings).toHaveLength(5);
   });
 
   it("is served over HTTP, and /panels carries it too", async () => {
@@ -160,7 +162,7 @@ describe("settings routes", () => {
       const panels = (await (await fetch(`${base}/panels`)).json()) as {
         settings?: { settings: unknown[] };
       };
-      expect(panels.settings?.settings).toHaveLength(4);
+      expect(panels.settings?.settings).toHaveLength(5);
     } finally {
       await handle.stop();
     }

@@ -33,13 +33,16 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `POST` | `/gate` | PreToolUse hook | Decide block/allow for a `Grep`/`Glob` call (THE MOAT). `Bash` calls are also POSTed here but only observed (logged, never blocked). |
 | `POST` | `/route` | UserPromptSubmit hook (the Dispatcher, v0.16.0+) | Scores the prompt against the installed Arsenal; returns `{ hint }`. `hint` is `""` unless `SYN_ROUTE_HINTS=1` — injection has been off by default since v0.21's "shadow mode" (a field window measured a 1.2% follow-rate on injected hints). |
 | `GET` | `/activity` | MCP tool `recent_activity` | Returns recent human-activity events. |
+| `POST` | `/skills/approve` | IDE extension Learning tab (v0.33) | `{ id }` applies a skill proposal — refused when the file changed since it was proposed. `{ ok, error? }`. |
+| `POST` | `/skills/reject` | IDE extension Learning tab (v0.33) | `{ id }` drops a proposal and records the rejection. `{ ok, error? }`. |
+| `GET` | `/skills/blob` | IDE extension diffs (v0.33) | `?sha=<40 hex>` → `{ found, text? }`: a skill's before/after text, kept by content hash in `~/.synthra/skills/blobs/`. |
 | `GET` | `/settings` | IDE extension Settings tab (v0.33) | `{ path, settings[] }`: every user-facing setting in `~/.synthra/settings.json` with its `value`, `default`, range and `source` (`default` / `file` / `env` — an environment variable wins and locks the control). |
 | `POST` | `/settings` | IDE extension Settings tab (v0.33) | `{ key, value }` sets one setting (`value: null` = back to the default); answers `{ ok, error?, path, settings[] }`. Changing a memory limit rewrites the AGENTS.md block at once. |
-| `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations, plus the same `settings` as `GET /settings`. Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
+| `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations, plus the same `settings` as `GET /settings`, and `learning` (proposals with their before/after text and a `stale` flag, the last 30 days of skill changes, the skills Synthra wrote). Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
 | `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
 
-15 routes total (verified against `src/server/http.ts`, 2026-10-02).
+18 routes total (verified against `src/server/http.ts`, 2026-10-02).
 
 ## HTTP routes — dashboard server (port 8901, fallback 8901–8910)
 
@@ -61,7 +64,7 @@ A second, independent Hono process (`src/dashboard/server.ts`) — outside the M
 
 ## MCP tools
 
-Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 14 tools total (verified against the `TOOLS` array in `src/server/mcp.ts`, 2026-10-02):
+Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 15 tools total (verified against the `TOOLS` array in `src/server/mcp.ts`, 2026-10-02):
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -71,6 +74,7 @@ Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 14 tools total (verified agai
 | `context_remember` | `{ text: string, kind: "decision"\|"task"\|"next"\|"fact"\|"blocker", tags?: string[], files?: string[] }` | Persists an entry to the branch-aware context store; re-renders `CONTEXT.md`. Linked `files` become staleness anchors. |
 | `context_recall` | `{ kind?, branch?, limit? }` | Reads stored context entries, flagging any whose anchored files have since changed. |
 | `memory` | `{ target: "project"\|"user", action?: "read"\|"add"\|"replace"\|"remove", content?, old_text?, operations?: [{ action, content?, old_text? }] }` | Reads or changes `.synthra/MEMORY.md` (`project`) or `~/.synthra/USER.md` (`user`). `old_text` finds the entry by a unique piece; `operations` apply together, checked against the final size. Refuses growth past the limit (`SYN_MEMORY_CHARS` 3500 / `SYN_USER_CHARS` 2000) and entries that look like secrets, and answers with the file's current entries either way. |
+| `skill_manage` | `{ action: "list"\|"view"\|"create"\|"patch"\|"edit", scope?: "project"\|"global", name?, description?, body?, old_string?, new_string?, reason? }` | Skills in `.claude/skills/` (project) or `~/.claude/skills/` (global), marked `metadata: synthra: learned`. Only marked skills change, and only after a `view` in this server. With `SYN_SKILL_APPROVAL` on (default) create/patch/edit park a proposal in `~/.synthra/skills/pending/`; otherwise they apply at once. Every applied change is a line in `~/.synthra/skills/ledger.jsonl`. |
 | `recent_activity` | `{ since_ms?: number, limit?: number }` | Recent human-activity events (saves, branch switches, diffs). |
 | `count_tokens` | `{ text: string }` | `{ tokens: number }` — char/4 estimate. |
 | `blast_radius` | `{ target: string, depth?: number }` | A bare-file `target` returns all files that transitively depend on it; a `file::symbol` target returns the exact caller *symbols* (name → file:line) — the rename-safety view. |

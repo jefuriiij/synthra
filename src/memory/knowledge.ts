@@ -149,11 +149,11 @@ export type KnowledgeResult =
 
 // Zero-width and bidirectional controls: invisible in an editor, and the
 // classic way to hide an instruction inside text every session will load.
-const INVISIBLE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿]/;
+export const INVISIBLE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿]/;
 
 // The shapes of secrets that most often end up pasted into notes. MEMORY.md is
 // committed, so a key saved there is a key published.
-const SECRETS: RegExp[] = [
+export const SECRETS: RegExp[] = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
   /\bsk-[A-Za-z0-9_-]{20,}/,
   /\bgh[pousr]_[A-Za-z0-9]{30,}/,

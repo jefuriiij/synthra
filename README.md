@@ -73,6 +73,7 @@ The newer, bigger lever is **model routing**: on heavy usage the assistant can d
 | **Difficulty escalation** | Flags complex tasks (races, leaks, security…) to stay on your primary model | Cheap where safe, powerful where it matters |
 | **Branch-aware memory** | `context_remember` / `context_recall` persist decisions per git branch in `.synthra/` (git-tracked) | Teammates inherit context; it merges naturally |
 | **Knowledge files** | `.synthra/MEMORY.md` (project, git-tracked) and `~/.synthra/USER.md` (you, private), each with a size limit; Claude saves to them with `memory` and is nudged every 10 replies; `AGENTS.md` points other AI tools at them | One small, current knowledge base per project that any AI can use |
+| **Self-written skills** | `skill_manage` lets Claude save a repeatable workflow as a Claude Code skill — in the project (`.claude/skills/`) or for every project (`~/.claude/skills/`). New and changed skills wait for your OK in the IDE's Learning tab, with a diff | Claude gets better at your work over time, and you stay in control of what it learns |
 | **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
 | **Activity awareness** | Watches file saves, branch switches, uncommitted diffs | Claude knows what you changed between turns |
 | **Live token dashboard** | Cost, model breakdown, savings floor, Moat blocks, hot files | See exactly where your spend goes |
@@ -172,7 +173,7 @@ Live at **http://127.0.0.1:8901** (falls back through 8901–8910 if the port is
 
 ## MCP tools
 
-Fourteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
+Fifteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude calls these instead of Grep / Glob / Read for navigation:
 
 | Tool | Purpose |
 |---|---|
@@ -182,6 +183,7 @@ Fourteen tools exposed over HTTP MCP (namespaced `mcp__synthra__*`). Claude call
 | `context_remember(text, kind)` | Persist a decision / task / next-step / fact / blocker, branch-aware, into git-tracked `.synthra/`. |
 | `context_recall(kind?)` | Read previously-stored entries (defaults to the current branch). |
 | `memory(target, action \| operations)` | Read or change the knowledge files every session loads: `project` = `.synthra/MEMORY.md`, `user` = `~/.synthra/USER.md`. Add, replace or remove entries; refuses past the size limit (3,500 / 2,000 characters) and anything that looks like a secret. |
+| `skill_manage(action, …)` | Write and improve skills in Claude Code's own skill folders: `list`, `view`, `create` (scope `project` or `global`), `patch`, `edit`. Changes only skills Synthra wrote, only after a `view`; by default each change waits for your OK in the Learning tab. |
 | `recent_activity(since_ms?)` | What the human just saved / branch-switched / changed. |
 | `count_tokens(text)` | Char/4 estimate for prompt budgeting. |
 | `blast_radius(target, depth?)` | What could break before an edit — dependent files, or the exact caller symbols + guarding tests for a `file::symbol` target. |
@@ -262,7 +264,7 @@ your-project/
     └── branches/<sanitized>/    # per-branch overrides
 ```
 
-Five hooks are installed: **SessionStart** (inject the context pack and the knowledge files), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens, refresh CONTEXT.md, and the memory nudge), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats. `~/.synthra/USER.md` sits next to it: it is about you, so it stays out of every repo.
+Five hooks are installed: **SessionStart** (inject the context pack and the knowledge files), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens, refresh CONTEXT.md, and the memory nudge), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats. `~/.synthra/USER.md` sits next to it: it is about you, so it stays out of every repo. So do `~/.synthra/settings.json` (the Settings tab) and `~/.synthra/skills/` — skill proposals waiting for your OK, and the history of every skill change with the texts its diffs show.
 
 ---
 
@@ -293,6 +295,7 @@ Everything works with zero config. The everyday settings — the memory nudge, t
 | `SYN_MEMORY_CHARS` | `3500` | Size limit of `.synthra/MEMORY.md` (characters of bullets) |
 | `SYN_USER_CHARS` | `2000` | Size limit of `~/.synthra/USER.md` |
 | `SYN_MEMORY_NUDGE_EVERY` | `10` | Ask Claude to save what it learned every N replies without a change to either file; `0` turns it off |
+| `SYN_SKILL_APPROVAL` | `1` | `0` lets skills the AI writes or changes go live at once, instead of waiting for your OK |
 | `SYN_USER_MEMORY` | `~/.synthra/USER.md` | Where USER.md lives |
 | `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Disk cap for `activity.jsonl`, truncated to its recent half when exceeded. Queries read the in-memory ring, so the file is for eyeball debugging only; `0` disables the cap |
 

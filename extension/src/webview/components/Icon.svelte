@@ -21,7 +21,12 @@
     | "history"
     | "book"
     | "robot"
-    | "gear";
+    | "gear"
+    | "learning"
+    | "sparkle"
+    | "pencil"
+    | "check"
+    | "cross";
 </script>
 
 <script lang="ts">
@@ -34,7 +39,12 @@
   }: { name: IconName; size?: number; class?: string } = $props();
 </script>
 
-{#if name === "memory"}
+{#if name === "sparkle"}
+  <svg class={cls} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0">
+    <path d="M10 6Q10 14 18 14Q10 14 10 22Q10 14 2 14Q10 14 10 6Z" />
+    <path opacity="0.75" d="M18.5 2Q18.5 5.5 22 5.5Q18.5 5.5 18.5 9Q18.5 5.5 15 5.5Q18.5 5.5 18.5 2Z" />
+  </svg>
+{:else if name === "memory"}
   <svg class={cls} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0">
     <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
     <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
@@ -87,6 +97,14 @@
       <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.2h2.2M8 5v3.2l2 1.3" />
     {:else if name === "book"}
       <path d="M8 4c-1.5-1.2-3.5-1.5-5.5-1.2v9.5c2-.3 4 0 5.5 1.2 1.5-1.2 3.5-1.5 5.5-1.2V2.8C11.5 2.5 9.5 2.8 8 4zM8 4v9.5" />
+    {:else if name === "learning"}
+      <path d="M8 1.8Q8.6 7.4 14.2 8Q8.6 8.6 8 14.2Q7.4 8.6 1.8 8Q7.4 7.4 8 1.8Z" />
+    {:else if name === "pencil"}
+      <path d="M3 13l1-3 7-7 2 2-7 7z" />
+    {:else if name === "check"}
+      <path d="M3.5 8.5l3 3 6-7" stroke-width="1.7" />
+    {:else if name === "cross"}
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke-width="1.7" />
     {:else if name === "gear"}
       <circle cx="8" cy="8" r="2.2" />
       <path d="M8 1.5v1.8M8 12.7v1.8M14.5 8h-1.8M3.3 8H1.5M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3M12.6 12.6l-1.3-1.3M4.7 4.7L3.4 3.4" />

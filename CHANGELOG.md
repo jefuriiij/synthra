@@ -38,6 +38,25 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 - **The sidebar and the large panel show both files first**, with how full
   each one is.
 
+- **Claude writes and improves its own skills — Hermes' learning, for Claude
+  Code.** The new `skill_manage` MCP tool saves a repeatable workflow as a
+  real Claude Code skill: in `.claude/skills/` for steps that only make sense
+  in this repo (shared in git), or `~/.claude/skills/` for ones reusable in
+  every project (recording the project it was learned in). Claude Code loads
+  them by itself, with no restart.
+  - Synthra changes only the skills it wrote (each is marked in its
+    frontmatter), and only after the AI has viewed it.
+  - By default every new or changed skill **waits for your OK** in the new
+    Learning tab and sidebar panel, with a diff, the AI's reason, and Approve
+    and Reject buttons. A proposal whose skill changed in the meantime can't
+    be approved by mistake.
+  - Every change is recorded in `~/.synthra/skills/`, so Learning lists the
+    last 30 days, each one viewable as a diff.
+  - The number on the Synthra icon counts the skills waiting for you.
+  - "New skills wait for my OK" can be turned off in Settings.
+  - `syn .` creates `.claude/skills/` so the first skill shows up without a
+    `/reload-skills`.
+
 - **A Settings tab** in the large panel (and a ⚙ on the sidebar) for the
   memory nudge (on or off, every how many replies), the two memory limits,
   and the Dispatcher's in-chat hints. They are saved in

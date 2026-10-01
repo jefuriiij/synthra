@@ -14,13 +14,18 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export type SettingKey = "memoryNudgeEvery" | "memoryChars" | "userChars" | "routeHints";
+export type SettingKey =
+  | "memoryNudgeEvery"
+  | "memoryChars"
+  | "userChars"
+  | "skillApproval"
+  | "routeHints";
 
 interface Base {
   key: SettingKey;
   /** The environment variable that overrides the file. */
   env: string;
-  group: "Memory" | "Dispatcher";
+  group: "Memory" | "Learning" | "Dispatcher";
   label: string;
   help: string;
 }
@@ -66,6 +71,15 @@ export const SETTINGS: readonly SettingDef[] = [
     help: "The size limit of ~/.synthra/USER.md, the notes about you that every project loads.",
   },
   {
+    key: "skillApproval",
+    env: "SYN_SKILL_APPROVAL",
+    group: "Learning",
+    type: "boolean",
+    default: true,
+    label: "New skills wait for my OK",
+    help: "When the AI writes or changes a skill, it waits in the Learning tab until you approve it. Turn this off to let skills go live at once; every change is still recorded and can be seen as a diff.",
+  },
+  {
     key: "routeHints",
     env: "SYN_ROUTE_HINTS",
     group: "Dispatcher",
@@ -76,7 +90,9 @@ export const SETTINGS: readonly SettingDef[] = [
   },
 ];
 
-export type SettingValues = { [K in SettingKey]: K extends "routeHints" ? boolean : number };
+export type SettingValues = {
+  [K in SettingKey]: K extends "routeHints" | "skillApproval" ? boolean : number;
+};
 export type SettingSource = "default" | "file" | "env";
 
 /** Where the file lives. SYN_SETTINGS moves it — the test suite points it at

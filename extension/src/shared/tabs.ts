@@ -8,13 +8,14 @@
 // host opens only keys of the view it last sent — the page can never ask for
 // an arbitrary path.
 
-export type Tab = "memory" | "capabilities" | "agents" | "settings";
+export type Tab = "learning" | "memory" | "capabilities" | "agents" | "settings";
 
 export interface TabsView {
   /** The project folder's name, for the header. */
   project: string;
   /** Set when there is nothing else to show: not running, too old, no answer. */
   message?: string;
+  learning?: LearningTab;
   memory?: MemoryTab;
   capabilities?: CapabilitiesTab;
   agents?: AgentsTab;
@@ -127,6 +128,53 @@ export interface AgentRow {
   at: number;
 }
 
+// ─── Learning ───────────────────────────────────────────────────────────────
+
+export interface LearningTab {
+  /** "New skills wait for my OK" is on. */
+  approval: boolean;
+  /** Skills Synthra wrote in the last 7 days, and others it changed. */
+  newThisWeek: number;
+  improvedThisWeek: number;
+  pending: ProposalRow[];
+  recent: ChangeRow[];
+  learned: LearnedRow[];
+}
+
+export interface ProposalRow {
+  id: string;
+  action: "create" | "patch" | "edit";
+  name: string;
+  scope: "project" | "global";
+  description: string;
+  reason?: string;
+  at: number;
+  /** The file changed since: it can only be rejected. */
+  stale: boolean;
+  /** Opens the change as a diff. */
+  diff: string;
+}
+
+export interface ChangeRow {
+  id: string;
+  action: "create" | "patch" | "edit" | "reject";
+  name: string;
+  scope: "project" | "global";
+  approved: boolean;
+  reason?: string;
+  at: number;
+  /** Opens the change as a diff (or the file, when no copy was kept). */
+  key?: string;
+}
+
+export interface LearnedRow {
+  name: string;
+  scope: "project" | "global";
+  description: string;
+  origin?: string;
+  key: string;
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export interface SettingsTab {
@@ -159,11 +207,14 @@ export type HostToWebview =
   /** Bring a tab to the front (the sidebar's gear opens Settings). */
   | { type: "showTab"; tab: Tab }
   /** A setting change the server refused; `error` is "" once one succeeds. */
-  | { type: "settingResult"; key: string; error: string };
+  | { type: "settingResult"; key: string; error: string }
+  /** How an approve/reject went; `error` is "" when it worked. */
+  | { type: "answerResult"; id: string; error: string };
 
 export type WebviewToHost =
   | { type: "ready" }
   | { type: "open"; key: string }
   | { type: "refresh" }
   /** value null = back to the default. */
-  | { type: "setSetting"; key: string; value: number | boolean | null };
+  | { type: "setSetting"; key: string; value: number | boolean | null }
+  | { type: "answer"; id: string; verdict: "approve" | "reject" };

@@ -9,6 +9,8 @@ import * as vscode from "vscode";
 import {
   agentsView,
   capabilitiesView,
+  type DiffSide,
+  learningView,
   memoryView,
   PANELS_VERSION,
   type PanelNode,
@@ -18,6 +20,7 @@ import {
 } from "./panelTrees";
 
 export const PANEL_IDS = {
+  learning: "synthra.learning",
   memory: "synthra.memory",
   capabilities: "synthra.capabilities",
   agents: "synthra.agents",
@@ -26,6 +29,8 @@ type Panel = keyof typeof PANEL_IDS;
 const PANELS = Object.keys(PANEL_IDS) as Panel[];
 
 export const OPEN_COMMAND = "synthra.panels.open";
+/** Read-only documents for a skill change's before/after. */
+const DIFF_SCHEME = "synthra-skill";
 
 /** Synthra and Claude rewrite several files per change: read once after they settle. */
 const DEBOUNCE_MS = 800;
@@ -62,6 +67,7 @@ class NodeTree implements vscode.TreeDataProvider<PanelNode> {
       );
     }
     if (n.open) item.command = { command: OPEN_COMMAND, title: "Open", arguments: [n.open] };
+    if (n.contextValue) item.contextValue = n.contextValue;
     return item;
   }
 
@@ -92,6 +98,7 @@ export type PanelsState =
 
 export class SynthraPanels implements vscode.Disposable {
   private readonly trees: Record<Panel, NodeTree> = {
+    learning: new NodeTree(),
     memory: new NodeTree(),
     capabilities: new NodeTree(),
     agents: new NodeTree(),
@@ -119,6 +126,7 @@ export class SynthraPanels implements vscode.Disposable {
         showCollapseAll: p !== "agents",
       });
     this.views = {
+      learning: make("learning"),
       memory: make("memory"),
       capabilities: make("capabilities"),
       agents: make("agents"),
@@ -132,6 +140,17 @@ export class SynthraPanels implements vscode.Disposable {
       vscode.commands.registerCommand("synthra.panels.refresh", () =>
         this.refresh({ fresh: true }),
       ),
+      // The ✓ / ✗ on a proposal in the Learning panel: the node's id ends in
+      // the proposal's id.
+      vscode.commands.registerCommand("synthra.skills.approve", (n?: PanelNode) =>
+        this.answerFromTree(n, "approve"),
+      ),
+      vscode.commands.registerCommand("synthra.skills.reject", (n?: PanelNode) =>
+        this.answerFromTree(n, "reject"),
+      ),
+      vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, {
+        provideTextDocumentContent: (uri) => this.diffTexts.get(uri.query) ?? "",
+      }),
     );
 
     if (folder) {
@@ -154,6 +173,8 @@ export class SynthraPanels implements vscode.Disposable {
       watch(project, ".claude/{skills,agents}/**", true);
       watch(project, ".mcp.json", true);
       watch(home, ".claude/{skills,agents}/**", true);
+      // Proposals arriving or answered, and the change ledger.
+      watch(home, ".synthra/skills/{pending/*.json,ledger.jsonl}", false);
     }
     this.refresh();
   }
@@ -224,6 +245,8 @@ export class SynthraPanels implements vscode.Disposable {
     }
 
     const now = Date.now();
+    this.show("learning", learningView(r.body, now));
+    this.badge(r.body.learning?.pending.length ?? 0);
     this.show("memory", memoryView(r.body, now));
     this.show("capabilities", capabilitiesView(r.body));
     this.show("agents", agentsView(r.body, now));
@@ -241,9 +264,20 @@ export class SynthraPanels implements vscode.Disposable {
     this.views[p].description = v.description;
   }
 
+  /** The count on the activity-bar icon: skills waiting for the user. */
+  private badge(waiting: number): void {
+    this.views.learning.badge = waiting
+      ? {
+          value: waiting,
+          tooltip: `${waiting === 1 ? "A skill waits" : `${waiting} skills wait`} for your OK`,
+        }
+      : undefined;
+  }
+
   /** The same line in every panel, and no rows. */
   private showOnly(message: string): void {
     for (const p of PANELS) this.show(p, { nodes: [], message });
+    this.badge(0);
     this.publish({ kind: "message", text: message });
   }
 
@@ -268,8 +302,73 @@ export class SynthraPanels implements vscode.Disposable {
     return r.body.ok ? "" : (r.body.error ?? "The setting was not saved.");
   }
 
+  /**
+   * Approve or reject a skill proposal through the running server, then read
+   * again. Resolves to "" on success, or the reason it didn't happen.
+   */
+  async answer(id: string, verdict: "approve" | "reject"): Promise<string> {
+    const port = this.deps.port();
+    if (port === null) return "Synthra is not running.";
+    const r = await this.deps.postJson<{ ok?: boolean; error?: string }>(
+      `http://127.0.0.1:${port}/skills/${verdict}`,
+      { id },
+      10_000,
+    );
+    this.refresh();
+    if (r.status !== 200 || !r.body)
+      return "Synthra did not answer. See the log (Synthra: Show log).";
+    return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");
+  }
+
+  private async answerFromTree(n: PanelNode | undefined, verdict: "approve" | "reject") {
+    const id = n?.id.startsWith("learn:pending:") ? n.id.slice("learn:pending:".length) : undefined;
+    if (!id) return;
+    const error = await this.answer(id, verdict);
+    if (error) void vscode.window.showWarningMessage(`Synthra: ${error}`);
+    else if (verdict === "approve")
+      void vscode.window.showInformationMessage(`Synthra: "${n?.label}" is live.`);
+  }
+
+  /** The texts the open diffs show, by the query of their virtual URIs. */
+  private readonly diffTexts = new Map<string, string>();
+
+  private async side(s: DiffSide): Promise<string | null> {
+    if (s === null) return "";
+    if ("text" in s) return s.text;
+    const port = this.deps.port();
+    if (port === null) return null;
+    const r = await this.deps.getJson<{ found: boolean; text?: string }>(
+      `http://127.0.0.1:${port}/skills/blob?sha=${encodeURIComponent(s.sha)}`,
+      10_000,
+    );
+    return r.body?.found ? (r.body.text ?? "") : null;
+  }
+
+  private async showDiff(t: Extract<PanelTarget, { kind: "diff" }>): Promise<void> {
+    const [before, after] = await Promise.all([this.side(t.before), this.side(t.after)]);
+    if (before === null || after === null) {
+      void vscode.window.showInformationMessage("Synthra kept no copy of this change.");
+      return;
+    }
+    const key = (side: string) => {
+      const k = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${side}`;
+      this.diffTexts.set(k, side === "before" ? before : after);
+      // Only the latest few diffs stay readable; older tabs show empty.
+      while (this.diffTexts.size > 40) {
+        const first = this.diffTexts.keys().next().value;
+        if (first === undefined) break;
+        this.diffTexts.delete(first);
+      }
+      return vscode.Uri.from({ scheme: DIFF_SCHEME, path: `/${t.name}/SKILL.md`, query: k });
+    };
+    await vscode.commands.executeCommand("vscode.diff", key("before"), key("after"), t.title, {
+      preview: true,
+    });
+  }
+
   /** Open a file a row points at. The large panel's clicks land here too. */
   async open(t: PanelTarget): Promise<void> {
+    if (t.kind === "diff") return this.showDiff(t);
     try {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(t.path));
       const pos = t.line ? new vscode.Position(Math.max(0, t.line - 1), 0) : undefined;

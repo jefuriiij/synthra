@@ -32,6 +32,7 @@ The sidebar panels need **Synthra 0.33 or later**. With an older `syn` they say 
 
 Click the Synthra icon in the activity bar to see what Synthra knows about this project:
 
+- **Learning:** the skills Claude wrote or changed. By default each one **waits for your OK**: approve it or reject it with the ✓ and ✗ buttons, and click it to see the change as a diff. Below that: every change of the last 30 days, and the skills Synthra wrote. The number on the Synthra icon counts what waits for you.
 - **Memory:** first the two files every session loads — **Project memory** (`.synthra/MEMORY.md`) and **About you** (`~/.synthra/USER.md`) — with how full each is. Then the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
 - **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins). Click one to open its file.
 - **Agents:** the helper agents Claude started in the last 7 days, with the task it gave each one, and which ones it uses most.
@@ -48,6 +49,7 @@ The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory pa
 
 - **Memory nudge:** on or off, and after how many Claude replies without new notes.
 - **Project memory limit** and **About-you limit:** the size limits of `.synthra/MEMORY.md` and `~/.synthra/USER.md`.
+- **New skills wait for my OK:** off lets the skills Claude writes go live at once (every change is still listed in Learning).
 - **Suggest agents in chat:** the Dispatcher's hint before Claude answers.
 
 They are saved in `~/.synthra/settings.json`, so they apply to every project and also work when you run `syn` from a terminal. An environment variable (`SYN_MEMORY_NUDGE_EVERY`, `SYN_MEMORY_CHARS`, `SYN_USER_CHARS`, `SYN_ROUTE_HINTS`) wins over the file; the tab then shows the setting as locked. Settings need Synthra running.

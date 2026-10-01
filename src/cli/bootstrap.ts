@@ -86,6 +86,10 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
   const claudeMdExistedBefore = await exists(paths.claudeMd);
   const patch = await patchClaudeMd(paths.claudeMd, basename(paths.projectRoot));
   const agents = await patchAgentsMd(paths.agentsMd);
+  // Claude Code hot-reloads skills, but only in skills folders that existed
+  // when the session started: make the project's now, so the first skill
+  // Synthra writes here shows up without a /reload-skills.
+  await mkdir(paths.projectSkillsDir, { recursive: true });
   const memoryMdCreated = await ensureProjectKnowledge(paths.memoryMd, loadConfig().memoryChars);
 
   return {

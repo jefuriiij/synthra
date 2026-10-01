@@ -41,6 +41,10 @@
     "views": {
       "synthra": [
         {
+          "id": "synthra.learning",
+          "name": "Learning"
+        },
+        {
           "id": "synthra.memory",
           "name": "Memory"
         },
@@ -125,6 +129,18 @@
         "title": "Synthra: Settings",
         "category": "Synthra",
         "icon": "$(gear)"
+      },
+      {
+        "command": "synthra.skills.approve",
+        "title": "Approve",
+        "category": "Synthra",
+        "icon": "$(check)"
+      },
+      {
+        "command": "synthra.skills.reject",
+        "title": "Reject",
+        "category": "Synthra",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -141,13 +157,21 @@
         },
         {
           "command": "synthra.openSettings",
-          "when": "view == synthra.memory",
+          "when": "view == synthra.learning",
           "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
           "command": "synthra.panels.open",
+          "when": "false"
+        },
+        {
+          "command": "synthra.skills.approve",
+          "when": "false"
+        },
+        {
+          "command": "synthra.skills.reject",
           "when": "false"
         }
       ],
@@ -156,6 +180,18 @@
           "command": "synthra.openPanel",
           "when": "config.synthra.showEditorButton && activeWebviewPanelId != 'synthra.panel'",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "synthra.skills.approve",
+          "when": "view == synthra.learning && viewItem == synthraProposal",
+          "group": "inline@1"
+        },
+        {
+          "command": "synthra.skills.reject",
+          "when": "view == synthra.learning && viewItem == synthraProposal",
+          "group": "inline@2"
         }
       ]
     },

@@ -6,13 +6,21 @@
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
-import { MEMORY_KINDS, type PanelItem, type PanelsPayload, type PanelTarget } from "./panelTrees";
+import {
+  eventTarget,
+  MEMORY_KINDS,
+  type PanelItem,
+  type PanelsPayload,
+  type PanelTarget,
+  proposalDiff,
+} from "./panelTrees";
 import { plural } from "./shared/time";
 import type {
   AgentsTab,
   CapabilitiesTab,
   CapabilityRow,
   KnowledgeCard,
+  LearningTab,
   MemoryNote,
   MemorySection,
   MemoryTab,
@@ -31,8 +39,11 @@ export interface BuiltTabs {
 class Keys {
   readonly targets = new Map<string, PanelTarget>();
   open(path: string): string {
+    return this.target({ kind: "file", path });
+  }
+  target(t: PanelTarget): string {
     const key = `k${this.targets.size}`;
-    this.targets.set(key, { kind: "file", path });
+    this.targets.set(key, t);
     return key;
   }
 }
@@ -47,11 +58,12 @@ export function messageTabs(folder: string, message: string): BuiltTabs {
   return { view: { project: basename(folder), message }, targets: new Map() };
 }
 
-export function buildTabs(folder: string, p: PanelsPayload): BuiltTabs {
+export function buildTabs(folder: string, p: PanelsPayload, now = Date.now()): BuiltTabs {
   const keys = new Keys();
   return {
     view: {
       project: basename(folder),
+      ...(p.learning ? { learning: learningTab(p.learning, keys, now) } : {}),
       memory: memoryTab(p, keys),
       capabilities: capabilitiesTab(p, keys),
       agents: agentsTab(p),
@@ -275,4 +287,56 @@ export function tildify(path: string, home: string = homedir()): string {
   return h && (path === h || path.startsWith(`${h}/`) || path.startsWith(`${h}\\`))
     ? `~${path.slice(h.length)}`
     : path;
+}
+
+// ─── Learning ───────────────────────────────────────────────────────────────
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function learningTab(
+  l: NonNullable<PanelsPayload["learning"]>,
+  keys: Keys,
+  now: number,
+): LearningTab {
+  const week = l.recent.filter((e) => now - Date.parse(e.ts) < WEEK_MS && e.action !== "reject");
+  const created = new Set(week.filter((e) => e.action === "create").map((e) => e.path));
+  const improved = new Set(
+    week.filter((e) => e.action !== "create" && !created.has(e.path)).map((e) => e.path),
+  );
+  return {
+    approval: l.approval,
+    newThisWeek: created.size,
+    improvedThisWeek: improved.size,
+    pending: l.pending.map((x) => ({
+      id: x.id,
+      action: x.action,
+      name: x.name,
+      scope: x.scope,
+      description: x.description,
+      ...(x.reason ? { reason: x.reason } : {}),
+      at: ms(x.ts) ?? now,
+      stale: x.stale,
+      diff: keys.target(proposalDiff(x)),
+    })),
+    recent: l.recent.map((e) => {
+      const t = eventTarget(e, now);
+      return {
+        id: `${e.id}:${e.action}`,
+        action: e.action,
+        name: e.name,
+        scope: e.scope,
+        approved: e.approved === true,
+        ...(e.reason ? { reason: e.reason } : {}),
+        at: ms(e.ts) ?? now,
+        ...(t ? { key: keys.target(t) } : {}),
+      };
+    }),
+    learned: l.learned.map((s) => ({
+      name: s.name,
+      scope: s.scope,
+      description: s.description,
+      ...(s.origin ? { origin: s.origin } : {}),
+      key: keys.open(s.path),
+    })),
+  };
 }

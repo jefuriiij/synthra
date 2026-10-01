@@ -25,6 +25,7 @@ import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
+import { handleAnswer, handleBlob } from "./routes/learning.js";
 import { handleLog } from "./routes/log.js";
 import { handleNudge } from "./routes/nudge.js";
 import { handlePack } from "./routes/pack.js";
@@ -196,6 +197,18 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleContextUpdate(body, ctx));
   });
+
+  // The Learning tab: approve or reject a skill proposal, and the stored
+  // before/after texts its diffs show.
+  app.post("/skills/approve", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleAnswer("approve", body, ctx));
+  });
+  app.post("/skills/reject", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleAnswer("reject", body, ctx));
+  });
+  app.get("/skills/blob", async (c) => c.json(await handleBlob(c.req.query("sha"), ctx)));
 
   // The IDE's Settings tab: ~/.synthra/settings.json, with where each value
   // comes from. POST {key, value} sets one (value null = back to default).

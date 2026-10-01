@@ -116,6 +116,14 @@ export class SynthraEditorPanel implements vscode.Disposable {
         if (this.pendingTab) this.post({ type: "showTab", tab: this.pendingTab });
         this.pendingTab = undefined;
         return;
+      case "answer": {
+        if (typeof msg.id !== "string" || (msg.verdict !== "approve" && msg.verdict !== "reject"))
+          return;
+        void this.source
+          .answer(msg.id, msg.verdict)
+          .then((error) => this.post({ type: "answerResult", id: msg.id, error }));
+        return;
+      }
       case "setSetting": {
         if (typeof msg.key !== "string") return;
         const value =

@@ -84,6 +84,48 @@ export interface PanelsPayload {
   };
   /** Synthra 0.33+. */
   settings?: { path: string; settings: PanelSetting[] };
+  /** Synthra 0.33+. */
+  learning?: PanelLearning;
+}
+
+export type SkillScope = "project" | "global";
+
+/** The `learning` section of GET /panels (src/server/routes/learning.ts). */
+export interface PanelLearning {
+  approval: boolean;
+  pending: {
+    id: string;
+    ts: string;
+    action: "create" | "patch" | "edit";
+    scope: SkillScope;
+    name: string;
+    path: string;
+    description: string;
+    reason?: string;
+    before: string | null;
+    after: string;
+    stale: boolean;
+  }[];
+  recent: {
+    id: string;
+    ts: string;
+    action: "create" | "patch" | "edit" | "reject";
+    actor: "agent" | "user";
+    approved?: boolean;
+    scope: SkillScope;
+    name: string;
+    path: string;
+    reason?: string;
+    beforeSha?: string;
+    afterSha?: string;
+  }[];
+  learned: {
+    name: string;
+    scope: SkillScope;
+    path: string;
+    description: string;
+    origin?: string;
+  }[];
 }
 
 /** One row of GET /settings (src/server/routes/settings.ts). */
@@ -105,7 +147,14 @@ export interface PanelSetting {
 // ─── nodes ──────────────────────────────────────────────────────────────────
 
 /** What a click on a node does. */
-export type PanelTarget = { kind: "file"; path: string; line?: number };
+/** One side of a diff: text in hand, a stored text to fetch by hash, or
+ *  nothing (a new skill has no "before"). */
+export type DiffSide = { text: string } | { sha: string } | null;
+
+export type PanelTarget =
+  | { kind: "file"; path: string; line?: number }
+  /** A skill change, shown with VS Code's diff editor. */
+  | { kind: "diff"; title: string; name: string; before: DiffSide; after: DiffSide };
 
 export interface PanelNode {
   id: string;
@@ -120,6 +169,8 @@ export interface PanelNode {
   children?: PanelNode[];
   /** Initial state of a node with children (the user's choice wins later). */
   expanded?: boolean;
+  /** Selects inline actions in package.json (`viewItem == …`). */
+  contextValue?: string;
 }
 
 /** One panel: its rows, the line shown above them, and the short text next to
@@ -482,6 +533,140 @@ export function capabilitiesView(p: PanelsPayload): PanelView {
           })),
       },
     ],
+  };
+}
+
+// ─── Learning ───────────────────────────────────────────────────────────────
+
+export const SCOPE_LABEL: Record<SkillScope, string> = {
+  project: "this project",
+  global: "all projects",
+};
+
+export const ACTION_LABEL: Record<string, string> = {
+  create: "New skill",
+  patch: "Improved",
+  edit: "Rewrote",
+  reject: "Rejected",
+};
+
+/** A pending proposal's diff: its own before/after text. */
+export function proposalDiff(p: PanelLearning["pending"][number]): PanelTarget {
+  return {
+    kind: "diff",
+    title: `${p.name}: ${ACTION_LABEL[p.action]?.toLowerCase()} (waiting for your OK)`,
+    name: p.name,
+    before: p.before === null ? null : { text: p.before },
+    after: { text: p.after },
+  };
+}
+
+/** A recorded change's diff, or the file when the texts weren't kept. */
+export function eventTarget(
+  e: PanelLearning["recent"][number],
+  now: number,
+): PanelTarget | undefined {
+  if (e.action === "reject") return undefined;
+  if (!e.afterSha) return { kind: "file", path: e.path };
+  return {
+    kind: "diff",
+    title: `${e.name}: ${ACTION_LABEL[e.action]?.toLowerCase()} ${relativeTime(e.ts, now)}`,
+    name: e.name,
+    before: e.beforeSha ? { sha: e.beforeSha } : null,
+    after: { sha: e.afterSha },
+  };
+}
+
+export function learningView(p: PanelsPayload, now: number): PanelView {
+  const l = p.learning;
+  if (!l)
+    return {
+      nodes: [],
+      message: "This version of Synthra can't learn skills yet. Update Synthra to 0.33 or later.",
+    };
+
+  const nodes: PanelNode[] = [];
+  if (l.pending.length) {
+    nodes.push({
+      id: "learn:pending",
+      label: "Waiting for your OK",
+      description: String(l.pending.length),
+      tooltip:
+        "Skills the AI wrote or changed. Approve or reject each one (the ✓ and ✗ buttons). Click one to see the change.",
+      icon: { id: "inbox" },
+      expanded: true,
+      children: l.pending.map((x) => ({
+        id: `learn:pending:${x.id}`,
+        label: x.name,
+        description: [
+          ACTION_LABEL[x.action],
+          SCOPE_LABEL[x.scope],
+          x.stale ? "file changed since — reject it" : relativeTime(x.ts, now),
+        ].join(" · "),
+        tooltip: [x.description, x.reason ? `Why: ${x.reason}` : "", "Click to see the change."]
+          .filter(Boolean)
+          .join("\n\n"),
+        icon: x.stale ? { id: "warning", color: "editorWarning.foreground" } : { id: "sparkle" },
+        open: proposalDiff(x),
+        contextValue: "synthraProposal",
+      })),
+    });
+  }
+  nodes.push({
+    id: "learn:recent",
+    label: "Recent changes",
+    description: l.recent.length ? `${l.recent.length} · last 30 days` : "none yet",
+    tooltip: "Every change to a skill Synthra wrote, newest first. Click one to see what changed.",
+    icon: { id: "history" },
+    expanded: l.pending.length === 0,
+    children: l.recent.map((e) => {
+      const target = eventTarget(e, now);
+      return {
+        id: `learn:event:${e.id}:${e.action}`,
+        label: e.name,
+        description: [
+          ACTION_LABEL[e.action] ?? e.action,
+          e.approved ? "you approved" : "",
+          relativeTime(e.ts, now),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        tooltip: [e.reason ? `Why: ${e.reason}` : "", e.path].filter(Boolean).join("\n\n"),
+        icon:
+          e.action === "reject"
+            ? { id: "close" }
+            : e.action === "create"
+              ? { id: "sparkle" }
+              : { id: "edit" },
+        ...(target ? { open: target } : {}),
+      };
+    }),
+  });
+  nodes.push({
+    id: "learn:skills",
+    label: "Skills Synthra wrote",
+    description: String(l.learned.length),
+    icon: { id: "book" },
+    expanded: false,
+    children: l.learned.map((s) => ({
+      id: `learn:skill:${s.scope}:${s.name}`,
+      label: s.name,
+      description: [SCOPE_LABEL[s.scope], s.origin ? `from ${s.origin}` : ""]
+        .filter(Boolean)
+        .join(" · "),
+      tooltip: `${s.description}\n\nClick to open it.`,
+      icon: { id: "circle-small" },
+      open: { kind: "file", path: s.path },
+    })),
+  });
+  return {
+    nodes,
+    ...(l.pending.length === 0 && l.recent.length === 0 && l.learned.length === 0
+      ? {
+          message:
+            "Synthra hasn't learned a skill yet. When Claude works out a repeatable workflow, it saves it here as a skill.",
+        }
+      : {}),
   };
 }
 

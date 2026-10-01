@@ -5,12 +5,14 @@
   import AgentsTab from "./components/AgentsTab.svelte";
   import CapabilitiesTab from "./components/CapabilitiesTab.svelte";
   import Icon, { type IconName } from "./components/Icon.svelte";
+  import LearningTab from "./components/LearningTab.svelte";
   import MemoryTab from "./components/MemoryTab.svelte";
   import SettingsTab from "./components/SettingsTab.svelte";
   import SynthraMark from "./components/SynthraMark.svelte";
   import { store } from "./lib/store.svelte";
 
   const TABS: { id: Tab; label: string; icon: IconName }[] = [
+    { id: "learning", label: "Learning", icon: "learning" },
     { id: "memory", label: "Memory", icon: "memory" },
     { id: "capabilities", label: "Capabilities", icon: "capabilities" },
     { id: "agents", label: "Agents", icon: "agents" },
@@ -21,6 +23,8 @@
 
   /** The count beside each tab's name. */
   const counts = $derived<Record<Tab, number | undefined>>({
+    // Learning counts what waits for you: that is the number worth a glance.
+    learning: view?.learning?.pending.length || undefined,
     memory: view?.memory?.total,
     capabilities: view?.capabilities
       ? view.capabilities.skills.length + view.capabilities.agents.length + view.capabilities.mcp.length
@@ -101,6 +105,12 @@
         <p class="empty">Reading what Synthra knows…</p>
       {:else if view.message}
         <p class="empty">{view.message}</p>
+      {:else if store.tab === "learning"}
+        {#if view.learning}
+          <LearningTab learning={view.learning} {now} />
+        {:else}
+          <p class="empty">This version of Synthra can't learn skills yet. Update Synthra to 0.33 or later.</p>
+        {/if}
       {:else if store.tab === "memory" && view.memory}
         <MemoryTab memory={view.memory} {now} />
       {:else if store.tab === "capabilities" && view.capabilities}

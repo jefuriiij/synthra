@@ -14,6 +14,18 @@ import { dirname } from "node:path";
 import { tokenizeQuery } from "../graph/rank.js";
 import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
+import {
+  type Outcome,
+  type SkillInfo,
+  type SkillScope,
+  createSkill,
+  editSkill,
+  findSkill,
+  listPending,
+  listSkills,
+  markViewed,
+  patchSkill,
+} from "../learn/skills.js";
 import { appendAccess } from "../learn/store.js";
 import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
@@ -203,6 +215,52 @@ const TOOLS = [
     },
   },
   {
+    name: "skill_manage",
+    description:
+      "Write and improve skills — step-by-step guides that Claude Code loads by itself when a task matches their description. Save one when you have worked out a non-trivial, repeatable workflow (a fix that took several tries, a release procedure, this project's way of doing X), so next time it is one step. scope 'project' = `.claude/skills/` (steps that are only true in this repo; shared with the team in git); scope 'global' = `~/.claude/skills/` (reusable in any project — write it so it doesn't depend on this repo). The description is one line that starts with the trigger: 'Use when <situation>. <what it does>.' Write lessons, not logs: imperative steps plus the why; no dates, PR numbers or incident stories. Prefer improving an existing skill (view, then patch) over a near-duplicate. Synthra changes only skills it wrote, and only after you view them. By default a new or changed skill waits for the user's OK in Synthra's Learning tab — tell the user when you save one. Never put secrets in a skill.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "view", "create", "patch", "edit"],
+          description:
+            "list: all skills and what waits for approval. view: one skill's full text (required before patch/edit). create: a new skill. patch: replace one exact piece of SKILL.md (preferred for small fixes). edit: a new description and/or body.",
+        },
+        scope: {
+          type: "string",
+          enum: ["project", "global"],
+          description:
+            "Where the skill lives. Required for create; for view/patch/edit it defaults to project, then global.",
+        },
+        name: {
+          type: "string",
+          description:
+            "Lowercase letters, digits and hyphens, at most 64 characters, e.g. 'release-checklist'.",
+        },
+        description: {
+          type: "string",
+          description: "create/edit: one line, starting 'Use when …'. At most 1,024 characters.",
+        },
+        body: {
+          type: "string",
+          description: "create/edit: the Markdown steps (no frontmatter — Synthra writes it).",
+        },
+        old_string: {
+          type: "string",
+          description: "patch: the exact text to replace, unique in the file.",
+        },
+        new_string: { type: "string", description: "patch: the replacement; empty deletes it." },
+        reason: {
+          type: "string",
+          description:
+            "create/patch/edit: one sentence on why — shown to the user with the change.",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "context_recall",
     description:
       "Read previously-stored decisions/tasks/facts from the project's branch-aware context store. Defaults to the current branch.",
@@ -343,6 +401,8 @@ async function callTool(
       return contextRecall(args, ctx);
     case "memory":
       return memoryTool(args, ctx);
+    case "skill_manage":
+      return skillManage(args, ctx);
     case "recent_activity":
       return recentActivity(args, ctx);
     case "count_tokens":
@@ -1339,6 +1399,117 @@ function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerCo
     }
   }
   return textContent(lines.join("\n"));
+}
+
+const SCOPE_WORD: Record<SkillScope, string> = { project: "this project", global: "all projects" };
+
+function outcomeText(o: Outcome, verb: string): ReturnType<typeof textContent> {
+  if (o.status === "error") return errorContent(`skill_manage: ${o.error}`);
+  if (o.status === "applied") {
+    return textContent(
+      `${verb}: ${o.path}\nIt is live now — Claude Code picks it up without a restart. (If it doesn't show, the user can run /reload-skills.)`,
+    );
+  }
+  const p = o.proposal;
+  return textContent(
+    `${verb} — waiting for the user's OK in Synthra's Learning tab (proposal ${p.id}, ${p.name}, ${SCOPE_WORD[p.scope]}). It is not active until approved. Tell the user it is there.`,
+  );
+}
+
+async function skillManage(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const str = (k: string) => (typeof args?.[k] === "string" ? (args[k] as string) : undefined);
+  const action = str("action");
+  const scopeArg = str("scope");
+  if (scopeArg !== undefined && scopeArg !== "project" && scopeArg !== "global") {
+    return errorContent("skill_manage: `scope` must be 'project' or 'global'.");
+  }
+  const scope = scopeArg as SkillScope | undefined;
+  const name = str("name") ?? "";
+  const reason = str("reason")?.trim() || undefined;
+
+  if (action === "list") {
+    const [skills, pending] = await Promise.all([
+      listSkills(ctx.paths),
+      listPending(ctx.paths.skillState),
+    ]);
+    const line = (s: SkillInfo) =>
+      `- \`${s.name}\` (${SCOPE_WORD[s.scope]}${s.learned ? ", written by Synthra" : ""}) — ${s.description || "(no description)"}`;
+    const lines = [
+      `# Skills — ${skills.length}`,
+      ...(skills.length ? skills.map(line) : ["(none yet)"]),
+    ];
+    if (pending.length) {
+      lines.push(
+        "",
+        `# Waiting for the user's OK — ${pending.length}`,
+        ...pending.map(
+          (p) =>
+            `- ${p.action} \`${p.name}\` (${SCOPE_WORD[p.scope]})${p.reason ? ` — ${p.reason}` : ""}`,
+        ),
+      );
+    }
+    return textContent(lines.join("\n"));
+  }
+
+  if (action === "view") {
+    const s = await findSkill(ctx.paths, name, scope);
+    if (!s)
+      return errorContent(`skill_manage: No skill named "${name}"${scope ? ` in ${scope}` : ""}.`);
+    markViewed(s.path);
+    const waiting = (await listPending(ctx.paths.skillState)).filter(
+      (p) => p.path === s.path,
+    ).length;
+    const head = [
+      `${s.path} (${SCOPE_WORD[s.scope]})`,
+      s.learned
+        ? "Written by Synthra — you may patch or edit it."
+        : "Not written by Synthra — read-only for skill_manage.",
+      ...(waiting ? [`${waiting} change(s) to it wait for the user's OK.`] : []),
+    ].join("\n");
+    return textContent(`${head}\n\n${s.text}`);
+  }
+
+  if (action === "create") {
+    if (!scope) {
+      return errorContent(
+        "skill_manage: create needs a scope — 'project' (only true in this repo) or 'global' (reusable anywhere).",
+      );
+    }
+    const o = await createSkill(ctx.paths, {
+      scope,
+      name,
+      description: str("description") ?? "",
+      body: str("body") ?? "",
+      ...(reason ? { reason } : {}),
+    });
+    return outcomeText(o, "Skill created");
+  }
+
+  if (action === "patch") {
+    const o = await patchSkill(ctx.paths, {
+      ...(scope ? { scope } : {}),
+      name,
+      old_string: str("old_string") ?? "",
+      new_string: str("new_string") ?? "",
+      ...(reason ? { reason } : {}),
+    });
+    return outcomeText(o, "Skill patched");
+  }
+
+  if (action === "edit") {
+    const description = str("description");
+    const body = str("body");
+    const o = await editSkill(ctx.paths, {
+      ...(scope ? { scope } : {}),
+      name,
+      ...(description !== undefined ? { description } : {}),
+      ...(body !== undefined ? { body } : {}),
+      ...(reason ? { reason } : {}),
+    });
+    return outcomeText(o, "Skill rewritten");
+  }
+
+  return errorContent("skill_manage: `action` must be list, view, create, patch or edit.");
 }
 
 const KNOWLEDGE_TITLE: Record<KnowledgeTarget, string> = {

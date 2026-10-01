@@ -28,6 +28,7 @@ export interface SynthraConfig {
   memoryChars: number;
   userChars: number;
   memoryNudgeEvery: number;
+  skillApproval: boolean;
 }
 
 function num(name: string, fallback: number): number {
@@ -103,5 +104,8 @@ export function loadConfig(): SynthraConfig {
     // hook asks Claude — in the same chat — whether anything is worth keeping.
     // 0 turns the nudge off.
     memoryNudgeEvery: settings.memoryNudgeEvery,
+    // A skill the AI writes or changes waits for the user's OK in the
+    // Learning tab (default), or goes live at once.
+    skillApproval: settings.skillApproval,
   };
 }

@@ -59,6 +59,13 @@ export interface SynthraPaths {
   claudeMd: string;
   /** AGENTS.md — the cross-tool instructions file (Codex, Cursor, Copilot, …). */
   agentsMd: string;
+  /** <project>/.claude/skills — skills for this project only. */
+  projectSkillsDir: string;
+  /** ~/.claude/skills — skills for every project. */
+  globalSkillsDir: string;
+  /** ~/.synthra/skills — what Synthra keeps about the skills it writes:
+   *  proposals waiting for the user, the change ledger, and content blobs. */
+  skillState: string;
   gitignore: string;
 }
 
@@ -68,6 +75,16 @@ export interface SynthraPaths {
  */
 export function defaultUserMemory(home: string = homedir()): string {
   return process.env.SYN_USER_MEMORY || join(home, ".synthra", "USER.md");
+}
+
+/** ~/.claude/skills, or SYN_GLOBAL_SKILLS (the suite's throwaway folder). */
+export function defaultGlobalSkills(home: string = homedir()): string {
+  return process.env.SYN_GLOBAL_SKILLS || join(home, ".claude", "skills");
+}
+
+/** ~/.synthra/skills, or SYN_SKILL_STATE (the suite's throwaway folder). */
+export function defaultSkillState(home: string = homedir()): string {
+  return process.env.SYN_SKILL_STATE || join(home, ".synthra", "skills");
 }
 
 export function resolvePaths(
@@ -109,6 +126,9 @@ export function resolvePaths(
     claudeHooksDir: join(claudeDir, "hooks"),
     claudeMd: join(projectRoot, "CLAUDE.md"),
     agentsMd: join(projectRoot, "AGENTS.md"),
+    projectSkillsDir: join(claudeDir, "skills"),
+    globalSkillsDir: defaultGlobalSkills(),
+    skillState: defaultSkillState(),
     gitignore: join(projectRoot, ".gitignore"),
   };
 }

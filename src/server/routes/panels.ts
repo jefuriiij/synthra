@@ -25,6 +25,7 @@ import { type EntryKind, readStore } from "../../memory/context-store.js";
 import { resolveActiveBranch } from "../../memory/index.js";
 import { knowledgeLocation, readKnowledge } from "../../memory/knowledge.js";
 import type { ServerContext } from "../context.js";
+import { type LearningSection, readLearning } from "./learning.js";
 import { type SettingsView, settingsView } from "./settings.js";
 import { staleAnchorPaths } from "../mcp.js";
 
@@ -107,6 +108,8 @@ export interface PanelsPayload {
   };
   /** The Settings tab (0.33+); changes go to POST /settings. */
   settings?: SettingsView;
+  /** The Learning tab (0.33+). */
+  learning?: LearningSection;
 }
 
 export interface PanelsOptions {
@@ -122,7 +125,7 @@ export async function handlePanels(
   opts: PanelsOptions = {},
 ): Promise<PanelsPayload> {
   const now = opts.now ?? Date.now();
-  const [memory, files, capabilities, agents] = await Promise.all([
+  const [memory, files, capabilities, agents, learning] = await Promise.all([
     readMemory(ctx).catch((err): PanelsPayload["memory"] => ({
       branch: "",
       store_path: "",
@@ -133,6 +136,7 @@ export async function handlePanels(
     readKnowledgeFiles(ctx),
     readCapabilities(ctx, opts),
     readAgents(ctx, now),
+    readLearning(ctx, now).catch(() => undefined),
   ]);
   return {
     version: PANELS_VERSION,
@@ -141,6 +145,7 @@ export async function handlePanels(
     capabilities,
     agents,
     settings: settingsView(),
+    ...(learning ? { learning } : {}),
   };
 }
 
