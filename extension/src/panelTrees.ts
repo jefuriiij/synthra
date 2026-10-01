@@ -5,6 +5,10 @@
 
 import { join } from "node:path";
 
+import { clip, firstLine, plural, relativeTime } from "./shared/time";
+
+export { relativeTime };
+
 // ─── what GET /panels returns (src/server/routes/panels.ts) ─────────────────
 //
 // Copied, not imported: the extension is bundled on its own and must not pull
@@ -97,33 +101,10 @@ export interface PanelView {
   description?: string;
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
-const firstLine = (s: string) =>
-  s
-    .split(/\r?\n/)
-    .find((l) => l.trim())
-    ?.trim() ?? "";
-
-/** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", then a date. */
-export function relativeTime(iso: string, now: number): string {
-  const at = Date.parse(iso);
-  if (!Number.isFinite(at)) return "";
-  const min = Math.floor((now - at) / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} h ago`;
-  const days = Math.floor(h / 24);
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  return new Date(at).toISOString().slice(0, 10);
-}
-
 // ─── Memory ─────────────────────────────────────────────────────────────────
 
 /** Most urgent first: what you are doing, what blocks it, what comes next. */
-const KINDS: { kind: EntryKind; label: string; icon: string; tooltip: string }[] = [
+export const MEMORY_KINDS: { kind: EntryKind; label: string; icon: string; tooltip: string }[] = [
   {
     kind: "task",
     label: "Current task",
@@ -234,7 +215,7 @@ export function memoryView(p: PanelsPayload, now: number): PanelView {
 
   const nodes: PanelNode[] = [];
   let earlierTasks: Indexed[] = [];
-  for (const k of KINDS) {
+  for (const k of MEMORY_KINDS) {
     const list = indexed.filter((x) => x.e.kind === k.kind).reverse();
     const [newest, ...older] = list;
     if (!newest) continue;

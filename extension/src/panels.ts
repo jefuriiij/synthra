@@ -79,6 +79,12 @@ export interface PanelDeps {
   log(line: string): void;
 }
 
+/** What the panels last read: the server's answer, or the one line shown
+ *  instead of it. The large panel (editorPanel.ts) renders the same state. */
+export type PanelsState =
+  | { kind: "payload"; payload: PanelsPayload }
+  | { kind: "message"; text: string };
+
 export class SynthraPanels implements vscode.Disposable {
   private readonly trees: Record<Panel, NodeTree> = {
     memory: new NodeTree(),
@@ -92,6 +98,10 @@ export class SynthraPanels implements vscode.Disposable {
   private fresh = false;
   private reading = false;
   private again = false;
+  private current: PanelsState = { kind: "message", text: "Reading what Synthra knows…" };
+  private readonly changed = new vscode.EventEmitter<PanelsState>();
+  /** Fires after every read, with what it found. */
+  readonly onDidChange = this.changed.event;
 
   /** `folder` is the project Synthra runs for; null when no folder is open. */
   constructor(
@@ -108,7 +118,7 @@ export class SynthraPanels implements vscode.Disposable {
       capabilities: make("capabilities"),
       agents: make("agents"),
     };
-    this.disposables.push(...Object.values(this.views), ...Object.values(this.trees));
+    this.disposables.push(...Object.values(this.views), ...Object.values(this.trees), this.changed);
     for (const v of Object.values(this.views)) {
       this.disposables.push(v.onDidChangeVisibility((e) => e.visible && this.refresh()));
     }
@@ -139,6 +149,10 @@ export class SynthraPanels implements vscode.Disposable {
       watch(home, ".claude/{skills,agents}/**", true);
     }
     this.refresh();
+  }
+
+  get state(): PanelsState {
+    return this.current;
   }
 
   /** Read the panels again (debounced; one read at a time). */
@@ -206,6 +220,12 @@ export class SynthraPanels implements vscode.Disposable {
     this.show("memory", memoryView(r.body, now));
     this.show("capabilities", capabilitiesView(r.body));
     this.show("agents", agentsView(r.body, now));
+    this.publish({ kind: "payload", payload: r.body });
+  }
+
+  private publish(s: PanelsState): void {
+    this.current = s;
+    this.changed.fire(s);
   }
 
   private show(p: Panel, v: PanelView): void {
@@ -217,9 +237,11 @@ export class SynthraPanels implements vscode.Disposable {
   /** The same line in every panel, and no rows. */
   private showOnly(message: string): void {
     for (const p of PANELS) this.show(p, { nodes: [], message });
+    this.publish({ kind: "message", text: message });
   }
 
-  private async open(t: PanelTarget): Promise<void> {
+  /** Open a file a row points at. The large panel's clicks land here too. */
+  async open(t: PanelTarget): Promise<void> {
     try {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(t.path));
       const pos = t.line ? new vscode.Position(Math.max(0, t.line - 1), 0) : undefined;

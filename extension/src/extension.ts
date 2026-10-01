@@ -38,6 +38,7 @@ import {
   shouldNotify,
   worstOf,
 } from "./logic";
+import { SynthraEditorPanel } from "./editorPanel";
 import { SynthraPanels } from "./panels";
 
 /** Matches the CLI's machine-readable ready line (see cli/index.ts). */
@@ -800,7 +801,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     getJson,
     log: (line) => out.appendLine(line),
   });
-  context.subscriptions.push(panels);
+  const editorPanel = new SynthraEditorPanel(context.extensionUri, targetFolder(), panels, (line) =>
+    out.appendLine(line),
+  );
+  context.subscriptions.push(
+    panels,
+    editorPanel,
+    vscode.commands.registerCommand("synthra.openPanel", () => editorPanel.show()),
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("synthra.start", () => start(true)),

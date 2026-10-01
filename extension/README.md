@@ -38,6 +38,10 @@ Click the Synthra icon in the activity bar to see what Synthra knows about this 
 
 The panels refresh by themselves when the files behind them change. The ↻ button in each panel's title rescans now.
 
+### The large panel
+
+For more room, open the same content as tabs in an editor: click the Synthra button in the editor's title bar, or the ⧉ button in a sidebar panel, or run **Synthra: Open panel**. It has the same Memory, Capabilities and Agents, laid out like Hermes Studio's panel tabs (there is no chat — Claude Code has that), with a filter box on Memory and Capabilities. It stays open across window reloads. Turn the title-bar button off with `synthra.showEditorButton`.
+
 ## Status bar
 
 | Item | Meaning |
@@ -84,6 +88,7 @@ Turn it off with `synthra.checkForUpdates`, or check any time with **Synthra: Ch
 - **Synthra: Repair (re-run syn .)**
 - **Synthra: Check for updates**
 - **Synthra: Refresh panels** — rescans skills and agents for the sidebar
+- **Synthra: Open panel** — the large panel, in an editor tab
 
 ## Settings
 
@@ -95,6 +100,7 @@ Turn it off with `synthra.checkForUpdates`, or check any time with **Synthra: Ch
 | `synthra.showDashboardNotification` | `false` | Toast the dashboard link on every start. |
 | `synthra.healthCheckMinutes` | `5` | How often to re-check health while running. `0` = only at start and on window focus. |
 | `synthra.checkForUpdates` | `true` | Check npm for a newer Synthra once per window. |
+| `synthra.showEditorButton` | `true` | Show the Synthra button in the editor title bar (opens the large panel). |
 
 ### Why `requireExistingProject` defaults to on
 
@@ -126,7 +132,8 @@ Or: Command Palette → **Extensions: Install from VSIX…**
 ```bash
 cd extension
 npm install
-npm run compile     # esbuild → dist/extension.js
+npm run compile     # esbuild → dist/extension.js, vite → dist/webview/ (the large panel)
+npm run check       # tsc for the host, svelte-check for the panel
 npm run package     # → synthra-vscode-<version>.vsix
 ```
 

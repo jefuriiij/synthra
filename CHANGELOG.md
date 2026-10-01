@@ -26,6 +26,14 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   server route, `GET /panels`, so they need the 0.33 CLI; an older `syn` gets a
   message saying so.
 
+- **The same content opens large, in an editor tab.** The Synthra button in
+  the editor title bar (or **Synthra: Open panel**) shows Memory, Capabilities
+  and Agents as tabs, laid out like Hermes Studio's panel tabs but without a
+  chat: a summary card per tab, a filter on Memory and Capabilities, full note
+  text with the files it names and a ⚠ line when they changed. It renders what
+  the sidebar already read, so it costs no extra request; a click can only open
+  a file the extension offered.
+
 - **Skills synced from your claude.ai account now show up.** They live one
   level deeper than personal skills (`~/.claude/skills/synced/<bucket>/`), so
   the Arsenal, the Dispatcher and the new sidebar all missed them — 13 skills

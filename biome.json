@@ -13,7 +13,8 @@
       "!**/*.wasm",
       "!src/dashboard/public",
       "!src/dashboard/ui",
-      "!src/dashboard/built"
+      "!src/dashboard/built",
+      "!extension/src/webview/**/*.svelte"
     ]
   },
   "formatter": {

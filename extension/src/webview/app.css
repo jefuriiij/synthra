@@ -1,0 +1,423 @@
+/* The large Synthra panel. Every colour is a VS Code theme token, so the page
+   follows the theme — dark, light and high contrast — and a theme switch
+   restyles it with no reload (VS Code rewrites these variables on <html>).
+
+   No color-mix(), cascade layers or other newer CSS: the extension supports
+   VS Code 1.75, whose webview is Chromium 102. Tints are plain rgba() over the
+   theme background instead, which reads the same on dark and light themes. */
+
+:root {
+  --fg: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-panel-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+  --focus: var(--vscode-focusBorder);
+  --link: var(--vscode-textLink-foreground);
+  --link-active: var(--vscode-textLink-activeForeground);
+  --warning: var(--vscode-editorWarning-foreground);
+  --success: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+  --hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  --selected: var(--vscode-list-activeSelectionBackground);
+  --selected-fg: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  --input: var(--vscode-input-background);
+  --input-fg: var(--vscode-input-foreground);
+  --input-border: var(
+    --vscode-input-border,
+    var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35))
+  );
+  --placeholder: var(--vscode-input-placeholderForeground);
+  --tab-fg: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
+  --tab-muted: var(--vscode-panelTitle-inactiveForeground, var(--vscode-descriptionForeground));
+  --tab-border: var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder));
+  --badge: var(--vscode-badge-background);
+  --badge-fg: var(--vscode-badge-foreground);
+  /* Undefined outside high-contrast themes, so these borders only appear there. */
+  --hc: var(--vscode-contrastBorder, transparent);
+  /* Synthra's own blue, from the logo. */
+  --syn: #5c8fe6;
+  --syn-tint: rgba(92, 143, 230, 0.09);
+  --syn-edge: rgba(92, 143, 230, 0.4);
+  --warn-tint: rgba(204, 167, 0, 0.1);
+  --card: rgba(128, 128, 128, 0.05);
+  --font: var(--vscode-font-family);
+  --mono: var(--vscode-editor-font-family);
+  --text: var(--vscode-font-size, 13px);
+  --small: calc(var(--vscode-font-size, 13px) - 1px);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--fg);
+  background: var(--vscode-editor-background);
+  font-family: var(--font);
+  font-size: var(--text);
+  line-height: 1.45;
+}
+:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+}
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: var(--small);
+}
+.mono {
+  font-family: var(--mono);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ─── the page ─────────────────────────────────────────────────────────── */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+}
+
+/* ─── header and tabs ──────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px 0;
+}
+.header .title {
+  font-size: calc(var(--text) + 2px);
+  font-weight: 600;
+}
+.header .where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spacer {
+  flex: 1;
+}
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--tab-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--tab-fg);
+}
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--tab-border);
+  color: var(--tab-fg);
+}
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--hc);
+  border-radius: 8px;
+  background: var(--badge);
+  color: var(--badge-fg);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── cards, rows, labels ──────────────────────────────────────────────── */
+
+/* The summary at the top of each tab, in Synthra's blue. */
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--syn-edge);
+  border-radius: 8px;
+  background: var(--syn-tint);
+}
+.hero .headline {
+  font-weight: 600;
+}
+.card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.card > * + * {
+  border-top: 1px solid var(--border);
+}
+.row {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 12px;
+}
+/* A whole row that opens something: a button laid out as a row. */
+.row-btn {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.row-btn:hover {
+  background: var(--hover);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.section-label .aside {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--link-active);
+  text-decoration: underline;
+}
+.clamp2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.wrap {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.empty {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: var(--small);
+}
+
+/* ─── controls ─────────────────────────────────────────────────────────── */
+
+.icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--hover);
+}
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.search {
+  position: relative;
+}
+.search svg {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.search input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--input);
+  color: var(--input-fg);
+  font: inherit;
+}
+.search input::placeholder {
+  color: var(--placeholder);
+}
+.search input:focus {
+  border-color: var(--focus);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  background: transparent;
+  font-size: var(--small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chip:hover {
+  background: var(--hover);
+}
+.chip[aria-pressed="true"] {
+  border-color: var(--focus);
+  background: var(--selected);
+  color: var(--selected-fg);
+}
+.chip .n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chip[aria-pressed="true"] .n {
+  color: inherit;
+  opacity: 0.8;
+}
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  border: 1px solid var(--input-border);
+  border-radius: 7px;
+}
+.seg button {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.seg button:hover {
+  color: var(--fg);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--selected-fg);
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.stale {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--warn-tint);
+  color: var(--warning);
+  font-size: var(--small);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border: 1px solid var(--hc);
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spin {
+    animation: spin 0.9s linear infinite;
+    transform-origin: center;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
