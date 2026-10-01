@@ -23,6 +23,23 @@ import {
 import { reserveFreePort } from "../src/server/port.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
+/**
+ * A port nothing listens on — picked by the OS, outside Synthra's 8080–8099.
+ *
+ * Not reserveFreePort + release: that frees the LOWEST port in Synthra's own
+ * range, which is exactly the one the next server another test file starts in
+ * parallel binds. Then "nobody answers" gets an answer — a real Synthra — and
+ * the test fails one run in a few. The OS hands out ephemeral ports in turn,
+ * and no test server uses that range.
+ */
+async function deadPort(): Promise<number> {
+  const s = createServer();
+  await new Promise<void>((resolve) => s.listen(0, "127.0.0.1", resolve));
+  const port = (s.address() as { port: number }).port;
+  await new Promise<void>((resolve) => s.close(() => resolve()));
+  return port;
+}
+
 const exists = async (p: string) => {
   try {
     await stat(p);
@@ -64,10 +81,8 @@ describe("probeHealth", () => {
   });
 
   it("returns null when nothing is listening", async () => {
-    // Reserve then release: nothing holds it, so the probe must fail fast.
-    const r = await reserveFreePort();
-    await r.release();
-    expect(await probeHealth(r.port, 400)).toBeNull();
+    // Nothing holds it, so the probe must fail fast.
+    expect(await probeHealth(await deadPort(), 400)).toBeNull();
   });
 
   it("returns null for a non-Synthra server on the port", async () => {
@@ -104,9 +119,7 @@ describe("checkOwner", () => {
   it("reports 'stale' when nobody answers the recorded port", async () => {
     const dir = await project();
     const paths = resolvePaths(dir);
-    const r = await reserveFreePort();
-    await r.release(); // record a port that is now dead
-    await claimOwnership(paths, r.port, "0.26.0");
+    await claimOwnership(paths, await deadPort(), "0.26.0"); // a port that is dead
 
     const owner = await checkOwner(paths);
     expect(owner.state).toBe("stale");
