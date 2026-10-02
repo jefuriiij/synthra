@@ -9,6 +9,16 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+---
+
+## [0.35.0] (2026-10-02)
+
+One set of rules for every AI tool. The rules starter moves from `CLAUDE.md`
+to `AGENTS.md`, which Codex, Cursor, Copilot and Gemini CLI read, and
+Synthra's `CLAUDE.md` block now imports `AGENTS.md`, so Claude Code reads the
+same rules. Run `syn .` once (or reopen the folder in the editor) to move an
+existing project over. Your own text stays where it is.
+
 ### Changed
 
 - **The project's rules live in AGENTS.md, for every AI tool.** A new
