@@ -36,7 +36,7 @@
 
   // The nudge is a number where 0 means off: shown as a switch plus a number,
   // and switching it back on restores the default.
-  const isNudge = (r: SettingRow) => r.key === "memoryNudgeEvery";
+  const isNudge = (r: SettingRow) => r.key === "memoryNudgeEvery" || r.key === "skillNudgeEvery";
 </script>
 
 <div class="hero">

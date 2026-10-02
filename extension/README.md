@@ -1,154 +1,136 @@
-# Synthra for VS Code / Antigravity / Cursor
+# Synthra
 
-Starts [Synthra](https://github.com/jefuriiij/synthra) automatically when you open a project. No more typing `syn .` in every window.
+**A memory and a skill book for Claude Code, right inside your editor.**
 
-Works in **VS Code**, **Google Antigravity**, **Cursor**, **Windsurf**, and **VSCodium** — it uses only stock VS Code APIs, so the same build loads everywhere.
+Synthra helps Claude remember your project, learn from its work, and spend fewer
+tokens doing it. Claude stays the brain. Synthra keeps notes, writes down the
+workflows Claude figures out, and shows you all of it, so you stay in control
+of what your AI learns.
 
-## What it does
+![The Learning tab: two skills Claude wrote wait for your OK, with Approve, Reject and See the change](https://raw.githubusercontent.com/jefuriiij/synthra/main/extension/images/learning.png)
 
-When you open a folder Synthra already knows, the extension:
+## Before you start
 
-1. runs `syn . --managed` in the background for that folder,
-2. shows a status-bar item with the live symbol count,
-3. shuts the server down **cleanly** when the window closes.
+> **Synthra needs Node.js on your computer.** The extension is the window; the
+> Synthra engine (the `syn` command) does the work. Both are free and open source.
 
-That last point matters more than it sounds. Synthra's hook scripts all end in `catch { exit 0 }`, so if the server dies without releasing `.synthra-graph/mcp_port`, the Moat and the CONTEXT.md refresh stop working **silently** — nothing logs, nothing warns, it just quietly stops helping. The extension never force-kills: it closes the child's stdin and lets `syn` run its own shutdown, only escalating after a grace period.
+1. **Install Node.js 18 or later** for Windows, macOS or Linux:
+   [nodejs.org](https://nodejs.org/en/download).
+2. **Use an AI that works with your files.** Synthra is built first for
+   [Claude Code](https://claude.com/claude-code). Codex, Cursor, GitHub Copilot and
+   other tools that read `AGENTS.md` get the project's knowledge too.
 
-## Requirements
+That's it. If the Synthra engine isn't installed yet, the extension offers to
+install it for you in one click.
 
-Synthra itself must be installed and on your PATH:
+## Get started
 
-```bash
-npm install -g @jefuriiij/synthra
-```
+1. Install Synthra.
+2. Open a project folder.
+3. Click the **Synthra icon** in the activity bar, then **Install Synthra** if it
+   asks. Or open the Command Palette (**Ctrl+Shift+P**) and run
+   **Synthra: Start for this project**.
+4. Work with Claude as usual. Synthra runs in the background.
 
-If `syn` lives somewhere unusual, set `synthra.path`.
+To see everything at once, click the **Synthra button** at the top right of any
+open file. It opens the large panel in an editor tab.
 
-The health light needs **Synthra 0.32 or later**. With an older `syn` it stays off, and everything else works as before — including the update check, which only needs `syn --version` and npm, and will offer you 0.32.
+## What you get
 
-The sidebar panels need **Synthra 0.33 or later**. With an older `syn` they say so and stay empty.
+### Claude learns your workflows
 
-## Sidebar
+When Claude works out something worth repeating, like a release, a fix for an
+error that keeps coming back, or your team's way of doing a task, it saves it as
+a **skill**. Next time, that is one step.
 
-Click the Synthra icon in the activity bar to see what Synthra knows about this project:
+- **You decide.** A new or changed skill waits in the **Learning** tab. Read why
+  Claude wants it, **See the change**, then **Approve** or **Reject**.
+- **Skills for one project or for all of them.** A skill that only fits this
+  repo stays with the repo, and your team gets it through git. A general one
+  works in every project.
+- **A gentle reminder.** After a long stretch of work, Synthra asks Claude whether
+  the work was worth saving as a skill.
+- **The Curator keeps it tidy.** Once a week it marks skills nobody used for two
+  weeks, and offers to archive the ones unused for a month. Nothing is deleted:
+  pin a skill to keep it, or restore it from the archive any time.
 
-- **Learning:** the skills Claude wrote or changed. By default each one **waits for your OK**: approve it or reject it with the ✓ and ✗ buttons, and click it to see the change as a diff. Below that: every change of the last 30 days, the skills Synthra wrote, and the **Curator** — once a week it marks the skills Synthra wrote that went unused for 14 days as stale and proposes archiving those unused for 30. Pin a skill to keep it, restore an archived one, or run the Curator now. The number on the Synthra icon counts what waits for you.
-- **Memory:** first the two files every session loads — **Project memory** (`.synthra/MEMORY.md`) and **About you** (`~/.synthra/USER.md`) — with how full each is. Then the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
-- **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins). Click one to open its file.
-- **Agents:** the helper agents Claude started in the last 7 days, with the task it gave each one, and which ones it uses most.
+### Claude remembers your project, and you
 
-The panels refresh by themselves when the files behind them change. The ↻ button in each panel's title rescans now.
+![The Memory tab: the project's memory and notes about you, then the current task, next steps and decisions](https://raw.githubusercontent.com/jefuriiij/synthra/main/extension/images/memory.png)
 
-### The large panel
+- **Project memory:** a short list of what every AI should know about this
+  project: how to build and test it, traps to avoid, where things live. It is
+  shared with your team in git, and each project has its own.
+- **About you:** how you like to work, private to your computer, for every
+  project.
+- Both load at the start of every chat, and both have a size limit, so they stay
+  short and current instead of growing stale.
+- **Session notes:** the current task, next steps, decisions and facts, per git
+  branch. A ⚠ marks a note whose file changed since it was saved.
+- **Every AI can read it.** Synthra adds a short section to `AGENTS.md`, so Codex,
+  Cursor, Copilot, Gemini CLI and others find the same knowledge.
 
-For more room, open the same content as tabs in an editor: click the Synthra button in the editor's title bar, or the ⧉ button in a sidebar panel, or run **Synthra: Open panel**. It has the same Memory, Capabilities and Agents, laid out like Hermes Studio's panel tabs (there is no chat — Claude Code has that), with a filter box on Memory and Capabilities. It stays open across window reloads. Turn the title-bar button off with `synthra.showEditorButton`.
+### See what Claude can use
 
-### Settings
+![The Capabilities tab: skills, agents, connected tools and plugins, grouped by where they come from](https://raw.githubusercontent.com/jefuriiij/synthra/main/extension/images/capabilities.png)
 
-The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory panel) changes how Synthra behaves:
+- **Capabilities:** every skill, agent, connected tool (MCP server) and plugin
+  Claude Code can use, grouped by where it comes from. Search them, and click one
+  to open it.
+- **Agents:** the helper agents Claude started this week, with the task it gave
+  each one.
 
-- **Memory nudge:** on or off, and after how many Claude replies without new notes.
-- **Project memory limit** and **About-you limit:** the size limits of `.synthra/MEMORY.md` and `~/.synthra/USER.md`.
-- **New skills wait for my OK:** off lets the skills Claude writes go live at once (every change is still listed in Learning).
-- **Skill nudge:** after how many tool calls without a skill saved Claude is asked whether the work was worth one; 0 = off.
-- **Curator:** the weekly tidy, on or off.
-- **Suggest agents in chat:** the Dispatcher's hint before Claude answers.
+### Spend fewer tokens
 
-They are saved in `~/.synthra/settings.json`, so they apply to every project and also work when you run `syn` from a terminal. An environment variable (`SYN_MEMORY_NUDGE_EVERY`, `SYN_MEMORY_CHARS`, `SYN_USER_CHARS`, `SYN_ROUTE_HINTS`) wins over the file; the tab then shows the setting as locked. Settings need Synthra running.
+Synthra maps your code, so Claude reads one function instead of a whole file,
+and it stops Claude from searching for things it already knows. On a code-heavy
+session that can cut the cost by more than half. The live
+[dashboard](https://github.com/jefuriiij/synthra#the-dashboard) shows your own
+numbers.
 
-## Status bar
+### Make it yours
 
-| Item | Meaning |
-|---|---|
-| `$(database) Synthra 786` | Running and healthy — 786 symbols indexed. Click to open the dashboard. |
-| `$(warning) Synthra 786` on **yellow** | Running, but something needs attention. Click for details and **Repair**. |
-| `$(error) Synthra 786` on **red** | Running, but something is badly wrong — e.g. your hooks are talking to another project's server. Click for details and **Repair**. |
-| `$(sync~spin) Synthra` | Starting. |
-| `$(circle-slash) Synthra` | Not running. Click to start. |
-| `$(warning) Synthra` | Failed to start — click for the log. |
+![The Settings tab: the memory nudge, memory limits, skill approval, the skill nudge and the Curator](https://raw.githubusercontent.com/jefuriiij/synthra/main/extension/images/settings.png)
 
-Hover any of them for the version, MCP port, dashboard URL, graph stats, and any problems.
+The **Settings** tab, or the ⚙ button in the sidebar, lets you choose how often
+Claude is reminded to save notes and skills, how big the memory files may grow,
+whether new skills wait for your OK, and whether the Curator runs.
 
-## Health light
+## Questions
 
-Every serious Synthra failure so far has been **silent**. Hooks registered seven times over, so every Grep went through the Moat seven times. A dead port file that quietly turned every hook into a no-op. `syn doctor` could see these — but nobody runs doctor without a reason.
+**Does it cost anything?**
+No. Synthra and this extension are free and open source (MIT). You only pay for
+the AI subscription you already use.
 
-So the extension runs it for you. It asks the running server for its doctor checks once at start, then every 5 minutes (`synthra.healthCheckMinutes`), and again when you come back to the window. The status bar turns yellow or red when a check fails.
+**Is my code sent somewhere?**
+No. Synthra runs on your computer and sends nothing anywhere. It collects no
+data. There is no account and no telemetry.
 
-**Repair** restarts Synthra. A managed start *is* `syn .` — it reinstalls hooks, refreshes the CLAUDE.md policy block and re-registers MCP — which is the fix for nearly every doctor warning.
+**Do I need to type commands?**
+No. The extension starts Synthra when you open a project and stops it when you
+close the window. If the engine is missing, click **Install Synthra**.
 
-A popup appears only for a problem you haven't been told about yet. A warning you can't fix right now won't nag you on every window open; the status bar keeps telling the truth either way.
+**Does it work in other editors?**
+Yes: VS Code, Cursor, Google Antigravity, Windsurf and VSCodium. Cursor and the
+others install it from [Open VSX](https://open-vsx.org/extension/jefuriiij/synthra-vscode).
 
-## Updates
+**Does it work on Windows, macOS and Linux?**
+Yes. Every change is tested on Windows and Linux.
 
-The CLI's own `Update now? [y/N]` prompt needs a terminal, so it can never appear under the extension — before 0.31 of the extension, opening projects only from the editor meant you were never told about an update.
+**What does it change in my project?**
+It adds a `.synthra/` folder for the project's memory (share it in git), a
+section in `CLAUDE.md` and `AGENTS.md`, and Claude Code hooks in `.claude/`. It
+never touches your own text in those files. `syn remove` in a terminal takes it
+all out again.
 
-Now the extension checks npm once per window, in the background, after Synthra is up:
+## Something not working?
 
-- **A newer version is on npm** → *Update*, *Later*, or *Skip this version*. **Update** stops the server, runs `npm install -g @jefuriiij/synthra@latest` (output in the Synthra log), and starts it again. If npm fails — usually permissions on macOS/Linux — you get a button to run it in a terminal instead.
-- **It's installed, but this window still runs the old one** → *Restart*. This is what the other windows say after you update from one of them.
+- Click the Synthra item in the status bar. When it is yellow or red, it lists
+  what is wrong and offers **Repair**.
+- **Synthra: Show log** shows what the engine says.
+- Still stuck? [Open an issue](https://github.com/jefuriiij/synthra/issues) and
+  paste what **Synthra: Run doctor** prints.
 
-Turn it off with `synthra.checkForUpdates`, or check any time with **Synthra: Check for updates**.
-
-## Commands
-
-- **Synthra: Start for this project**
-- **Synthra: Stop**
-- **Synthra: Restart**
-- **Synthra: Open dashboard**
-- **Synthra: Show log**
-- **Synthra: Run doctor** — opens a terminal running `syn doctor`
-- **Synthra: Show health** — every check, with Repair
-- **Synthra: Repair (re-run syn .)**
-- **Synthra: Check for updates**
-- **Synthra: Refresh panels** — rescans skills and agents for the sidebar
-- **Synthra: Open panel** — the large panel, in an editor tab
-- **Synthra: Settings** — the large panel's Settings tab
-
-## Settings
-
-| Setting | Default | What it does |
-|---|---|---|
-| `synthra.autoStart` | `true` | Start automatically on folder open. |
-| `synthra.requireExistingProject` | `true` | Only auto-start where Synthra has run before (the folder has `.synthra-graph/` or `.synthra/`). |
-| `synthra.path` | `syn` | Path to the `syn` executable. |
-| `synthra.showDashboardNotification` | `false` | Toast the dashboard link on every start. |
-| `synthra.healthCheckMinutes` | `5` | How often to re-check health while running. `0` = only at start and on window focus. |
-| `synthra.checkForUpdates` | `true` | Check npm for a newer Synthra once per window. |
-| `synthra.showEditorButton` | `true` | Show the Synthra button in the editor title bar (opens the large panel). |
-
-### Why `requireExistingProject` defaults to on
-
-Auto-starting in *any* folder would bootstrap Synthra into repos you never opted into — appending to `.gitignore`, adding a policy block to `CLAUDE.md`, and writing hooks into `.claude/`. That's a lot of uninvited edits to someone else's repo. So auto-start only fires where Synthra already lives; the **Start for this project** command is the opt-in for a new folder.
-
-## Opening the same project in two windows
-
-Safe. Synthra enforces one server per project itself (v0.26 ownership records) — the second window's `syn` detects the live owner, reports `alreadyRunning`, and the extension adopts its port instead of binding a rival.
-
-## Install
-
-Search for **Synthra** in the Extensions view, or:
-
-```bash
-code --install-extension jefuriiij.synthra-vscode
-```
-
-- **VS Code:** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=jefuriiij.synthra-vscode).
-- **Cursor, Antigravity, Windsurf, VSCodium:** from [Open VSX](https://open-vsx.org/extension/jefuriiij/synthra-vscode), which these editors install from.
-- **Offline:** download `synthra-vscode-<version>.vsix` from the [GitHub releases](https://github.com/jefuriiij/synthra/releases), then Command Palette → **Extensions: Install from VSIX…**
-
-## Building it yourself
-
-```bash
-cd extension
-npm install
-npm run compile     # esbuild → dist/extension.js, vite → dist/webview/ (the large panel)
-npm run check       # tsc for the host, svelte-check for the panel
-npm run package     # → synthra-vscode-<version>.vsix
-```
-
-Press `F5` in VS Code to launch an Extension Development Host for live testing.
-
-## License
-
-MIT, same as Synthra.
+For developers: how Synthra works, every setting, and how to build the extension
+are in the [Synthra repository](https://github.com/jefuriiij/synthra) and its
+[extension notes](https://github.com/jefuriiij/synthra/blob/main/docs/EXTENSION.md).

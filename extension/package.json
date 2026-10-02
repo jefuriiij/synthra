@@ -1,8 +1,8 @@
 {
   "name": "synthra-vscode",
   "displayName": "Synthra",
-  "description": "Starts Synthra's context engine automatically when you open a project, and shows what it knows in the sidebar: memory, skills and tools, and the helper agents Claude used. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
-  "version": "0.33.0",
+  "description": "A memory and a skill book for Claude Code: it remembers your project, learns your workflows with your OK, and shows it all in the sidebar. Works in VS Code, Cursor, Antigravity and more.",
+  "version": "0.33.1",
   "publisher": "jefuriiij",
   "icon": "resources/icon.png",
   "galleryBanner": {
@@ -23,11 +23,16 @@
     "Other"
   ],
   "keywords": [
+    "claude",
     "claude-code",
+    "ai",
+    "memory",
+    "skills",
+    "agents",
     "mcp",
     "context-engine",
-    "antigravity",
-    "cursor"
+    "cursor",
+    "antigravity"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -171,6 +176,12 @@
         "title": "Synthra: Run the Curator now",
         "category": "Synthra",
         "icon": "$(play)"
+      },
+      {
+        "command": "synthra.install",
+        "title": "Synthra: Install Synthra",
+        "category": "Synthra",
+        "icon": "$(cloud-download)"
       }
     ],
     "menus": {
@@ -297,7 +308,14 @@
           "description": "Show the Synthra button in the editor's title bar. It opens the large Synthra panel (Memory, Capabilities, Agents) in an editor tab."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "synthra.learning",
+        "contents": "Synthra's engine isn't installed yet. It is the `syn` command this extension starts.\n[Install Synthra](command:synthra.install)\nThis runs `npm install -g @jefuriiij/synthra` for you. It needs [Node.js](https://nodejs.org) 18 or later.",
+        "when": "synthra.missing"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

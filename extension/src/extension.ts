@@ -107,6 +107,17 @@ let healthCheckedAt: Date | null = null;
 let healthGen = 0;
 /** Automatic update checks run once per window. The command bypasses this. */
 let updateCheckedThisSession = false;
+/** `syn` isn't installed (or isn't on VS Code's PATH). Mirrored into the
+ *  `synthra.missing` context key, which shows the sidebar's Install button. */
+let synMissing = false;
+/** The "install Synthra?" popup is shown at most once per window. */
+let missingToastShown = false;
+
+function setMissing(missing: boolean): void {
+  synMissing = missing;
+  void vscode.commands.executeCommand("setContext", "synthra.missing", missing);
+  panels?.refresh();
+}
 
 function config() {
   return vscode.workspace.getConfiguration("synthra");
@@ -587,30 +598,132 @@ async function checkForUpdates(manual: boolean): Promise<void> {
  * terminal, because a terminal gives us no portable way to know when it has
  * finished — and we need to know, to start the server again on the new code.
  */
+/**
+ * Run a constant command through the shell and say whether it exited 0. The
+ * shell is needed because `npm` is npm.cmd on Windows; there's no user input
+ * in the command to escape. Output goes to the log when `log` is set.
+ */
+function runShell(command: string, log: boolean, timeoutMs?: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let proc: ChildProcess;
+    try {
+      proc = spawn(command, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve(false);
+      return;
+    }
+    const timer = timeoutMs ? setTimeout(() => proc.kill(), timeoutMs) : undefined;
+    if (log) {
+      proc.stdout?.on("data", (d: Buffer) => out.append(d.toString()));
+      proc.stderr?.on("data", (d: Buffer) => out.append(d.toString()));
+    }
+    proc.on("error", () => {
+      if (timer) clearTimeout(timer);
+      resolve(false);
+    });
+    proc.on("exit", (code) => {
+      if (timer) clearTimeout(timer);
+      resolve(code === 0);
+    });
+  });
+}
+
+/** `npm install -g @jefuriiij/synthra@latest`, with a progress notification.
+ *  In the background rather than a terminal: a terminal gives no portable way
+ *  to know when it finished, and we start Synthra right after. */
+function npmInstallSynthra(title: string): Thenable<boolean> {
+  out.appendLine(`[ext] ${INSTALL_CMD}`);
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title }, () =>
+    runShell(INSTALL_CMD, true),
+  );
+}
+
+/** A failed install is most likely a permissions problem (a system-owned global
+ *  npm prefix on macOS/Linux). The terminal lets the user see the real error
+ *  and use sudo. */
+async function offerInstallInTerminal(what: string): Promise<void> {
+  const pick = await vscode.window.showErrorMessage(
+    `${what} failed. See the log for npm's output — often it needs admin rights, which the terminal can ask for.`,
+    "Run in terminal",
+    "Show log",
+  );
+  if (pick === "Run in terminal") {
+    const term = vscode.window.createTerminal({ name: "Synthra install" });
+    term.sendText(INSTALL_CMD);
+    term.show();
+  } else if (pick === "Show log") {
+    out.show();
+  }
+}
+
+/**
+ * The "Install Synthra" button. The extension is only the remote control —
+ * the engine is the `syn` command from npm — so a new user would otherwise hit
+ * "syn not found" and have to install it by hand.
+ */
+async function installSynthra(): Promise<void> {
+  if (!(await runShell("npm --version", false, 15_000))) {
+    const pick = await vscode.window.showErrorMessage(
+      "Installing Synthra needs Node.js 18 or later (it comes with npm). Install Node.js, restart the editor, then click Install Synthra again.",
+      "Get Node.js",
+    );
+    if (pick) void vscode.env.openExternal(vscode.Uri.parse("https://nodejs.org/en/download"));
+    return;
+  }
+  if (!(await npmInstallSynthra("Installing Synthra…"))) {
+    out.appendLine("[ext] install failed.");
+    await offerInstallInTerminal("Installing Synthra");
+    return;
+  }
+  const v = await runSyn(["--version"], 15_000);
+  if (!v) {
+    // Installed, but not where this editor's PATH looks — an editor started
+    // before Node was installed keeps the old PATH.
+    out.appendLine("[ext] installed, but `syn` still isn't on this editor's PATH.");
+    void vscode.window.showWarningMessage(
+      "Synthra is installed, but this editor can't find the `syn` command yet. Restart the editor — or set synthra.path to its full path.",
+    );
+    return;
+  }
+  setMissing(false);
+  const version = v.trim().replace(/^syn,?\s*/, "");
+  out.appendLine(`[ext] installed Synthra ${version}.`);
+  const folder = targetFolder();
+  if (folder && looksLikeSynthraProject(folder)) {
+    void vscode.window.showInformationMessage(`Synthra ${version} is installed. Starting it…`);
+    await start(false);
+    return;
+  }
+  // Setting up a folder writes CLAUDE.md, AGENTS.md and hooks into it — the
+  // user's choice, not a side effect of installing.
+  const pick = await vscode.window.showInformationMessage(
+    `Synthra ${version} is installed.${folder ? " Set it up for this folder?" : ""}`,
+    ...(folder ? ["Set up this folder"] : []),
+  );
+  if (pick === "Set up this folder") await start(true);
+}
+
+/** At startup, and when starting fails: no `syn` → the Install button, and one
+ *  popup per window. */
+function noteMissing(): void {
+  setMissing(true);
+  if (missingToastShown) return;
+  missingToastShown = true;
+  void vscode.window
+    .showInformationMessage(
+      "The Synthra extension needs the Synthra engine (the `syn` command), which isn't installed yet.",
+      "Install Synthra",
+      "Not now",
+    )
+    .then((pick) => {
+      if (pick === "Install Synthra") void installSynthra();
+    });
+}
+
 async function runUpdate(): Promise<void> {
   const wasRunning = state.kind === "running" || state.kind === "starting";
   await stop();
-  out.appendLine(`[ext] updating: ${INSTALL_CMD}`);
-
-  const ok = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Updating Synthra…" },
-    () =>
-      new Promise<boolean>((resolve) => {
-        let proc: ChildProcess;
-        try {
-          // A constant command string through the shell: `npm` is npm.cmd on
-          // Windows and needs one, and there's no user input in it to escape.
-          proc = spawn(INSTALL_CMD, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
-        } catch {
-          resolve(false);
-          return;
-        }
-        proc.stdout?.on("data", (d: Buffer) => out.append(d.toString()));
-        proc.stderr?.on("data", (d: Buffer) => out.append(d.toString()));
-        proc.on("error", () => resolve(false));
-        proc.on("exit", (code) => resolve(code === 0));
-      }),
-  );
+  const ok = await npmInstallSynthra("Updating Synthra…");
 
   if (ok) {
     out.appendLine("[ext] update installed.");
@@ -625,20 +738,7 @@ async function runUpdate(): Promise<void> {
   }
 
   out.appendLine("[ext] update failed.");
-  // Most likely a permissions problem (a system-owned global npm prefix on
-  // macOS/Linux). The terminal lets the user see the real error and use sudo.
-  const pick = await vscode.window.showErrorMessage(
-    "Synthra update failed. See the log for npm's output.",
-    "Run in terminal",
-    "Show log",
-  );
-  if (pick === "Run in terminal") {
-    const term = vscode.window.createTerminal({ name: "Synthra update" });
-    term.sendText(INSTALL_CMD);
-    term.show();
-  } else if (pick === "Show log") {
-    out.show();
-  }
+  await offerInstallInTerminal("The Synthra update");
   if (wasRunning) await start(true);
 }
 
@@ -744,15 +844,14 @@ async function start(explicit: boolean): Promise<void> {
   proc.stderr?.on("data", (d: Buffer) => out.append(d.toString()));
 
   proc.on("error", (err) => {
-    const message =
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-        ? `\`${bin}\` not found on PATH. Install it with: npm install -g @jefuriiij/synthra`
-        : err.message;
-    out.appendLine(`[ext] error: ${message}`);
+    const notFound = (err as NodeJS.ErrnoException).code === "ENOENT";
+    const message = notFound ? "Synthra isn't installed yet (no `syn` command)." : err.message;
+    out.appendLine(`[ext] error: ${notFound ? `\`${bin}\` not found on PATH` : message}`);
     child = null;
     state = { kind: "failed", folder, message };
     render();
-    vscode.window.showErrorMessage(`Synthra: ${message}`);
+    if (notFound) noteMissing();
+    else vscode.window.showErrorMessage(`Synthra: ${message}`);
   });
 
   proc.on("exit", (code, signal) => {
@@ -830,11 +929,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   panels = new SynthraPanels(targetFolder(), {
     port: () => (state.kind === "running" ? state.info.mcpPort : null),
     notRunning: () =>
-      state.kind === "starting"
-        ? "Synthra is starting…"
-        : state.kind === "failed"
-          ? "Synthra could not start. See the log (Synthra: Show log)."
-          : 'Synthra is not running for this folder. Run "Synthra: Start for this project".',
+      synMissing
+        ? "Synthra's engine isn't installed yet. Click Install Synthra below."
+        : state.kind === "starting"
+          ? "Synthra is starting…"
+          : state.kind === "failed"
+            ? "Synthra could not start. See the log (Synthra: Show log)."
+            : 'Synthra is not running for this folder. Run "Synthra: Start for this project".',
     getJson,
     postJson,
     log: (line) => out.appendLine(line),
@@ -846,6 +947,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     panels,
     editorPanel,
     vscode.commands.registerCommand("synthra.openPanel", () => editorPanel.show()),
+    vscode.commands.registerCommand("synthra.install", () => installSynthra()),
     vscode.commands.registerCommand("synthra.openSettings", () => editorPanel.show("settings")),
   );
 
@@ -903,6 +1005,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   if (config().get<boolean>("autoStart", true)) {
     await start(false);
+  }
+
+  // A brand-new user: no `syn`, and usually no Synthra project yet, so the
+  // auto-start above never tried (and never failed). Ask once — off the
+  // startup path, after the start above has had its say.
+  if (state.kind === "idle" && !synMissing) {
+    void runSyn(["--version"], 15_000).then((v) => {
+      if (v === null && state.kind === "idle") noteMissing();
+    });
   }
 }
 
