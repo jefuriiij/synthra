@@ -7,7 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.33.0] — 2026-10-03
+
+Synthra learns. This release brings Hermes Agent's learning loop to Claude
+Code — without a chat, a model layer or a gateway; Claude stays the brain.
+Each project gets a knowledge base any AI can read (`.synthra/MEMORY.md`,
+`~/.synthra/USER.md`, and an `AGENTS.md` block for Codex, Cursor, Copilot and
+others); Claude writes and improves its own skills, each one waiting for your
+OK; a weekly Curator keeps them few and current; and the IDE extension (now
+0.33.0) shows all of it in a sidebar and a large panel with Learning, Memory,
+Capabilities, Agents and Settings tabs. Run `syn .` once in each project to
+pick up the new hooks, the CLAUDE.md block (v10) and AGENTS.md.
 
 ### Added
 

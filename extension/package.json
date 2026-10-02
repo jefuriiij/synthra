@@ -2,7 +2,7 @@
   "name": "synthra-vscode",
   "displayName": "Synthra",
   "description": "Starts Synthra's context engine automatically when you open a project, and shows what it knows in the sidebar: memory, skills and tools, and the helper agents Claude used. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
-  "version": "0.31.1",
+  "version": "0.33.0",
   "publisher": "jefuriiij",
   "license": "MIT",
   "repository": {
@@ -262,7 +262,7 @@
         "synthra.requireExistingProject": {
           "type": "boolean",
           "default": true,
-          "description": "Only auto-start in folders Synthra already knows (they have a .synthra-graph/ or .synthra/ directory). Turn this off to auto-start in every folder you open \u2014 including ones where you have never run `syn .`."
+          "description": "Only auto-start in folders Synthra already knows (they have a .synthra-graph/ or .synthra/ directory). Turn this off to auto-start in every folder you open — including ones where you have never run `syn .`."
         },
         "synthra.path": {
           "type": "string",
@@ -272,7 +272,7 @@
         "synthra.showDashboardNotification": {
           "type": "boolean",
           "default": false,
-          "description": "Show a notification with the dashboard link each time Synthra starts. Off by default \u2014 the status bar already shows it."
+          "description": "Show a notification with the dashboard link each time Synthra starts. Off by default — the status bar already shows it."
         },
         "synthra.healthCheckMinutes": {
           "type": "number",
