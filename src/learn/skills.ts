@@ -1247,6 +1247,69 @@ export async function viewSupportFile(
   return { path: r.abs, text, waiting: Boolean(w) };
 }
 
+// ─── merging: archive a skill into the umbrella that absorbed it ───────────
+
+export interface MergeArchiveInput {
+  scope?: SkillScope;
+  name: string;
+  /** The skill this one was merged into. */
+  absorbed_into: string;
+  reason?: string;
+}
+
+/** After its content went into an umbrella skill, the narrow skill moves to
+ *  the archive. Only as part of a merge: Claude never archives a skill on its
+ *  own (the Curator does that for unused ones). */
+export async function archiveMerged(
+  paths: SynthraPaths,
+  input: MergeArchiveInput,
+): Promise<Outcome> {
+  const into = input.absorbed_into?.trim() ?? "";
+  if (!into) {
+    return {
+      status: "error",
+      error: "archive needs absorbed_into: the skill this one was merged into.",
+    };
+  }
+  if (into === input.name)
+    return { status: "error", error: "A skill can't be merged into itself." };
+  const c = await changeable(paths, input.name, input.scope, "patch");
+  if ("error" in c) return { status: "error", error: c.error };
+  const s = c.ok;
+  const pending = await listPending(paths.skillState);
+  const umbrella = await findSkill(paths, into);
+  const waitingCreate = pending.find((p) => p.action === "create" && !p.file && p.name === into);
+  if (!umbrella && !waitingCreate) {
+    return {
+      status: "error",
+      error: `Create or patch "${into}" first, then archive what it absorbed.`,
+    };
+  }
+  if (pending.some((p) => p.action === "archive" && pathKey(p.path) === pathKey(s.path))) {
+    return { status: "error", error: `Archiving "${s.name}" already waits for the user's OK.` };
+  }
+  return submit(
+    paths,
+    {
+      id: newId(),
+      ts: new Date().toISOString(),
+      action: "archive",
+      scope: s.scope,
+      name: s.name,
+      path: s.path,
+      ...ownerFields(c.own),
+      project: paths.projectRoot,
+      before: s.text,
+      after: "",
+      reason: `Merged into ${into}.${input.reason ? ` ${input.reason}` : ""}`,
+      archiveTo: archiveDirFor(paths, s.scope, s.name),
+      absorbedInto: into,
+      absorbedPath: umbrella?.path ?? waitingCreate?.path ?? "",
+    },
+    { mustWait: c.own.owner === "user" },
+  );
+}
+
 // ─── the user's answer ──────────────────────────────────────────────────────
 
 export type Answer = { ok: true; event: SkillEvent } | { ok: false; error: string };
@@ -1267,6 +1330,13 @@ async function takePending(state: string, id: string): Promise<Proposal | null> 
 export async function approveProposal(state: string, id: string): Promise<Answer> {
   const p = await takePending(state, id);
   if (!p) return { ok: false, error: "That proposal is not waiting any more." };
+  // A merge: the umbrella must hold the content before the skill goes.
+  if (p.absorbedPath && (await readText(p.absorbedPath)) === null) {
+    return {
+      ok: false,
+      error: `Approve the change to "${p.absorbedInto}" first: this skill was merged into it.`,
+    };
+  }
   // A support file never brings back a skill that was deleted meanwhile.
   if (p.file && (await readText(skillMdOf(p))) === null) {
     return {

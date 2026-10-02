@@ -32,6 +32,7 @@ import {
   handleAnswer,
   handleBlob,
   handleCuratorRun,
+  handleAnswerGroup,
   handleDelete,
   handlePin,
   handleRestore,
@@ -255,6 +256,11 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   app.post("/skills/restore", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleRestore(body, ctx));
+  });
+  // A merge's changes, answered together and in order.
+  app.post("/skills/answer-group", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleAnswerGroup(body, ctx));
   });
   // The Capabilities tab: delete a skill (it moves to the archive).
   app.post("/skills/delete", async (c) => {

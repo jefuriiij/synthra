@@ -12,6 +12,7 @@ import { learningView, type PanelsPayload } from "../extension/src/panelTrees.js
 import { ActivityStore } from "../src/activity/activity-log.js";
 import {
   __resetViewed,
+  archiveMerged,
   writeSupportFile,
   createSkill,
   listPending,
@@ -22,7 +23,7 @@ import {
   skillLockPath,
 } from "../src/learn/skills.js";
 import { readPins, setPin } from "../src/learn/curator.js";
-import { handleDelete } from "../src/server/routes/learning.js";
+import { handleAnswerGroup, handleDelete } from "../src/server/routes/learning.js";
 import type { ServerContext } from "../src/server/context.js";
 import { startServer } from "../src/server/http.js";
 import { handlePanels } from "../src/server/routes/panels.js";
@@ -479,5 +480,60 @@ describe("POST /skills/delete", () => {
     expect(r).toMatchObject({ ok: true });
     expect(await exists(join(target, "SKILL.md"))).toBe(true);
     expect(await exists(join(paths.globalSkillsDir, "hubspot"))).toBe(false);
+  });
+});
+
+// A merge comes as one card: approve all applies the umbrella first.
+describe("POST /skills/answer-group", () => {
+  async function merge() {
+    const paths = await setup();
+    process.env.SYN_SKILL_APPROVAL = "0";
+    await createSkill(paths, { scope: "project", ...skill, name: "rail-light" });
+    await createSkill(paths, { scope: "project", ...skill, name: "tilt-badge" });
+    delete process.env.SYN_SKILL_APPROVAL;
+    for (const n of ["rail-light", "tilt-badge"])
+      markViewed(join(paths.projectSkillsDir, n, "SKILL.md"));
+    await createSkill(paths, { scope: "project", ...skill, name: "css-motion" });
+    for (const n of ["rail-light", "tilt-badge"]) {
+      await archiveMerged(paths, { name: n, absorbed_into: "css-motion" });
+    }
+    const pending = await handlePanels(ctxOf(paths));
+    const group = pending.learning?.pending[0]?.group;
+    return { paths, group, pending };
+  }
+
+  it("groups the merge, then applies the umbrella before the archives", async () => {
+    const { paths, group, pending } = await merge();
+    expect(group).toBeTruthy();
+    expect(pending.learning?.pending.every((p) => p.group === group)).toBe(true);
+    const r = await handleAnswerGroup({ group, verdict: "approve" }, ctxOf(paths));
+    expect(r).toEqual({ ok: true, applied: 3 });
+    expect(await exists(join(paths.projectSkillsDir, "css-motion", "SKILL.md"))).toBe(true);
+    expect(await exists(join(paths.projectSkillsDir, "rail-light"))).toBe(false);
+    expect(await exists(join(paths.contextDir, "skills-archive", "tilt-badge", "SKILL.md"))).toBe(
+      true,
+    );
+    const archives = (await readLedger(paths.skillState)).filter((e) => e.action === "archive");
+    expect(archives.map((e) => [e.actor, e.absorbedInto])).toEqual([
+      ["agent", "css-motion"],
+      ["agent", "css-motion"],
+    ]);
+  });
+
+  it("applies nothing when a member moved on, and reject drops them all", async () => {
+    const { paths, group } = await merge();
+    await writeFile(
+      join(paths.projectSkillsDir, "rail-light", "SKILL.md"),
+      "edited by hand",
+      "utf8",
+    );
+    const r = await handleAnswerGroup({ group, verdict: "approve" }, ctxOf(paths));
+    expect(r).toMatchObject({ ok: false, applied: 0 });
+    expect(await exists(join(paths.projectSkillsDir, "css-motion", "SKILL.md"))).toBe(false);
+    expect(await handleAnswerGroup({ group, verdict: "reject" }, ctxOf(paths))).toEqual({
+      ok: true,
+      applied: 3,
+    });
+    expect(await listPending(paths.skillState)).toEqual([]);
   });
 });

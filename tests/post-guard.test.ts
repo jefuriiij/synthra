@@ -31,6 +31,7 @@ describe("POST guard", () => {
         "/mcp",
         "/skills/approve",
         "/skills/delete",
+        "/skills/answer-group",
         "/curator/run",
         "/gate",
       ]) {

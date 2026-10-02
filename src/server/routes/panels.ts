@@ -74,7 +74,7 @@ export interface PanelItem {
   third_party?: string;
   /** The skill's folder is a link to this folder. */
   linked_to?: string;
-  /** Pinned: the Curator leaves it alone. */
+  /** A favorite (any skill, plugin ones too); the Curator never archives it. */
   pinned?: true;
   /** Synthra's skill, unused this many days (14 or more), not pinned. */
   stale_days?: number;
@@ -275,8 +275,12 @@ async function withFacts(
   facts: SkillFacts,
   scannedAt: string,
 ): Promise<PanelItem> {
-  if (!item.file || (item.scope !== "project" && item.scope !== "personal")) return item;
+  if (!item.file) return item;
   const key = pathKey(item.file);
+  // Any skill can be a favorite; the rest is only known in the user's folders.
+  if (item.scope !== "project" && item.scope !== "personal") {
+    return facts.pins.has(key) ? { ...item, pinned: true } : item;
+  }
   const dir = dirname(item.file);
   const linked = await lstat(dir).then(
     async (s) => (s.isSymbolicLink() ? realpath(dir) : undefined),

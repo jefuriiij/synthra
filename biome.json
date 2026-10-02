@@ -14,7 +14,8 @@
       "!src/dashboard/public",
       "!src/dashboard/ui",
       "!src/dashboard/built",
-      "!extension/src/webview/**/*.svelte"
+      "!extension/src/webview/**/*.svelte",
+      "!Updates"
     ]
   },
   "formatter": {

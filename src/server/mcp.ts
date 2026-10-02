@@ -18,6 +18,7 @@ import {
   type Outcome,
   type Ownership,
   type SkillScope,
+  archiveMerged,
   createSkill,
   editSkill,
   findSkill,
@@ -232,9 +233,9 @@ const TOOLS = [
       properties: {
         action: {
           type: "string",
-          enum: ["list", "view", "create", "patch", "edit", "write_file", "remove_file"],
+          enum: ["list", "view", "create", "patch", "edit", "write_file", "remove_file", "archive"],
           description:
-            "list: every skill, who owns it, and what waits for approval. view: a skill's SKILL.md and its support files, or with file_path one support file (required before any change). patch: replace one exact piece of SKILL.md, or of a support file with file_path (preferred). write_file: a new support file, or a whole new text for one. remove_file: delete a support file. edit: a new description and/or body for a skill Synthra wrote. create: a new skill, only when no skill covers this kind of work.",
+            "list: every skill, who owns it, and what waits for approval. view: a skill's SKILL.md and its support files, or with file_path one support file (required before any change). patch: replace one exact piece of SKILL.md, or of a support file with file_path (preferred). write_file: a new support file, or a whole new text for one. remove_file: delete a support file. edit: a new description and/or body for a skill Synthra wrote. create: a new skill, only when no skill covers this kind of work. archive: after merging a narrow skill into a broader one, move the narrow one to the archive (needs absorbed_into).",
         },
         scope: {
           type: "string",
@@ -255,6 +256,11 @@ const TOOLS = [
         content: {
           type: "string",
           description: "write_file: the file's whole text.",
+        },
+        absorbed_into: {
+          type: "string",
+          description:
+            "archive: the skill this one was merged into. Create or patch that skill first, so nothing it held is lost.",
         },
         description: {
           type: "string",
@@ -1623,8 +1629,20 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
     );
   }
 
+  if (action === "archive") {
+    return counted(
+      archiveMerged(ctx.paths, {
+        ...at,
+        name,
+        absorbed_into: str("absorbed_into") ?? "",
+        ...(reason ? { reason } : {}),
+      }),
+      "Skill archived into its umbrella",
+    );
+  }
+
   return errorContent(
-    "skill_manage: `action` must be list, view, patch, write_file, remove_file, edit or create.",
+    "skill_manage: `action` must be list, view, patch, write_file, remove_file, edit, create or archive.",
   );
 }
 

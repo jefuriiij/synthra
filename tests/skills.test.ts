@@ -13,6 +13,7 @@ import {
   SUPPORT_MAX,
   __resetViewed,
   approveProposal,
+  archiveMerged,
   checkDraft,
   checkSupportPath,
   createSkill,
@@ -658,5 +659,49 @@ describe("review fixes", () => {
     const ids = (await listPending(paths.skillState)).map((p) => p.id);
     const again = (await listPending(paths.skillState)).map((p) => p.id);
     expect(again).toEqual(ids);
+  });
+});
+
+describe("merging: archive into an umbrella", () => {
+  it("needs a real umbrella, never itself, and never an installed skill", async () => {
+    const paths = await setup();
+    live();
+    await createSkill(paths, { scope: "project", ...release });
+    const s = await findSkill(paths, release.name);
+    markViewed(s!.path);
+    const err = async (absorbed_into: string) =>
+      ((await archiveMerged(paths, { name: release.name, absorbed_into })) as { error: string })
+        .error;
+    expect(await err("")).toMatch(/absorbed_into/);
+    expect(await err(release.name)).toMatch(/itself/);
+    expect(await err("nowhere")).toMatch(/Create or patch "nowhere" first/);
+
+    await writeJson(skillLockPath(paths, "global"), {
+      skills: { "ask-sonner": { source: "emilkowalski/skills" } },
+    });
+    await userSkill(paths, "ask-sonner", deploy.replace("deploy", "ask-sonner"), "global");
+    markViewed((await findSkill(paths, "ask-sonner"))!.path);
+    const third = await archiveMerged(paths, { name: "ask-sonner", absorbed_into: release.name });
+    expect((third as { error: string }).error).toMatch(/installed from/);
+  });
+
+  it("archives a user's skill only after the OK, and only once the umbrella holds it", async () => {
+    const paths = await setup();
+    live();
+    await userSkill(paths, "deploy", deploy);
+    markViewed((await findSkill(paths, "deploy"))!.path);
+    // The umbrella waits too (approval on for it).
+    delete process.env.SYN_SKILL_APPROVAL;
+    await createSkill(paths, { scope: "project", ...release, name: "shipping" });
+    live();
+    const o = await archiveMerged(paths, { name: "deploy", absorbed_into: "shipping" });
+    expect(o).toMatchObject({
+      status: "pending",
+      always: true,
+      proposal: { absorbedInto: "shipping" },
+    });
+    const archive = (await listPending(paths.skillState)).find((p) => p.action === "archive");
+    const early = await approveProposal(paths.skillState, archive!.id);
+    expect((early as { error: string }).error).toMatch(/Approve the change to "shipping" first/);
   });
 });
