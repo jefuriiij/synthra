@@ -216,6 +216,61 @@ describe("GET /panels — agents", () => {
   });
 });
 
+// What the Capabilities tab offers on a skill row: who owns it, its use, and
+// the files beside its SKILL.md.
+describe("GET /panels: what Synthra knows about each skill", () => {
+  it("marks Synthra's skills, the user's own, and installed ones, with use and files", async () => {
+    const { project, home, ctx } = await fixture();
+    const paths = {
+      ...ctx.paths,
+      globalSkillsDir: join(home, ".claude", "skills"),
+      skillState: join(home, ".synthra", "skills"),
+    };
+    const c = { ...ctx, paths };
+    const mine = join(project, ".claude", "skills", "release", "SKILL.md");
+    const yours = join(project, ".claude", "skills", "deploy", "SKILL.md");
+    const installed = join(home, ".claude", "skills", "ask-sonner", "SKILL.md");
+    await write(
+      mine,
+      "---\nname: release\ndescription: Use when releasing.\nmetadata:\n  synthra: learned\n---\nSteps\n",
+    );
+    await write(join(project, ".claude", "skills", "release", "references", "tags.md"), "t");
+    await write(join(project, ".claude", "skills", "release", ".hidden"), "h");
+    await write(yours, skillMd("deploy", "Ship the app"));
+    await write(installed, skillMd("ask-sonner", "Toasts"));
+    await write(
+      join(home, ".agents", ".skill-lock.json"),
+      JSON.stringify({ skills: { "ask-sonner": { source: "emilkowalski/skills" } } }),
+    );
+    await write(
+      join(paths.skillState, "usage.json"),
+      JSON.stringify({ [mine]: { uses: 12, lastUsed: "2026-10-01T10:00:00.000Z" } }),
+    );
+    await write(join(paths.skillState, "pins.json"), JSON.stringify({ pinned: [mine] }));
+
+    const p = await handlePanels(c, { homeDir: home, fresh: true });
+    const row = (name: string) => p.capabilities.skills.find((s) => s.name === name);
+
+    expect(row("release")).toMatchObject({
+      synthra: true,
+      pinned: true,
+      uses: 12,
+      last_used: "2026-10-01T10:00:00.000Z",
+      files: ["references/tags.md"],
+      editable: true,
+      deletable: true,
+    });
+    expect(row("deploy")).toMatchObject({ editable: true, deletable: true });
+    expect(row("deploy")?.synthra).toBeUndefined();
+    expect(row("deploy")?.files).toBeUndefined();
+    expect(row("ask-sonner")).toMatchObject({
+      third_party: "emilkowalski/skills",
+      editable: true,
+    });
+    expect(row("ask-sonner")?.deletable).toBeUndefined();
+  });
+});
+
 describe("GET /panels — over HTTP", () => {
   it("answers on the running server", async () => {
     const { project } = await fixture();

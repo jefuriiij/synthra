@@ -57,6 +57,17 @@ async function buildMatcher(root: string): Promise<Ignore> {
   return ig;
 }
 
+const ALWAYS = new Set(ALWAYS_IGNORE);
+
+/** Inside one of the always-ignored folders (.git, .claude, node_modules...),
+ *  judged on the path below the root, so a project that itself sits in a
+ *  folder named "build" is still watched. */
+export function isAlwaysIgnored(root: string, abs: string): boolean {
+  const rel = relative(root, abs);
+  if (!rel || rel.startsWith("..")) return false;
+  return rel.split(sep).some((seg) => ALWAYS.has(seg));
+}
+
 function toPosixRel(root: string, abs: string): string {
   const rel = relative(root, abs);
   return sep === "/" ? rel : rel.split(sep).join("/");
@@ -82,13 +93,13 @@ export function createFileWatcher(root: string, onEvent: FileEventHandler): File
     async start() {
       ig = await buildMatcher(root);
       watcher = chokidar.watch(root, {
-        // Cross-platform glob ignore. We match both the directory itself and
-        // anything inside it. picomatch (chokidar's matcher) normalizes path
-        // separators so a single set of forward-slash globs handles
-        // Windows + POSIX. Function-based ignore was unreliable on Windows
-        // and let chokidar descend into .git/, which crashed on transient
-        // index.lock files held exclusively by git.
-        ignored: ALWAYS_IGNORE.flatMap((d) => [`**/${d}`, `**/${d}/**`]),
+        // A function, not globs: chokidar 4 and later take no globs, so the
+        // old "**/.git/**" patterns matched nothing and every ignored folder
+        // was watched anyway. On Windows a watched folder can't be renamed,
+        // which broke archiving a project skill (EPERM), and .git's
+        // index.lock crashed the watcher. The segment test also keeps it out
+        // of .git before it descends.
+        ignored: (path: string) => isAlwaysIgnored(root, path),
         ignoreInitial: true,
         persistent: true,
         awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },

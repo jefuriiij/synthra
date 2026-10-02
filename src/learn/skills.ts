@@ -44,10 +44,12 @@ import {
   mkdir,
   readFile,
   readdir,
+  readlink,
   realpath,
   rename,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
@@ -453,11 +455,23 @@ export async function moveDir(
   /** Tests pass a rename that fails, to reach the copy path on one disk. */
   tryRename: (a: string, b: string) => Promise<void> = rename,
 ): Promise<void> {
+  // A link (or a Windows junction) moves as a link: rename moves the link
+  // itself. Never copy-then-delete through one, which would empty the folder it
+  // points at (a skills repo shared with other tools).
+  const isLink = await lstat(from).then(
+    (s) => s.isSymbolicLink(),
+    () => false,
+  );
   try {
     await tryRename(from, to);
     return;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+  }
+  if (isLink) {
+    await symlink(await readlink(from), to, process.platform === "win32" ? "junction" : "dir");
+    await rm(from, { force: true });
+    return;
   }
   try {
     await cp(from, to, { recursive: true, errorOnExist: true, force: false });
@@ -484,7 +498,14 @@ async function freeDir(dir: string): Promise<string> {
 }
 
 /** Move a skill's folder into the archive and record it. */
-async function archive(state: string, p: Proposal, approved: boolean): Promise<SkillEvent> {
+/** Move a skill's folder into the archive and record it. The Curator's
+ *  archives say "curator", a merge's say "agent", a delete in the IDE "user". */
+async function archive(
+  state: string,
+  p: Proposal,
+  approved: boolean,
+  actor: SkillEvent["actor"] = p.absorbedInto ? "agent" : "curator",
+): Promise<SkillEvent> {
   const to = await freeDir(p.archiveTo ?? join(state, "archive", p.name));
   await mkdir(dirname(to), { recursive: true });
   await moveDir(dirname(p.path), to);
@@ -492,18 +513,59 @@ async function archive(state: string, p: Proposal, approved: boolean): Promise<S
     id: p.id,
     ts: new Date().toISOString(),
     action: "archive",
-    actor: "curator",
+    actor,
     ...(approved ? { approved: true } : {}),
     scope: p.scope,
     name: p.name,
     path: p.path,
+    ...(p.owner ? { owner: p.owner } : {}),
     project: p.project,
     ...(p.before !== null ? { beforeSha: await saveBlob(state, p.before) } : {}),
     ...(p.reason ? { reason: p.reason } : {}),
     archivePath: to,
+    ...(p.absorbedInto ? { absorbedInto: p.absorbedInto } : {}),
   };
   await record(state, e);
   return e;
+}
+
+/** The user deleted a skill in the IDE: it moves into the archive at once
+ *  (they confirmed it there), so Restore in the Learning tab brings it back. */
+export async function archiveSkill(
+  paths: SynthraPaths,
+  s: SkillInfo,
+  { reason }: { reason: string },
+): Promise<Answer> {
+  const before = await readText(s.path);
+  if (before === null) return { ok: false, error: `"${s.name}" isn't there any more.` };
+  const own = await ownership(paths, s);
+  try {
+    const event = await archive(
+      paths.skillState,
+      {
+        id: newId(),
+        ts: new Date().toISOString(),
+        action: "archive",
+        scope: s.scope,
+        name: s.name,
+        path: s.path,
+        ...ownerFields(own),
+        project: paths.projectRoot,
+        before,
+        after: "",
+        reason,
+        archiveTo: archiveDirFor(paths, s.scope, s.name),
+      },
+      false,
+      "user",
+    );
+    return { ok: true, event };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't move "${s.name}" to the archive: ${(err as Error).message}. Close any file of it that is open, then try again.`,
+    };
+  }
 }
 
 async function apply(state: string, p: Proposal, approved: boolean): Promise<SkillEvent> {

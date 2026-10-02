@@ -8,6 +8,7 @@
 //   GET /skills/blob?sha=…       a before/after text, for a diff
 //   POST /skills/pin {path, on}  keep a skill out of the Curator's hands
 //   POST /skills/restore {archivePath}   bring an archived skill back
+//   POST /skills/delete {path}   the user deleted a skill in the IDE: archive it
 //   POST /curator/run            "Run now", ignoring the weekly clock
 //
 // Proposals carry their own before/after text; ledger events carry content
@@ -16,22 +17,31 @@
 
 import { readFile } from "node:fs/promises";
 
-import { type CuratorStatus, curatorStatus, runCurator, setPin } from "../../learn/curator.js";
+import { clearArsenalCache } from "../../dashboard/arsenal.js";
+import {
+  type CuratorStatus,
+  type SkillAge,
+  curatorStatus,
+  runCurator,
+  setPin,
+} from "../../learn/curator.js";
 import {
   type SkillEvent,
   type SkillScope,
   approveProposal,
+  archiveSkill,
   listPending,
   listSkills,
   parseSkill,
   readBlob,
   readLedger,
   rejectProposal,
+  ownership,
   restoreSkill,
   skillMdOf,
 } from "../../learn/skills.js";
 import { loadConfig } from "../../shared/config.js";
-import { type SynthraPaths, sameRoot } from "../../shared/paths.js";
+import { type SynthraPaths, pathKey, sameRoot } from "../../shared/paths.js";
 import type { ServerContext } from "../context.js";
 
 const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
@@ -86,13 +96,14 @@ export interface LearningSection {
 export async function readLearning(
   paths: SynthraPaths,
   now = Date.now(),
+  { ages }: { ages?: Promise<SkillAge[]> } = {},
 ): Promise<LearningSection> {
   const state = paths.skillState;
   const [pending, ledger, skills, curator] = await Promise.all([
     listPending(state),
     readLedger(state),
     listSkills(paths),
-    curatorStatus(paths, now),
+    curatorStatus(paths, now, ages),
   ]);
   const current = async (path: string) => readFile(path, "utf8").catch(() => null);
   // ~/.synthra/skills is shared by every project: show this project's own
@@ -170,13 +181,14 @@ export async function handleBlob(sha: string | undefined, ctx: ServerContext) {
   return text === null ? { found: false as const } : { found: true as const, text };
 }
 
-/** Only a skill Synthra wrote can be pinned — the pin file holds nothing else. */
+/** Only a skill Synthra wrote can be pinned: the pin file holds nothing else. */
 export async function handlePin(
   body: { path?: unknown; on?: unknown },
   ctx: ServerContext,
 ): Promise<{ ok: boolean; error?: string }> {
   if (typeof body?.path !== "string") return { ok: false, error: "`path` is required." };
-  const skill = (await listSkills(ctx.paths)).find((s) => s.path === body.path && s.learned);
+  const key = pathKey(body.path);
+  const skill = (await listSkills(ctx.paths)).find((s) => pathKey(s.path) === key && s.learned);
   if (!skill) return { ok: false, error: "That isn't a skill Synthra wrote." };
   await setPin(ctx.paths.skillState, skill.path, body.on !== false);
   return { ok: true };
@@ -190,6 +202,36 @@ export async function handleRestore(
     return { ok: false, error: "`archivePath` is required." };
   const r = await restoreSkill(ctx.paths.skillState, body.archivePath);
   return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
+/** The user deleted a skill in the IDE (and confirmed it there): it moves to
+ *  the archive now, unpinned, and Restore in the Learning tab brings it back.
+ *  Only skills in this project's or the user's skills folder, and never one an
+ *  installer put there: `npx skills` would bring it back. */
+export async function handleDelete(
+  body: { path?: unknown },
+  ctx: ServerContext,
+): Promise<{ ok: true; archivePath: string } | { ok: false; error: string }> {
+  if (typeof body?.path !== "string" || !body.path) {
+    return { ok: false, error: "`path` is required." };
+  }
+  const key = pathKey(body.path);
+  const skill = (await listSkills(ctx.paths)).find((s) => pathKey(s.path) === key);
+  if (!skill) {
+    return { ok: false, error: "That isn't a skill in this project or in ~/.claude/skills." };
+  }
+  const own = await ownership(ctx.paths, skill);
+  if (own.owner === "third_party") {
+    return {
+      ok: false,
+      error: `"${skill.name}" was installed from ${own.source} with npx skills. Remove it with the tool that installed it.`,
+    };
+  }
+  const r = await archiveSkill(ctx.paths, skill, { reason: "Deleted in the IDE." });
+  if (!r.ok) return r;
+  await setPin(ctx.paths.skillState, skill.path, false);
+  clearArsenalCache();
+  return { ok: true, archivePath: r.event.archivePath ?? "" };
 }
 
 export async function handleCuratorRun(ctx: ServerContext) {

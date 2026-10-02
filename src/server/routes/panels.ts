@@ -19,7 +19,13 @@ import {
   arsenalItemFile,
   clearArsenalCache,
   computeArsenal,
+  readSkillLock,
 } from "../../dashboard/arsenal.js";
+import { lstat, realpath } from "node:fs/promises";
+import { basename, dirname } from "node:path";
+import { STALE_DAYS, type SkillAge, readPins, readUsage, skillAges } from "../../learn/curator.js";
+import { listSkills, listSupportFiles, skillLockPath } from "../../learn/skills.js";
+import { pathKey } from "../../shared/paths.js";
 import { type DelegationLogEntry, readJsonl } from "../../dashboard/delta.js";
 import { type EntryKind, readStore } from "../../memory/context-store.js";
 import { resolveActiveBranch } from "../../memory/index.js";
@@ -61,6 +67,28 @@ export interface PanelItem {
    *  themselves are not listed — fifty `/impeccable:*` rows would bury the rest. */
   commands?: number;
   meta?: Record<string, string>;
+  // Skills in the user's own folders (project, personal) only:
+  /** Synthra wrote it. */
+  synthra?: true;
+  /** An installer put it there (npx skills): the repo it came from. */
+  third_party?: string;
+  /** The skill's folder is a link to this folder. */
+  linked_to?: string;
+  /** Pinned: the Curator leaves it alone. */
+  pinned?: true;
+  /** Synthra's skill, unused this many days (14 or more), not pinned. */
+  stale_days?: number;
+  uses?: number;
+  /** ISO time of the last use. */
+  last_used?: string;
+  /** Support files beside its SKILL.md, relative to its folder (the first 20). */
+  files?: string[];
+  /** Support files past the first 20. */
+  files_more?: number;
+  /** In the user's own folders: its files may be opened for editing. */
+  editable?: true;
+  /** May be deleted (moved to the archive) from the IDE. */
+  deletable?: true;
 }
 
 export interface PanelDelegation {
@@ -125,6 +153,9 @@ export async function handlePanels(
   opts: PanelsOptions = {},
 ): Promise<PanelsPayload> {
   const now = opts.now ?? Date.now();
+  // Once per refresh: skillAges writes firstSeen as it goes, and both the
+  // Capabilities rows and the Curator card need it.
+  const ages = skillAges(ctx.paths, now).catch((): SkillAge[] => []);
   const [memory, files, capabilities, agents, learning] = await Promise.all([
     readMemory(ctx).catch((err): PanelsPayload["memory"] => ({
       branch: "",
@@ -134,9 +165,9 @@ export async function handlePanels(
       entries: [],
     })),
     readKnowledgeFiles(ctx),
-    readCapabilities(ctx, opts),
+    readCapabilities(ctx, opts, ages),
     readAgents(ctx, now),
-    readLearning(ctx.paths, now).catch(() => undefined),
+    readLearning(ctx.paths, now, { ages }).catch(() => undefined),
   ]);
   return {
     version: PANELS_VERSION,
@@ -183,12 +214,106 @@ async function readMemory(ctx: ServerContext): Promise<PanelsPayload["memory"]> 
   };
 }
 
+/** What Synthra knows about the skills in the user's own folders, keyed by
+ *  pathKey of the SKILL.md. Read before the arsenal scan, so nothing awaits
+ *  between the scan and arsenalItemFile. */
+interface SkillFacts {
+  learned: Set<string>;
+  pins: Set<string>;
+  usage: Map<string, { lastUsed?: string; uses?: number }>;
+  stale: Map<string, number>;
+  locks: { project: Map<string, string>; personal: Map<string, string> };
+}
+
+async function skillFacts(ctx: ServerContext, ages: Promise<SkillAge[]>): Promise<SkillFacts> {
+  const state = ctx.paths.skillState;
+  const [skills, pins, usage, ageList, project, personal] = await Promise.all([
+    listSkills(ctx.paths),
+    readPins(state),
+    readUsage(state),
+    ages,
+    readSkillLock(skillLockPath(ctx.paths, "project")),
+    readSkillLock(skillLockPath(ctx.paths, "global")),
+  ]);
+  return {
+    learned: new Set(skills.filter((s) => s.learned).map((s) => pathKey(s.path))),
+    pins: new Set([...pins].map(pathKey)),
+    usage: new Map(Object.entries(usage).map(([p, u]) => [pathKey(p), u])),
+    stale: new Map(
+      ageList
+        .filter((a) => a.daysUnused >= STALE_DAYS && !a.pinned)
+        .map((a) => [pathKey(a.skill.path), a.daysUnused]),
+    ),
+    locks: { project, personal },
+  };
+}
+
+/** Support-file lists by skill folder, for the last scan only: walking ninety
+ *  skill folders on every panel refresh would be wasted work. */
+let filesMemo: { scannedAt: string; byDir: Map<string, { files: string[]; more: number }> } = {
+  scannedAt: "",
+  byDir: new Map(),
+};
+const FILES_SHOWN = 20;
+
+async function supportFor(dir: string, scannedAt: string) {
+  if (filesMemo.scannedAt !== scannedAt) filesMemo = { scannedAt, byDir: new Map() };
+  const key = pathKey(dir);
+  let hit = filesMemo.byDir.get(key);
+  if (!hit) {
+    hit = await listSupportFiles(dir, FILES_SHOWN);
+    filesMemo.byDir.set(key, hit);
+  }
+  return hit;
+}
+
+/** A skill row from the user's own folders, with what the IDE needs to offer
+ *  on it: who owns it, whether it is linked, pinned or stale, its use, and the
+ *  files beside its SKILL.md. */
+async function withFacts(
+  item: PanelItem,
+  facts: SkillFacts,
+  scannedAt: string,
+): Promise<PanelItem> {
+  if (!item.file || (item.scope !== "project" && item.scope !== "personal")) return item;
+  const key = pathKey(item.file);
+  const dir = dirname(item.file);
+  const linked = await lstat(dir).then(
+    async (s) => (s.isSymbolicLink() ? realpath(dir) : undefined),
+    () => undefined,
+  );
+  const synthra = facts.learned.has(key);
+  const lock = item.scope === "project" ? facts.locks.project : facts.locks.personal;
+  const third = synthra
+    ? undefined
+    : (lock.get(item.name) ?? (linked ? lock.get(basename(linked)) : undefined));
+  const u = facts.usage.get(key);
+  const stale = facts.stale.get(key);
+  const { files, more } = await supportFor(dir, scannedAt);
+  return {
+    ...item,
+    ...(synthra ? { synthra: true as const } : {}),
+    ...(third ? { third_party: third } : {}),
+    ...(linked ? { linked_to: linked } : {}),
+    ...(facts.pins.has(key) ? { pinned: true as const } : {}),
+    ...(stale !== undefined ? { stale_days: stale } : {}),
+    ...(u?.uses ? { uses: u.uses } : {}),
+    ...(u?.lastUsed ? { last_used: u.lastUsed } : {}),
+    ...(files.length ? { files } : {}),
+    ...(more ? { files_more: more } : {}),
+    editable: true,
+    ...(third ? {} : { deletable: true as const }),
+  };
+}
+
 async function readCapabilities(
   ctx: ServerContext,
   opts: PanelsOptions,
+  ages: Promise<SkillAge[]>,
 ): Promise<PanelsPayload["capabilities"]> {
   try {
     if (opts.fresh) clearArsenalCache();
+    const facts = await skillFacts(ctx, ages);
     const data = opts.homeDir
       ? await computeArsenal(ctx.paths.projectRoot, opts.homeDir)
       : await computeArsenal(ctx.paths.projectRoot);
@@ -216,10 +341,13 @@ async function readCapabilities(
           };
         });
     };
+    const skills = toPanel("skills", data.skills);
+    const agents = toPanel("agents", data.agents);
+    const mcp = toPanel("mcp", data.mcp);
     return {
-      skills: toPanel("skills", data.skills),
-      agents: toPanel("agents", data.agents),
-      mcp: toPanel("mcp", data.mcp),
+      skills: await Promise.all(skills.map((s) => withFacts(s, facts, data.scanned_at))),
+      agents,
+      mcp,
       scanned_at: data.scanned_at,
     };
   } catch (err) {

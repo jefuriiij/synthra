@@ -102,17 +102,19 @@ export async function recordUse(state: string, path: string, now = Date.now()): 
 /**
  * A skill was used by name: the model's Skill call (PreToolUse) or the user's
  * `/name` (UserPromptSubmit). `raw` may carry a leading slash and arguments.
- * Every Synthra skill of that name gets the use — when a project and a global
- * skill share a name, Claude Code picks one by its own precedence, and
- * crediting the wrong one would let the Curator archive the one in use. A
- * namespaced name (`plugin:skill`) is a plugin's, never Synthra's.
+ * Every skill of that name gets the use (when a project and a global skill
+ * share a name, Claude Code picks one by its own precedence, and crediting the
+ * wrong one would let the Curator archive the one in use). The user's own
+ * skills are counted too, for the "used N times" line in the IDE; the Curator
+ * still looks only at Synthra's. A namespaced name (`plugin:skill`) is a
+ * plugin's, never in these folders.
  */
 export async function recordUseByName(paths: SynthraPaths, raw: string, now = Date.now()) {
   const name = raw.trim().replace(/^\//, "").split(/\s/)[0];
   if (!name || name.includes(":") || !NAME_RE.test(name)) return;
   for (const scope of ["project", "global"] as const) {
     const s = await findSkill(paths, name, scope);
-    if (s?.learned) await recordUse(paths.skillState, s.path, now);
+    if (s) await recordUse(paths.skillState, s.path, now);
   }
 }
 
@@ -314,10 +316,16 @@ export interface CuratorStatus {
   archived: Awaited<ReturnType<typeof listArchived>>;
 }
 
-export async function curatorStatus(paths: SynthraPaths, now = Date.now()): Promise<CuratorStatus> {
-  const [last, ages, archived] = await Promise.all([
+/** `ages`: the caller's skillAges for this `now`, when it has one. It writes
+ *  firstSeen as it goes, so /panels computes it once and shares it. */
+export async function curatorStatus(
+  paths: SynthraPaths,
+  now = Date.now(),
+  ages?: Promise<SkillAge[]>,
+): Promise<CuratorStatus> {
+  const [last, ageList, archived] = await Promise.all([
     lastRun(paths),
-    skillAges(paths, now),
+    ages ?? skillAges(paths, now),
     listArchived(paths.skillState),
   ]);
   const enabled = loadConfig().curator;
@@ -331,7 +339,7 @@ export async function curatorStatus(paths: SynthraPaths, now = Date.now()): Prom
       : {}),
     staleDays: STALE_DAYS,
     archiveDays: ARCHIVE_DAYS,
-    stale: ages
+    stale: ageList
       .filter((a) => a.daysUnused >= STALE_DAYS && !a.pinned)
       .sort((a, b) => b.daysUnused - a.daysUnused)
       .map((a) => ({
@@ -341,7 +349,7 @@ export async function curatorStatus(paths: SynthraPaths, now = Date.now()): Prom
         daysUnused: a.daysUnused,
         pinned: a.pinned,
       })),
-    pinned: ages
+    pinned: ageList
       .filter((a) => a.pinned)
       .map((a) => ({ name: a.skill.name, scope: a.skill.scope, path: a.skill.path })),
     archived: archived.filter(

@@ -3,7 +3,7 @@
 // the large panel show it.
 
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,11 +17,22 @@ import {
   listPending,
   markViewed,
   patchSkill,
+  readLedger,
+  restoreSkill,
+  skillLockPath,
 } from "../src/learn/skills.js";
+import { readPins, setPin } from "../src/learn/curator.js";
+import { handleDelete } from "../src/server/routes/learning.js";
 import type { ServerContext } from "../src/server/context.js";
 import { startServer } from "../src/server/http.js";
 import { handlePanels } from "../src/server/routes/panels.js";
 import { resolvePaths, type SynthraPaths } from "../src/shared/paths.js";
+
+const exists = (p: string) =>
+  stat(p).then(
+    () => true,
+    () => false,
+  );
 
 const skill = {
   name: "release-checklist",
@@ -369,5 +380,104 @@ describe("GET /panels: changes to support files and to the user's own skills", (
     await rm(dir, { recursive: true, force: true });
     p = await handlePanels(ctxOf(paths));
     expect(p.learning?.pending[0]?.stale).toBe(true);
+  });
+});
+
+// The Capabilities tab's Delete: the user confirmed it in the IDE, so it moves
+// to the archive now, and Restore brings it back.
+describe("POST /skills/delete", () => {
+  const userSkill = async (paths: SynthraPaths, name: string, scope: "project" | "global") => {
+    const dir = join(scope === "project" ? paths.projectSkillsDir : paths.globalSkillsDir, name);
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, "SKILL.md");
+    await writeFile(file, `---\nname: ${name}\ndescription: Do ${name}\n---\nSteps\n`, "utf8");
+    return file;
+  };
+
+  it("archives Synthra's skill and the user's own, unpins, and restores", async () => {
+    const paths = await setup();
+    process.env.SYN_SKILL_APPROVAL = "0";
+    await createSkill(paths, { scope: "global", ...skill });
+    delete process.env.SYN_SKILL_APPROVAL;
+    const learned = join(paths.globalSkillsDir, skill.name, "SKILL.md");
+    await setPin(paths.skillState, learned, true);
+    const own = await userSkill(paths, "deploy", "project");
+    const c = ctxOf(paths);
+
+    const a = await handleDelete({ path: learned }, c);
+    expect(a).toMatchObject({ ok: true });
+    expect(await exists(learned)).toBe(false);
+    expect([...(await readPins(paths.skillState))]).toEqual([]);
+
+    const b = await handleDelete({ path: own }, c);
+    expect(b).toMatchObject({ ok: true });
+    expect((b as { archivePath: string }).archivePath).toBe(
+      join(paths.contextDir, "skills-archive", "deploy"),
+    );
+    const events = (await readLedger(paths.skillState)).filter((e) => e.action === "archive");
+    expect(events.map((e) => [e.name, e.actor])).toEqual([
+      [skill.name, "user"],
+      ["deploy", "user"],
+    ]);
+
+    expect(
+      await restoreSkill(paths.skillState, (b as { archivePath: string }).archivePath),
+    ).toMatchObject({
+      ok: true,
+    });
+    expect(await exists(own)).toBe(true);
+  });
+
+  it("refuses an installed skill, an unknown path, and a missing path", async () => {
+    const paths = await setup();
+    const installed = await userSkill(paths, "ask-sonner", "global");
+    await mkdir(join(paths.globalSkillsDir, "..", "..", ".agents"), { recursive: true });
+    await writeFile(
+      skillLockPath(paths, "global"),
+      JSON.stringify({ skills: { "ask-sonner": { source: "emilkowalski/skills" } } }),
+      "utf8",
+    );
+    const c = ctxOf(paths);
+    expect(await handleDelete({ path: installed }, c)).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/installed from emilkowalski\/skills/),
+    });
+    expect(await exists(installed)).toBe(true);
+    expect(
+      await handleDelete({ path: join(paths.projectRoot, "nope", "SKILL.md") }, c),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(await handleDelete({}, c)).toMatchObject({ ok: false });
+  });
+
+  // A link into a shared skills repo: only the link moves, the repo is untouched.
+  it("moves a linked skill's link, never the folder it points at", async () => {
+    const paths = await setup();
+    const repo = await mkdtemp(join(tmpdir(), "syn-shared-skills-"));
+    const target = join(repo, "hubspot");
+    await mkdir(target, { recursive: true });
+    await writeFile(
+      join(target, "SKILL.md"),
+      "---\nname: hubspot\ndescription: x\n---\nSteps\n",
+      "utf8",
+    );
+    await mkdir(paths.globalSkillsDir, { recursive: true });
+    try {
+      await symlink(
+        target,
+        join(paths.globalSkillsDir, "hubspot"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch {
+      return; // no links on this machine
+    }
+    const r = await handleDelete(
+      { path: join(paths.globalSkillsDir, "hubspot", "SKILL.md") },
+      ctxOf(paths),
+    );
+    expect(r).toMatchObject({ ok: true });
+    expect(await exists(join(target, "SKILL.md"))).toBe(true);
+    expect(await exists(join(paths.globalSkillsDir, "hubspot"))).toBe(false);
   });
 });

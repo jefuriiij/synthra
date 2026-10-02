@@ -26,7 +26,14 @@ const body = JSON.stringify({ key: "skillApproval", value: false });
 describe("POST guard", () => {
   it("refuses a text/plain POST (what a no-cors page sends)", async () => {
     await withServer(async (base) => {
-      for (const route of ["/settings", "/mcp", "/skills/approve", "/curator/run", "/gate"]) {
+      for (const route of [
+        "/settings",
+        "/mcp",
+        "/skills/approve",
+        "/skills/delete",
+        "/curator/run",
+        "/gate",
+      ]) {
         const r = await fetch(`${base}${route}`, {
           method: "POST",
           headers: { "content-type": "text/plain" },

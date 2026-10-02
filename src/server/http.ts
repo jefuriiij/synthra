@@ -32,6 +32,7 @@ import {
   handleAnswer,
   handleBlob,
   handleCuratorRun,
+  handleDelete,
   handlePin,
   handleRestore,
 } from "./routes/learning.js";
@@ -254,6 +255,11 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   app.post("/skills/restore", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleRestore(body, ctx));
+  });
+  // The Capabilities tab: delete a skill (it moves to the archive).
+  app.post("/skills/delete", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleDelete(body, ctx));
   });
   app.post("/curator/run", async (c) => c.json(await handleCuratorRun(ctx)));
 
