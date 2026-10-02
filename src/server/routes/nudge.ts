@@ -15,7 +15,9 @@
 //
 // When both are due they become one question. A reply Claude makes BECAUSE of
 // a nudge (stop_hook_active) neither counts nor gets nudged, so the hook can't
-// loop.
+// loop. And the stop right after a nudge is never nudged either, marker or
+// not: if Claude Code ever left stop_hook_active out, a nudged step that made
+// enough tool calls would otherwise be nudged again, and again.
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -44,13 +46,15 @@ interface NudgeState {
   toolCalls: number;
   /** skill_manage saved something during the reply now in progress. */
   savedThisReply: boolean;
+  /** The last stop got a reason: the next stop is the step it asked for. */
+  justNudged: boolean;
 }
 const states = new WeakMap<ServerContext, NudgeState>();
 
 function stateOf(ctx: ServerContext): NudgeState {
   let s = states.get(ctx);
   if (!s) {
-    s = { replies: 0, toolCalls: 0, savedThisReply: false };
+    s = { replies: 0, toolCalls: 0, savedThisReply: false, justNudged: false };
     states.set(ctx, s);
   }
   return s;
@@ -115,11 +119,12 @@ export function combinedNudgeReason(): string {
 export async function handleNudge(req: NudgeRequest, ctx: ServerContext): Promise<NudgeResponse> {
   const cfg = loadConfig();
   const state = stateOf(ctx);
-  if (req?.stop_hook_active === true) {
+  if (req?.stop_hook_active === true || state.justNudged) {
     // A nudged step: it neither counts nor gets nudged. A save in it still
     // resets the count.
     if (state.savedThisReply) state.toolCalls = 0;
     state.savedThisReply = false;
+    state.justNudged = false;
     return {};
   }
 
@@ -163,6 +168,7 @@ export async function handleNudge(req: NudgeRequest, ctx: ServerContext): Promis
   }
 
   state.savedThisReply = false;
+  state.justNudged = memoryDue || skillDue;
   if (memoryDue && skillDue) return { reason: combinedNudgeReason() };
   if (memoryDue) return { reason: nudgeReason(cfg.memoryNudgeEvery) };
   if (skillDue) return { reason: skillNudgeReason(calls) };

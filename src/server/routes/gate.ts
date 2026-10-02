@@ -8,6 +8,8 @@
 //     carries the answer: exact file::symbol graph_read targets + one-line
 //     signatures, so the agent never needs the whole-file Read fallback.
 //   - Otherwise → ALLOW.
+//   - A search already stopped once is let through when asked again (see
+//     REPEAT_WINDOW_MS): stopping it a second time could only repeat the hint.
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -237,6 +239,38 @@ export function buildBlockHint(
  * ones are tried. A namespaced name (`plugin:skill`) is a plugin's, never
  * Synthra's.
  */
+/**
+ * How long a stopped search stays stopped-once. Asked again inside this window,
+ * it goes through: Claude has already read the answer and still wants the
+ * search, so a second stop would only spend the hint's tokens again, and an
+ * agent that keeps retrying would keep paying for it.
+ */
+export const REPEAT_WINDOW_MS = 10 * 60_000;
+const blockedAt = new WeakMap<ServerContext, Map<string, number>>();
+
+function searchKey(tool: string, query: string): string {
+  return `${tool}\u0000${query.trim().toLowerCase()}`;
+}
+
+/** True when this exact search was stopped within the window. */
+function stoppedRecently(ctx: ServerContext, key: string, now: number): boolean {
+  const at = blockedAt.get(ctx)?.get(key);
+  return at !== undefined && now - at < REPEAT_WINDOW_MS;
+}
+
+function noteStopped(ctx: ServerContext, key: string, now: number): void {
+  let seen = blockedAt.get(ctx);
+  if (!seen) {
+    seen = new Map();
+    blockedAt.set(ctx, seen);
+  }
+  // A long session asks many distinct searches; keep only the live window.
+  if (seen.size > 256) {
+    for (const [k, at] of seen) if (now - at >= REPEAT_WINDOW_MS) seen.delete(k);
+  }
+  seen.set(key, now);
+}
+
 async function noteSkillUse(input: unknown, ctx: ServerContext): Promise<void> {
   const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const raw = [o.skill, o.command, o.name].find((v): v is string => typeof v === "string");
@@ -353,6 +387,19 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
     await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
     return res;
   }
+
+  // Guard 4: stop each search once. A repeat goes through.
+  const key = searchKey(req.tool_name, query);
+  const now = Date.now();
+  if (stoppedRecently(ctx, key, now)) {
+    const res: GateResponse = {
+      decision: "allow",
+      reason: `"${query}" was already answered from the graph a moment ago; asked again, so letting ${req.tool_name} through.`,
+    };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
+    return res;
+  }
+  noteStopped(ctx, key, now);
 
   const hint = buildBlockHint(query, retrieval, graph, req.tool_name);
   const res: GateResponse = { decision: "block", reason: hint };

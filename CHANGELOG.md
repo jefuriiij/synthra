@@ -38,6 +38,13 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   nudges, no primer after a compact. The hooks now use Claude Code's
   `CLAUDE_PROJECT_DIR`, the project root. Run `syn .` (or reopen the folder in
   the IDE) once per project to get the new hooks.
+- **Two guards so a hook can never keep Claude busy in a loop.** The memory
+  and skill reminders already skipped the step Claude takes because of a
+  reminder, but only when Claude Code marks it (`stop_hook_active`). Now the
+  stop right after a reminder is never reminded, marker or not. And search
+  stopping now stops each Grep or Glob search only once: asked again within 10
+  minutes, the same search goes through, so a Claude that keeps retrying
+  can't keep paying for the same hint.
 
 ### Changed
 

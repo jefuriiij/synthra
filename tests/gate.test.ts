@@ -11,7 +11,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildBlockHint, handleGate } from "../src/server/routes/gate.js";
+import { REPEAT_WINDOW_MS, buildBlockHint, handleGate } from "../src/server/routes/gate.js";
 import type { RetrievalResult } from "../src/graph/retrieve.js";
 import type { ServerContext } from "../src/server/context.js";
 import type {
@@ -186,6 +186,36 @@ describe("gate — existing behavior preserved", () => {
   it("allows that same symbol query when the human just touched a matching file", async () => {
     // recent-activity overlap relaxes even a real symbol block (path match).
     expect(await grep("login", ["src/lib/login.ts"])).toBe("allow");
+  });
+});
+
+// Loop guard: a search is stopped once. Asked again, it goes through, so an
+// agent that keeps retrying can't keep paying for the same hint.
+describe("gate - a repeated search goes through", () => {
+  it("stops a search once, then lets the same search through", async () => {
+    const c = ctx();
+    const ask = async (pattern: string) =>
+      (await handleGate({ tool_name: "Grep", tool_input: { pattern } }, c)).decision;
+    expect(await ask("login")).toBe("block");
+    expect(await ask("login")).toBe("allow");
+    expect(await ask(" LOGIN ")).toBe("allow"); // same search, other spelling
+    expect(await ask("seedCredentials")).toBe("block"); // a different search still stops
+  });
+
+  it("keeps the count per tool, and stops the search again after the window", async () => {
+    const c = ctx();
+    const run = async (tool_name: string) =>
+      (await handleGate({ tool_name, tool_input: { pattern: "login" } }, c)).decision;
+    expect(await run("Grep")).toBe("block");
+    expect(await run("Glob")).toBe("block");
+
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + REPEAT_WINDOW_MS + 1;
+      expect(await run("Grep")).toBe("block");
+    } finally {
+      Date.now = realNow;
+    }
   });
 });
 

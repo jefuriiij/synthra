@@ -47,9 +47,12 @@ describe("POST /nudge", () => {
   it("asks once every N replies, then starts counting again", async () => {
     process.env.SYN_MEMORY_NUDGE_EVERY = "3";
     const c = await ctx();
-    const r = await replies(c, 6);
-    expect(r.map((x) => Boolean(x.reason))).toEqual([false, false, true, false, false, true]);
+    const r = await replies(c, 3);
+    expect(r.map((x) => Boolean(x.reason))).toEqual([false, false, true]);
     expect(r[2]?.reason).toContain("mcp__synthra__memory");
+    // The step the nudge asked for, as Claude Code reports it.
+    await handleNudge({ stop_hook_active: true }, c);
+    expect((await replies(c, 3)).map((x) => Boolean(x.reason))).toEqual([false, false, true]);
   });
 
   // Any change resets it — the tool, another AI's hand edit, the user's.
@@ -81,6 +84,20 @@ describe("POST /nudge", () => {
     await handleNudge({}, c);
     expect(await handleNudge({ stop_hook_active: true }, c)).toEqual({});
     expect((await handleNudge({}, c)).reason).toBeTruthy();
+  });
+
+  // The belt to stop_hook_active's braces: without the marker, the stop right
+  // after a nudge is still the nudged step, so it can't be nudged in turn.
+  it("never asks twice in a row, even when the marker is missing", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "1";
+    const c = await ctx();
+    expect((await replies(c, 5)).map((x) => Boolean(x.reason))).toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+    ]);
   });
 
   it("is off with SYN_MEMORY_NUDGE_EVERY=0", async () => {
@@ -139,6 +156,18 @@ describe("POST /nudge — the skill nudge", () => {
     noteSkillSaved(c);
     await handleNudge({ tool_calls: 3, stop_hook_active: true }, c);
     expect(await handleNudge({ tool_calls: 9 }, c)).toEqual({});
+  });
+
+  // A nudged step that does real work (views skills, saves one) can make many
+  // calls. Without the marker, those must not set off the next nudge.
+  it("doesn't let a nudged step's calls nudge again, even without the marker", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "0";
+    process.env.SYN_SKILL_NUDGE_EVERY = "10";
+    const c = await ctx();
+    expect((await handleNudge({ tool_calls: 12 }, c)).reason).toBeTruthy();
+    expect(await handleNudge({ tool_calls: 50 }, c)).toEqual({});
+    expect(await handleNudge({ tool_calls: 9 }, c)).toEqual({});
+    expect((await handleNudge({ tool_calls: 1 }, c)).reason).toBeTruthy();
   });
 
   it("asks one combined question when both are due", async () => {
