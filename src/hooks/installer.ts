@@ -3,7 +3,7 @@
 // regenerates the scripts and merges hook entries cleanly with any user-added
 // hooks already in the file.
 
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { updateJsonFile, writeTextAtomic } from "../shared/json-store.js";
@@ -158,4 +158,27 @@ export async function installHooks(paths: SynthraPaths): Promise<InstallResult> 
   log.debug(`installed ${scriptsWritten.length} hook script(s) into ${paths.claudeHooksDir}`);
 
   return { scriptsWritten, settingsUpdated: true };
+}
+
+/** current = every script is the one this Synthra writes; outdated = some are
+ *  older (or edited); missing = none is installed. */
+export type HooksState = "current" | "outdated" | "missing";
+
+/**
+ * Are this project's hook scripts the ones this version of Synthra writes?
+ * The dashboard's health table asks, because an old script fails silently:
+ * the 0.33 hooks looked for the server in the shell's folder and gave up once
+ * Claude moved into a subfolder. `installHooks` is the fix.
+ */
+export async function hooksState(paths: SynthraPaths): Promise<HooksState> {
+  let missing = 0;
+  let outdated = 0;
+  for (const s of SCRIPTS) {
+    const target = join(paths.claudeHooksDir, `${s.baseName}${chosenScriptExt()}`);
+    const text = await readFile(target, "utf8").catch(() => null);
+    if (text === null) missing += 1;
+    else if (text !== chosenScriptBody(s)) outdated += 1;
+  }
+  if (missing === SCRIPTS.length) return "missing";
+  return missing > 0 || outdated > 0 ? "outdated" : "current";
 }

@@ -136,7 +136,7 @@ export async function handlePanels(
     readKnowledgeFiles(ctx),
     readCapabilities(ctx, opts),
     readAgents(ctx, now),
-    readLearning(ctx, now).catch(() => undefined),
+    readLearning(ctx.paths, now).catch(() => undefined),
   ]);
   return {
     version: PANELS_VERSION,

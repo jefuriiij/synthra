@@ -94,6 +94,7 @@ async function runStopHook(
       usage: { input_tokens: 5, output_tokens: 7 },
       content: [
         { type: "text", text: "delegating" },
+        { type: "tool_use", name: "Read", input: { file_path: "src/app.ts" } },
         {
           type: "tool_use",
           name: "Task",
@@ -140,8 +141,9 @@ async function expectNudge(command: string, args: string[]): Promise<void> {
   // Nothing to say: the hook prints nothing, and Claude stops as usual.
   const quiet = await runStopHook(command, args);
   expect(quiet.stdout.trim()).toBe("");
-  // The reply had one tool call (the Task delegation): the skill nudge counts it.
-  expect(quiet.bodies["/nudge"]).toEqual([{ stop_hook_active: false, tool_calls: 1 }]);
+  // The reply had two tool calls (a Read, the Task delegation): the skill
+  // nudge counts both.
+  expect(quiet.bodies["/nudge"]).toEqual([{ stop_hook_active: false, tool_calls: 2 }]);
 
   // A reason: the hook asks Claude Code to keep Claude for one more step.
   const held = await runStopHook(command, args, { nudge: { reason: REASON } });
@@ -149,7 +151,7 @@ async function expectNudge(command: string, args: string[]): Promise<void> {
 
   // Already continuing because of a Stop hook: the server is told so.
   const again = await runStopHook(command, args, { input: { stop_hook_active: true } });
-  expect(again.bodies["/nudge"]).toEqual([{ stop_hook_active: true, tool_calls: 1 }]);
+  expect(again.bodies["/nudge"]).toEqual([{ stop_hook_active: true, tool_calls: 2 }]);
 }
 
 function expectUsageAndDelegation({ bodies }: HookRun): void {
@@ -157,10 +159,12 @@ function expectUsageAndDelegation({ bodies }: HookRun): void {
   const log = bodies["/log"]?.[0] as {
     input_tokens: number;
     output_tokens: number;
+    read_calls?: number;
     delegations?: unknown;
   };
   expect(log.input_tokens).toBe(5);
   expect(log.output_tokens).toBe(7);
+  expect(log.read_calls).toBe(1);
   // PS 5.1 may collapse a single-element array to an object — accept both.
   const dl = Array.isArray(log.delegations) ? log.delegations : [log.delegations];
   expect(dl).toHaveLength(1);

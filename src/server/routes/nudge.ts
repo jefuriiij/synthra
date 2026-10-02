@@ -20,7 +20,8 @@
 // enough tool calls would otherwise be nudged again, and again.
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
@@ -31,6 +32,23 @@ export interface NudgeRequest {
   stop_hook_active?: boolean;
   /** Tool calls in the reply that just ended (Stop hook 0.33+). */
   tool_calls?: number;
+}
+
+/** One line of .synthra-graph/nudge_log.jsonl: a reminder that fired. The
+ *  dashboard compares these with the saves that followed. */
+export interface NudgeLogEntry {
+  ts: string;
+  kind: "memory" | "skill" | "both";
+}
+
+async function logNudge(ctx: ServerContext, kind: NudgeLogEntry["kind"]): Promise<void> {
+  try {
+    await mkdir(dirname(ctx.paths.nudgeLog), { recursive: true });
+    const entry: NudgeLogEntry = { ts: new Date().toISOString(), kind };
+    await appendFile(ctx.paths.nudgeLog, `${JSON.stringify(entry)}\n`, "utf8");
+  } catch {
+    // best effort: a reminder never fails over its log line
+  }
 }
 
 export interface NudgeResponse {
@@ -169,6 +187,8 @@ export async function handleNudge(req: NudgeRequest, ctx: ServerContext): Promis
 
   state.savedThisReply = false;
   state.justNudged = memoryDue || skillDue;
+  if (state.justNudged)
+    await logNudge(ctx, memoryDue && skillDue ? "both" : memoryDue ? "memory" : "skill");
   if (memoryDue && skillDue) return { reason: combinedNudgeReason() };
   if (memoryDue) return { reason: nudgeReason(cfg.memoryNudgeEvery) };
   if (skillDue) return { reason: skillNudgeReason(calls) };

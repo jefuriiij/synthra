@@ -37,6 +37,7 @@ $lines = Get-Content -Path $transcript
 $inT = 0; $outT = 0; $cc = 0; $cr = 0; $model = ""
 $delegations = New-Object System.Collections.ArrayList
 $toolCalls = 0
+$readCalls = 0
 $lineNum = 0
 foreach ($line in $lines) {
     $lineNum++
@@ -48,6 +49,7 @@ foreach ($line in $lines) {
     foreach ($blk in @($e.message.content)) {
         if (-not $blk -or $blk.type -ne "tool_use") { continue }
         $toolCalls++
+        if ($blk.name -eq "Read") { $readCalls++ }
         if ($blk.name -ne "Task" -and $blk.name -ne "Agent") { continue }
         $ts = $e.timestamp
         if ($ts -is [DateTime]) { $ts = $ts.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
@@ -82,6 +84,7 @@ $payloadMap = @{
     model                       = $model
     description                 = "synthra-stop-hook"
     project                     = $root
+    read_calls                  = $readCalls
 }
 if ($delegations.Count -gt 0) { $payloadMap.delegations = $delegations }
 $payload = $payloadMap | ConvertTo-Json -Compress -Depth 5

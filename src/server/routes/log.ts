@@ -34,6 +34,8 @@ export interface LogEntry {
   project: string;
   /** v0.20+: delegation events observed since the last Stop (may be absent). */
   delegations?: DelegationEvent[];
+  /** v0.34+: Read tool calls in the reply (whole-file reads). */
+  read_calls?: number;
 }
 
 export interface LogResponse {

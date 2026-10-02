@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stripOurHooks, type HooksConfig } from "../src/hooks/hooks-config.js";
-import { installHooks, normalizeEol } from "../src/hooks/installer.js";
+import { hooksState, installHooks, normalizeEol } from "../src/hooks/installer.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
 const SCRIPTS_DIR = fileURLToPath(new URL("../src/hooks/scripts", import.meta.url));
@@ -289,5 +289,27 @@ describe("hooks survive Claude Code dropping the meta marker", () => {
       hooks: { Stop: [{ hooks: [{ type: "command", command }] }] },
     });
     expect((stripped.hooks?.Stop ?? [])[0]?.hooks?.[0]?.command).toBe(command);
+  });
+});
+
+// The dashboard's health table: an old script fails silently, so it has to be
+// spotted by comparing it with the one this Synthra writes.
+describe("hooksState", () => {
+  it("is missing, then current after installHooks, outdated when a script is old", async () => {
+    const paths = await project();
+    expect(await hooksState(paths)).toBe("missing");
+    await installHooks(paths);
+    expect(await hooksState(paths)).toBe("current");
+
+    const ext = process.platform === "win32" ? ".ps1" : ".sh";
+    await writeFile(
+      join(paths.claudeHooksDir, `synthra-stop${ext}`),
+      "# an older stop hook\n",
+      "utf8",
+    );
+    expect(await hooksState(paths)).toBe("outdated");
+
+    await installHooks(paths); // what the dashboard's Fix hooks button runs
+    expect(await hooksState(paths)).toBe("current");
   });
 });

@@ -20,6 +20,7 @@ import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
+import { type HookName, noteHook } from "./heartbeat.js";
 import { handleMcpRequest } from "./mcp.js";
 import { checkOwner, claimOwnership, releaseOwnership } from "./owner.js";
 import { reserveFreePort, type PortReservation } from "./port.js";
@@ -177,7 +178,12 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     return c.json({ version, status: worstStatus(checks), checks });
   });
 
-  app.get("/prime", async (c) => c.json(await handlePrime(ctx, port)));
+  const beat = (hook: HookName) => noteHook(ctx.paths.heartbeat, hook, version);
+
+  app.get("/prime", async (c) => {
+    beat("start");
+    return c.json(await handlePrime(ctx, port));
+  });
 
   app.post("/pack", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -185,6 +191,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   });
 
   app.post("/log", async (c) => {
+    beat("reply");
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleLog(body, ctx));
   });
@@ -197,6 +204,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   });
 
   app.post("/gate", async (c) => {
+    beat("tools");
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleGate(body, ctx));
   });
@@ -204,6 +212,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   // The Dispatcher: the UserPromptSubmit hook posts each prompt; a non-empty
   // hint is injected into the conversation as added context.
   app.post("/route", async (c) => {
+    beat("prompt");
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleRoute(body, ctx));
   });

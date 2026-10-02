@@ -39,6 +39,10 @@ export interface SynthraPaths {
   routeLog: string;
   delegationLog: string;
   toolLog: string;
+  /** When each memory or skill reminder fired (0.34+). */
+  nudgeLog: string;
+  /** When each hook last reached the server (0.34+). */
+  heartbeat: string;
   accessLog: string;
   learnStore: string;
   parseCache: string;
@@ -109,6 +113,8 @@ export function resolvePaths(
     routeLog: join(graphDir, "route_log.jsonl"),
     delegationLog: join(graphDir, "delegation_log.jsonl"),
     toolLog: join(graphDir, "tool_log.jsonl"),
+    nudgeLog: join(graphDir, "nudge_log.jsonl"),
+    heartbeat: join(graphDir, "heartbeat.json"),
     accessLog: join(graphDir, "access_log.jsonl"),
     learnStore: join(graphDir, "learn_store.json"),
     parseCache: join(graphDir, "parse_cache.json"),

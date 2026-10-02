@@ -3,7 +3,7 @@
 // step to save what it learned.
 
 import { afterEach, describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -98,6 +98,17 @@ describe("POST /nudge", () => {
       false,
       true,
     ]);
+  });
+
+  // The dashboard compares reminders with the saves that followed.
+  it("logs each reminder that fires, and nothing else", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "2";
+    const c = await ctx();
+    await replies(c, 2);
+    await handleNudge({ stop_hook_active: true }, c);
+    await replies(c, 1);
+    const lines = (await readFile(c.paths.nudgeLog, "utf8")).trim().split("\n");
+    expect(lines.map((l) => JSON.parse(l).kind)).toEqual(["memory"]);
   });
 
   it("is off with SYN_MEMORY_NUDGE_EVERY=0", async () => {

@@ -76,6 +76,11 @@ TOOLS=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
   | jq -c '(.message.content // []) | if type == "array" then .[] else empty end | select(.type == "tool_use") | 1' 2>/dev/null \
   | wc -l | tr -d ' ')
 case "$TOOLS" in ''|*[!0-9]*) TOOLS=0 ;; esac
+# Whole-file reads in this window, for the dashboard's "how Claude found code".
+READS=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+  | jq -c '(.message.content // []) | if type == "array" then .[] else empty end | select(.type == "tool_use" and .name == "Read") | 1' 2>/dev/null \
+  | wc -l | tr -d ' ')
+case "$READS" in ''|*[!0-9]*) READS=0 ;; esac
 DELEG_N=$(printf '%s' "$DELEG" | jq 'length' 2>/dev/null)
 DELEG_N=${DELEG_N:-0}
 
@@ -90,8 +95,8 @@ MODEL=$(printf '%s' "$USAGE" | jq -r '.model // ""')
 if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then exit 0; fi
 
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$ROOT" --argjson d "$DELEG" \
-    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p}
+  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$ROOT" --argjson d "$DELEG" --argjson rc "$READS" \
+    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc}
      + (if ($d | length) > 0 then {delegations:$d} else {} end)')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 

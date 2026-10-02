@@ -30,7 +30,7 @@ import {
   restoreSkill,
 } from "../../learn/skills.js";
 import { loadConfig } from "../../shared/config.js";
-import { sameRoot } from "../../shared/paths.js";
+import { type SynthraPaths, sameRoot } from "../../shared/paths.js";
 import type { ServerContext } from "../context.js";
 
 const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
@@ -71,20 +71,24 @@ export interface LearningSection {
   curator: CuratorStatus;
 }
 
-export async function readLearning(ctx: ServerContext, now = Date.now()): Promise<LearningSection> {
-  const state = ctx.paths.skillState;
+/** Only the project's paths: the dashboard reads this too, without a server. */
+export async function readLearning(
+  paths: SynthraPaths,
+  now = Date.now(),
+): Promise<LearningSection> {
+  const state = paths.skillState;
   const [pending, ledger, skills, curator] = await Promise.all([
     listPending(state),
     readLedger(state),
-    listSkills(ctx.paths),
-    curatorStatus(ctx.paths, now),
+    listSkills(paths),
+    curatorStatus(paths, now),
   ]);
   const current = async (path: string) => readFile(path, "utf8").catch(() => null);
   // ~/.synthra/skills is shared by every project: show this project's own
   // proposals and changes, and the global ones — never another repo's
   // project skill labelled "this project".
   const ours = (x: { scope: SkillScope; project: string }) =>
-    x.scope === "global" || sameRoot(x.project, ctx.paths.projectRoot);
+    x.scope === "global" || sameRoot(x.project, paths.projectRoot);
   return {
     approval: loadConfig().skillApproval,
     pending: await Promise.all(
