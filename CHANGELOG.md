@@ -9,6 +9,16 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+---
+
+## [0.36.0] (2026-10-03)
+
+Fewer, broader skills, and your hands on them. Claude now improves the skill
+it used (or adds a `references/` file to it) before it writes a new one, may
+improve your own skills too (always with your OK), and the IDE gets a menu on
+every skill: open, edit, star, merge, delete. Run `syn .` once in each
+project, or reopen it in the editor, to get the new CLAUDE.md block.
+
 ### Changed
 
 - **Broad skills: update first, create last.** Synthra wrote one narrow skill

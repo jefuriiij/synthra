@@ -3,9 +3,10 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 0.34.0 (2026-10-03)
 
-These need the next update of the Synthra engine.
+These come with Synthra 0.36.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
 
 - **A menu on every skill.** In Capabilities, the ⋯ next to a skill opens,
   edits, stars, merges or deletes it. Delete asks first and moves the skill to
