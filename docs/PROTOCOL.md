@@ -56,12 +56,8 @@ A second, independent Hono process (`src/dashboard/server.ts`) — outside the M
 | `GET` | `/` | The dashboard SPA — Svelte, built by Vite, inlined into one self-contained HTML. |
 | `GET` | `/favicon.svg` | Dashboard favicon. |
 | `GET` | `/health` | `{ ok: true }` — simple liveness only. |
-| `GET` | `/arsenal` | Installed skills/agents/MCP servers (project · personal · plugin scopes) for the Arsenal browser. |
-| `GET` | `/arsenal/item` | Full source/frontmatter for one Arsenal item, resolved server-side from `kind`+`scope`+`name` query params (never a raw filesystem path) — backs the detail modal. |
-| `GET` | `/favorites` | Machine-wide favorited skills/agents (`~/.synthra/favorites.json`). |
-| `POST` | `/favorites` | Set (not toggle) a favorite — the dashboard's only mutating route. |
 | `GET` | `/report` | Runs `syn doctor`'s checks server-side; returns them plus a copy-pasteable redacted markdown diagnostic. |
-| `GET` | `/data` | Polled every 2s — the full token/gate/tool/route/delegation aggregate the UI renders. |
+| `GET` | `/data` | Polled every 10s: the token/gate/tool aggregate per project and overall, plus the recent replies the UI renders. |
 
 9 routes total (verified against `src/dashboard/server.ts`, 2026-08-09).
 

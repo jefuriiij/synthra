@@ -11,8 +11,8 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ### Added (extension 0.33.1)
 
-- **Install Synthra in one click.** The extension is only the window — the
-  engine is the `syn` command from npm — so a new user used to hit "syn not
+- **Install Synthra in one click.** The extension is only the window (the
+  engine is the `syn` command from npm), so a new user used to hit "syn not
   found" and had to install it by hand. Now a missing `syn` shows an
   **Install Synthra** button (a popup, the sidebar, and the
   **Synthra: Install Synthra** command). It runs the npm install with a
@@ -21,10 +21,42 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   nodejs.org; a permissions error offers the command in a terminal.
 - **A store page for users**, with screenshots, written like a product page.
   The technical notes moved to `docs/EXTENSION.md`.
+- **A Changelog tab.** The extension now ships `extension/CHANGELOG.md`, a
+  short list of changes in plain words, so VS Code, the Marketplace and Open
+  VSX show it next to Details.
 
 ### Changed (extension 0.33.1)
 
 - The skill nudge has an on/off switch in Settings, like the memory nudge.
+
+### Fixed
+
+- **Hooks stopped working once Claude moved into a subfolder.** Every hook
+  looked for Synthra in the shell's current folder, so after a `cd` into, say,
+  `Website Overhaul/pages`, each one found nothing and quietly gave up: no
+  replies logged on the dashboard, no search stopping, no memory or skill
+  nudges, no primer after a compact. The hooks now use Claude Code's
+  `CLAUDE_PROJECT_DIR`, the project root. Run `syn .` (or reopen the folder in
+  the IDE) once per project to get the new hooks.
+
+### Changed
+
+- **The dashboard is one page about cost and savings.** The extension now shows
+  skills, agents and tools, so the dashboard's Arsenal and Commands pages are
+  gone, with the Arsenal's favorites. So are the cards that only made sense to
+  Synthra's own developers: the number strip, the Moat, the Dispatcher and hot
+  files. What is left says it in plain words: what the work cost at API prices
+  (and that a Claude plan is billed differently), models, projects, the
+  Synthra tools Claude used, and every reply. The "Saved by Synthra" card now
+  shows only once a search was actually stopped: Claude mostly searches
+  through Bash, which Synthra watches but never stops, so it used to sit at
+  $0. The `/data` payload
+  no longer carries the gate, Bash and route feeds, and the dashboard server no
+  longer has the `/arsenal`, `/arsenal/item` and `/favorites` routes.
+- **The README is rewritten** for how Synthra is used now: the editor extension
+  first, then the terminal; the Learning, Memory and Settings features; Linux
+  tested like Windows; and an honest note that search stopping rarely fires
+  when Claude searches through Bash.
 
 ---
 

@@ -53,7 +53,7 @@ See [ROADMAP.md](../ROADMAP.md) for the milestone breakdown.
 | `src/hooks/` | Claude Code hook installer + scripts (5 events × 2 platforms) | M3 |
 | `src/memory/` | session state + cross-session context store | M1, M4 |
 | `src/activity/` | file + git watchers (the human-activity wedge) | M5 |
-| `src/dashboard/` | localhost token dashboard + Arsenal browser (own server, port 8901) | M6 |
+| `src/dashboard/` | localhost token dashboard (own server, port 8901); the Arsenal scanner the IDE extension and `route_task` use | M6 |
 | `src/learn/` | usage-learning: decayed access-log aggregate feeds ranking | v0.2.0+ |
 | `src/shared/` | paths, logger, config, atomic JSON store | M1 |
 
