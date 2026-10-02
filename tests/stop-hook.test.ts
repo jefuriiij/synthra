@@ -124,7 +124,8 @@ async function expectNudge(command: string, args: string[]): Promise<void> {
   // Nothing to say: the hook prints nothing, and Claude stops as usual.
   const quiet = await runStopHook(command, args);
   expect(quiet.stdout.trim()).toBe("");
-  expect(quiet.bodies["/nudge"]).toEqual([{ stop_hook_active: false }]);
+  // The reply had one tool call (the Task delegation): the skill nudge counts it.
+  expect(quiet.bodies["/nudge"]).toEqual([{ stop_hook_active: false, tool_calls: 1 }]);
 
   // A reason: the hook asks Claude Code to keep Claude for one more step.
   const held = await runStopHook(command, args, { nudge: { reason: REASON } });
@@ -132,7 +133,7 @@ async function expectNudge(command: string, args: string[]): Promise<void> {
 
   // Already continuing because of a Stop hook: the server is told so.
   const again = await runStopHook(command, args, { input: { stop_hook_active: true } });
-  expect(again.bodies["/nudge"]).toEqual([{ stop_hook_active: true }]);
+  expect(again.bodies["/nudge"]).toEqual([{ stop_hook_active: true, tool_calls: 1 }]);
 }
 
 function expectUsageAndDelegation({ bodies }: HookRun): void {

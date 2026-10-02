@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import { ActivityStore } from "../src/activity/activity-log.js";
 import type { ServerContext } from "../src/server/context.js";
-import { handleNudge } from "../src/server/routes/nudge.js";
+import { handleNudge, noteSkillSaved } from "../src/server/routes/nudge.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
 async function ctx(): Promise<ServerContext> {
@@ -93,5 +93,73 @@ describe("POST /nudge", () => {
     process.env.SYN_MEMORY_NUDGE_EVERY = "1";
     const r = await handleNudge({}, await ctx());
     expect(r.reason).toMatch(/^[\x20-\x7e]+$/);
+  });
+});
+
+describe("POST /nudge — the skill nudge", () => {
+  afterEach(() => {
+    delete process.env.SYN_SKILL_NUDGE_EVERY;
+  });
+
+  it("asks once the replies' tool calls add up, then starts over", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "0";
+    process.env.SYN_SKILL_NUDGE_EVERY = "10";
+    const c = await ctx();
+    expect(await handleNudge({ tool_calls: 4 }, c)).toEqual({});
+    expect(await handleNudge({ tool_calls: 5 }, c)).toEqual({});
+    const r = await handleNudge({ tool_calls: 3 }, c);
+    expect(r.reason).toContain("skill check - after 12 tool calls");
+    expect(r.reason).toContain("mcp__synthra__skill_manage");
+    expect(await handleNudge({ tool_calls: 9 }, c)).toEqual({});
+  });
+
+  // The real order: the save happens mid-reply, and the Stop hook then
+  // reports that whole reply's calls — the ones before the save included.
+  it("doesn't ask right after a reply that saved a skill", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "0";
+    process.env.SYN_SKILL_NUDGE_EVERY = "10";
+    const c = await ctx();
+    await handleNudge({ tool_calls: 8 }, c);
+    noteSkillSaved(c); // during the next reply
+    expect(await handleNudge({ tool_calls: 17 }, c)).toEqual({});
+    // Counting starts over after it: 9 more is not enough, 10 is.
+    expect(await handleNudge({ tool_calls: 9 }, c)).toEqual({});
+    expect((await handleNudge({ tool_calls: 1 }, c)).reason).toBeTruthy();
+  });
+
+  it("ignores the nudged step's calls, but a save in it still resets", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "0";
+    process.env.SYN_SKILL_NUDGE_EVERY = "10";
+    const c = await ctx();
+    await handleNudge({ tool_calls: 8 }, c);
+    expect(await handleNudge({ tool_calls: 50, stop_hook_active: true }, c)).toEqual({});
+    expect((await handleNudge({ tool_calls: 2 }, c)).reason).toBeTruthy();
+
+    await handleNudge({ tool_calls: 8 }, c);
+    noteSkillSaved(c);
+    await handleNudge({ tool_calls: 3, stop_hook_active: true }, c);
+    expect(await handleNudge({ tool_calls: 9 }, c)).toEqual({});
+  });
+
+  it("asks one combined question when both are due", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "1";
+    process.env.SYN_SKILL_NUDGE_EVERY = "5";
+    const r = await handleNudge({ tool_calls: 6 }, await ctx());
+    expect(r.reason).toMatch(/^\[Synthra review\]/);
+    expect(r.reason).toContain("1) Memory");
+    expect(r.reason).toContain("2) Skill");
+    expect(r.reason).toMatch(/^[\x20-\x7e]+$/);
+  });
+
+  it("is off with SYN_SKILL_NUDGE_EVERY=0, and shrugs off a wild count", async () => {
+    process.env.SYN_MEMORY_NUDGE_EVERY = "0";
+    process.env.SYN_SKILL_NUDGE_EVERY = "0";
+    expect(await handleNudge({ tool_calls: 1000 }, await ctx())).toEqual({});
+    process.env.SYN_SKILL_NUDGE_EVERY = "200";
+    const c = await ctx();
+    expect(await handleNudge({ tool_calls: 1e9 }, c)).toMatchObject({
+      reason: expect.stringContaining("after 500"),
+    });
+    expect(await handleNudge({ tool_calls: Number.NaN }, c)).toEqual({});
   });
 });

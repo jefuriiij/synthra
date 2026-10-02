@@ -73,7 +73,8 @@ The newer, bigger lever is **model routing**: on heavy usage the assistant can d
 | **Difficulty escalation** | Flags complex tasks (races, leaks, security…) to stay on your primary model | Cheap where safe, powerful where it matters |
 | **Branch-aware memory** | `context_remember` / `context_recall` persist decisions per git branch in `.synthra/` (git-tracked) | Teammates inherit context; it merges naturally |
 | **Knowledge files** | `.synthra/MEMORY.md` (project, git-tracked) and `~/.synthra/USER.md` (you, private), each with a size limit; Claude saves to them with `memory` and is nudged every 10 replies; `AGENTS.md` points other AI tools at them | One small, current knowledge base per project that any AI can use |
-| **Self-written skills** | `skill_manage` lets Claude save a repeatable workflow as a Claude Code skill — in the project (`.claude/skills/`) or for every project (`~/.claude/skills/`). New and changed skills wait for your OK in the IDE's Learning tab, with a diff | Claude gets better at your work over time, and you stay in control of what it learns |
+| **Self-written skills** | `skill_manage` lets Claude save a repeatable workflow as a Claude Code skill — in the project (`.claude/skills/`) or for every project (`~/.claude/skills/`). New and changed skills wait for your OK in the IDE's Learning tab, with a diff. After a long stretch of work, the Stop hook asks Claude whether it was worth a skill | Claude gets better at your work over time, and you stay in control of what it learns |
+| **The Curator** | Once a week, skills Synthra wrote that went unused for 14 days are marked stale, and those unused for 30 are archived (after your OK). Pin a skill to keep it; restore an archived one any time | Skills stay few and current instead of piling up |
 | **Auto-resurfacing** | Saved notes reappear on the files they relate to, with a stale-since-saved warning | A memory that actually speaks up |
 | **Activity awareness** | Watches file saves, branch switches, uncommitted diffs | Claude knows what you changed between turns |
 | **Live token dashboard** | Cost, model breakdown, savings floor, Moat blocks, hot files | See exactly where your spend goes |
@@ -264,7 +265,7 @@ your-project/
     └── branches/<sanitized>/    # per-branch overrides
 ```
 
-Five hooks are installed: **SessionStart** (inject the context pack and the knowledge files), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens, refresh CONTEXT.md, and the memory nudge), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats. `~/.synthra/USER.md` sits next to it: it is about you, so it stays out of every repo. So do `~/.synthra/settings.json` (the Settings tab) and `~/.synthra/skills/` — skill proposals waiting for your OK, and the history of every skill change with the texts its diffs show.
+Five hooks are installed: **SessionStart** (inject the context pack and the knowledge files), **PreToolUse** (the Moat + Bash observer), **PreCompact**, **Stop** (log tokens, refresh CONTEXT.md, and the memory nudge), and **UserPromptSubmit** (the Dispatcher). A global registry at `~/.synthra/projects.json` lists every project where Synthra has run, so `syn dashboard` can show aggregate stats. `~/.synthra/USER.md` sits next to it: it is about you, so it stays out of every repo. So do `~/.synthra/settings.json` (the Settings tab) and `~/.synthra/skills/` — skill proposals waiting for your OK, the history of every skill change with the texts its diffs show, and the Curator's usage counts, pins and archive (a project skill's archive is `.synthra/skills-archive/`, so the team keeps it).
 
 ---
 
@@ -296,6 +297,8 @@ Everything works with zero config. The everyday settings — the memory nudge, t
 | `SYN_USER_CHARS` | `2000` | Size limit of `~/.synthra/USER.md` |
 | `SYN_MEMORY_NUDGE_EVERY` | `10` | Ask Claude to save what it learned every N replies without a change to either file; `0` turns it off |
 | `SYN_SKILL_APPROVAL` | `1` | `0` lets skills the AI writes or changes go live at once, instead of waiting for your OK |
+| `SYN_SKILL_NUDGE_EVERY` | `15` | Ask Claude whether its work was worth a skill after this many tool calls without one saved; `0` turns it off |
+| `SYN_CURATOR` | `1` | `0` turns the weekly Curator off ("Run now" still works) |
 | `SYN_USER_MEMORY` | `~/.synthra/USER.md` | Where USER.md lives |
 | `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Disk cap for `activity.jsonl`, truncated to its recent half when exceeded. Queries read the in-memory ring, so the file is for eyeball debugging only; `0` disables the cap |
 

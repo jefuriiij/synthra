@@ -21,6 +21,9 @@ export class SynthraEditorPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;
   /** What the keys of the last view open. Only these can be opened. */
   private targets = new Map<string, PanelTarget>();
+  /** The Curator paths the last view offered: only these can be pinned or
+   *  restored from the page. */
+  private curatorPaths = new Set<string>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -124,6 +127,29 @@ export class SynthraEditorPanel implements vscode.Disposable {
           .then((error) => this.post({ type: "answerResult", id: msg.id, error }));
         return;
       }
+      case "pin":
+      case "restore":
+      case "runCurator": {
+        const target =
+          msg.type === "pin" ? msg.path : msg.type === "restore" ? msg.archivePath : "run";
+        if (
+          msg.type !== "runCurator" &&
+          (typeof target !== "string" || !this.curatorPaths.has(target))
+        ) {
+          this.log("[ext] ignored a Curator action the current view does not offer");
+          return;
+        }
+        const action =
+          msg.type === "pin"
+            ? { pin: msg.path, on: msg.on === true }
+            : msg.type === "restore"
+              ? { restore: msg.archivePath }
+              : ({ run: true } as const);
+        void this.source
+          .curatorAction(action)
+          .then((error) => this.post({ type: "curatorResult", target, error }));
+        return;
+      }
       case "setSetting": {
         if (typeof msg.key !== "string") return;
         const value =
@@ -151,6 +177,12 @@ export class SynthraEditorPanel implements vscode.Disposable {
     const folder = this.folder ?? "";
     const built = s.kind === "payload" ? buildTabs(folder, s.payload) : messageTabs(folder, s.text);
     this.targets = built.targets;
+    const c = built.view.learning?.curator;
+    this.curatorPaths = new Set([
+      ...(c?.stale.map((x) => x.path) ?? []),
+      ...(c?.pinned.map((x) => x.path) ?? []),
+      ...(c?.archived.map((x) => x.archivePath) ?? []),
+    ]);
     this.post({ type: "view", view: built.view });
     this.post({ type: "refreshing", on: false });
   }

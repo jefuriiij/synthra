@@ -141,6 +141,30 @@
         "title": "Reject",
         "category": "Synthra",
         "icon": "$(close)"
+      },
+      {
+        "command": "synthra.skills.pin",
+        "title": "Pin (keep it)",
+        "category": "Synthra",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "synthra.skills.unpin",
+        "title": "Unpin",
+        "category": "Synthra",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "synthra.skills.restore",
+        "title": "Restore",
+        "category": "Synthra",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "synthra.curator.run",
+        "title": "Synthra: Run the Curator now",
+        "category": "Synthra",
+        "icon": "$(play)"
       }
     ],
     "menus": {
@@ -173,6 +197,18 @@
         {
           "command": "synthra.skills.reject",
           "when": "false"
+        },
+        {
+          "command": "synthra.skills.pin",
+          "when": "false"
+        },
+        {
+          "command": "synthra.skills.unpin",
+          "when": "false"
+        },
+        {
+          "command": "synthra.skills.restore",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -185,13 +221,33 @@
       "view/item/context": [
         {
           "command": "synthra.skills.approve",
-          "when": "view == synthra.learning && viewItem == synthraProposal",
+          "when": "view == synthra.learning && viewItem =~ /^synthra(Archive)?Proposal$/",
           "group": "inline@1"
         },
         {
           "command": "synthra.skills.reject",
-          "when": "view == synthra.learning && viewItem == synthraProposal",
+          "when": "view == synthra.learning && viewItem =~ /^synthra(Archive)?Proposal$/",
           "group": "inline@2"
+        },
+        {
+          "command": "synthra.skills.pin",
+          "when": "view == synthra.learning && viewItem == synthraStaleSkill",
+          "group": "inline"
+        },
+        {
+          "command": "synthra.skills.unpin",
+          "when": "view == synthra.learning && viewItem == synthraPinnedSkill",
+          "group": "inline"
+        },
+        {
+          "command": "synthra.skills.restore",
+          "when": "view == synthra.learning && viewItem == synthraArchivedSkill",
+          "group": "inline"
+        },
+        {
+          "command": "synthra.curator.run",
+          "when": "view == synthra.learning && viewItem == synthraCurator",
+          "group": "inline"
         }
       ]
     },
@@ -206,7 +262,7 @@
         "synthra.requireExistingProject": {
           "type": "boolean",
           "default": true,
-          "description": "Only auto-start in folders Synthra already knows (they have a .synthra-graph/ or .synthra/ directory). Turn this off to auto-start in every folder you open — including ones where you have never run `syn .`."
+          "description": "Only auto-start in folders Synthra already knows (they have a .synthra-graph/ or .synthra/ directory). Turn this off to auto-start in every folder you open \u2014 including ones where you have never run `syn .`."
         },
         "synthra.path": {
           "type": "string",
@@ -216,7 +272,7 @@
         "synthra.showDashboardNotification": {
           "type": "boolean",
           "default": false,
-          "description": "Show a notification with the dashboard link each time Synthra starts. Off by default — the status bar already shows it."
+          "description": "Show a notification with the dashboard link each time Synthra starts. Off by default \u2014 the status bar already shows it."
         },
         "synthra.healthCheckMinutes": {
           "type": "number",

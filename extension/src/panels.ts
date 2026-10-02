@@ -148,6 +148,23 @@ export class SynthraPanels implements vscode.Disposable {
       vscode.commands.registerCommand("synthra.skills.reject", (n?: PanelNode) =>
         this.answerFromTree(n, "reject"),
       ),
+      // The Curator's rows: pin a stale skill, unpin a pinned one, restore an
+      // archived one. The path is the end of the node's id.
+      vscode.commands.registerCommand("synthra.skills.pin", (n?: PanelNode) =>
+        this.fromTree(n, "learn:stale:", (p) => this.curatorAction({ pin: p, on: true })),
+      ),
+      vscode.commands.registerCommand("synthra.skills.unpin", (n?: PanelNode) =>
+        this.fromTree(n, "learn:pinned:", (p) => this.curatorAction({ pin: p, on: false })),
+      ),
+      vscode.commands.registerCommand("synthra.skills.restore", (n?: PanelNode) =>
+        this.fromTree(n, "learn:archived:", (p) => this.curatorAction({ restore: p })),
+      ),
+      vscode.commands.registerCommand("synthra.curator.run", () =>
+        this.curatorAction({ run: true }).then((error) => {
+          if (error) void vscode.window.showWarningMessage(`Synthra: ${error}`);
+          else void vscode.window.showInformationMessage("Synthra: the Curator ran.");
+        }),
+      ),
       vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, {
         provideTextDocumentContent: (uri) => this.diffTexts.get(uri.query) ?? "",
       }),
@@ -320,13 +337,55 @@ export class SynthraPanels implements vscode.Disposable {
     return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");
   }
 
+  /**
+   * Pin/unpin a skill, restore an archived one, or run the Curator now —
+   * through the server, which checks the path is one it knows. Resolves to ""
+   * on success, or the reason it didn't happen.
+   */
+  async curatorAction(
+    a: { pin: string; on: boolean } | { restore: string } | { run: true },
+  ): Promise<string> {
+    const port = this.deps.port();
+    if (port === null) return "Synthra is not running.";
+    const [route, body] =
+      "pin" in a
+        ? ["/skills/pin", { path: a.pin, on: a.on }]
+        : "restore" in a
+          ? ["/skills/restore", { archivePath: a.restore }]
+          : ["/curator/run", {}];
+    const r = await this.deps.postJson<{ ok?: boolean; error?: string }>(
+      `http://127.0.0.1:${port}${route}`,
+      body,
+      30_000,
+    );
+    this.refresh({ fresh: true });
+    if (r.status === 404) return "This version of Synthra has no Curator. Update Synthra.";
+    if (r.status !== 200 || !r.body)
+      return "Synthra did not answer. See the log (Synthra: Show log).";
+    return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");
+  }
+
+  private async fromTree(
+    n: PanelNode | undefined,
+    prefix: string,
+    act: (rest: string) => Promise<string>,
+  ): Promise<void> {
+    if (!n?.id.startsWith(prefix)) return;
+    const error = await act(n.id.slice(prefix.length));
+    if (error) void vscode.window.showWarningMessage(`Synthra: ${error}`);
+  }
+
   private async answerFromTree(n: PanelNode | undefined, verdict: "approve" | "reject") {
     const id = n?.id.startsWith("learn:pending:") ? n.id.slice("learn:pending:".length) : undefined;
     if (!id) return;
     const error = await this.answer(id, verdict);
     if (error) void vscode.window.showWarningMessage(`Synthra: ${error}`);
     else if (verdict === "approve")
-      void vscode.window.showInformationMessage(`Synthra: "${n?.label}" is live.`);
+      void vscode.window.showInformationMessage(
+        n?.contextValue === "synthraArchiveProposal"
+          ? `Synthra: "${n.label}" is archived. Restore it from the Curator any time.`
+          : `Synthra: "${n?.label}" is live.`,
+      );
   }
 
   /** The texts the open diffs show, by the query of their virtual URIs. */

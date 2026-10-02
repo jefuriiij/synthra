@@ -14,6 +14,10 @@ class Store {
   /** Proposals being answered, and the last failure per proposal. */
   answering = $state<Record<string, boolean>>({});
   answerErrors = $state<Record<string, string>>({});
+  /** Curator actions in flight and their last failure, by target (a path,
+   *  an archive path, or "run"). */
+  curatorBusy = $state<Record<string, boolean>>({});
+  curatorErrors = $state<Record<string, string>>({});
 
   apply(msg: HostToWebview): void {
     if (msg.type === "view") this.view = msg.view;
@@ -22,6 +26,9 @@ class Store {
     else if (msg.type === "answerResult") {
       this.answering = { ...this.answering, [msg.id]: false };
       this.answerErrors = { ...this.answerErrors, [msg.id]: msg.error };
+    } else if (msg.type === "curatorResult") {
+      this.curatorBusy = { ...this.curatorBusy, [msg.target]: false };
+      this.curatorErrors = { ...this.curatorErrors, [msg.target]: msg.error };
     } else if (msg.type === "settingResult") {
       this.saving = { ...this.saving, [msg.key]: false };
       this.settingErrors = { ...this.settingErrors, [msg.key]: msg.error };
@@ -33,6 +40,19 @@ class Store {
     this.answering = { ...this.answering, [id]: true };
     this.answerErrors = { ...this.answerErrors, [id]: "" };
     post({ type: "answer", id, verdict });
+  }
+
+  /** Pin or unpin a skill, restore an archived one, or run the Curator now. */
+  curator(
+    a:
+      | { type: "pin"; path: string; on: boolean }
+      | { type: "restore"; archivePath: string }
+      | { type: "runCurator" },
+  ): void {
+    const target = a.type === "pin" ? a.path : a.type === "restore" ? a.archivePath : "run";
+    this.curatorBusy = { ...this.curatorBusy, [target]: true };
+    this.curatorErrors = { ...this.curatorErrors, [target]: "" };
+    post(a);
   }
 
   /** Change a setting; null = back to its default. */

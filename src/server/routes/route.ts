@@ -16,6 +16,7 @@ import { dirname } from "node:path";
 
 import { computeArsenal, type ArsenalData } from "../../dashboard/arsenal.js";
 import type { FileNode } from "../../graph/types.js";
+import { recordUseByName } from "../../learn/curator.js";
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
 import { isSystemPrompt, renderHint, scoreArsenal, type RouteMatch } from "./route-match.js";
@@ -84,8 +85,14 @@ export async function handleRoute(
   deps: RouteDeps = defaultDeps,
 ): Promise<RouteResponse> {
   const cfg = loadConfig();
-  if (!cfg.route) return { hint: "" };
   const prompt = typeof req?.prompt === "string" ? req.prompt.trim() : "";
+  // The user typed `/skill-name`: a use the Curator must see — Claude Code
+  // may load the skill without a Skill tool call. Counted even with the
+  // Dispatcher off; never in the way of the prompt.
+  if (prompt.startsWith("/")) {
+    await recordUseByName(ctx.paths, prompt).catch(() => undefined);
+  }
+  if (!cfg.route) return { hint: "" };
   if (!prompt) return { hint: "" };
   // Harness noise (<ide_opened_file>, <task-notification>, …) isn't a task —
   // don't score it, and don't log it either, so route_log's denominator stays

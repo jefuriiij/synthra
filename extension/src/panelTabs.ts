@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
 import {
+  curatorSummary,
   eventTarget,
   MEMORY_KINDS,
   type PanelItem,
@@ -300,8 +301,12 @@ function learningTab(
 ): LearningTab {
   const week = l.recent.filter((e) => now - Date.parse(e.ts) < WEEK_MS && e.action !== "reject");
   const created = new Set(week.filter((e) => e.action === "create").map((e) => e.path));
+  // Improved = patched or rewritten. A Curator archive or a restore is not an
+  // improvement.
   const improved = new Set(
-    week.filter((e) => e.action !== "create" && !created.has(e.path)).map((e) => e.path),
+    week
+      .filter((e) => (e.action === "patch" || e.action === "edit") && !created.has(e.path))
+      .map((e) => e.path),
   );
   return {
     approval: l.approval,
@@ -323,6 +328,7 @@ function learningTab(
       return {
         id: `${e.id}:${e.action}`,
         action: e.action,
+        actor: e.actor,
         name: e.name,
         scope: e.scope,
         approved: e.approved === true,
@@ -337,6 +343,42 @@ function learningTab(
       description: s.description,
       ...(s.origin ? { origin: s.origin } : {}),
       key: keys.open(s.path),
+    })),
+    ...(l.curator ? { curator: curatorCard(l.curator, keys, now) } : {}),
+  };
+}
+
+function curatorCard(
+  c: NonNullable<NonNullable<PanelsPayload["learning"]>["curator"]>,
+  keys: Keys,
+  now: number,
+): NonNullable<LearningTab["curator"]> {
+  const next = c.nextRunAt ? ms(c.nextRunAt) : undefined;
+  return {
+    enabled: c.enabled,
+    lastRun: curatorSummary(c, now),
+    ...(next !== undefined ? { nextRunAt: next } : {}),
+    staleDays: c.staleDays,
+    archiveDays: c.archiveDays,
+    stale: c.stale.map((s) => ({
+      name: s.name,
+      scope: s.scope,
+      daysUnused: s.daysUnused,
+      path: s.path,
+      key: keys.open(s.path),
+    })),
+    archived: c.archived.map((a) => ({
+      name: a.name,
+      scope: a.scope,
+      at: ms(a.archivedAt) ?? now,
+      archivePath: a.archivePath,
+      key: keys.open(join(a.archivePath, "SKILL.md")),
+    })),
+    pinned: c.pinned.map((p) => ({
+      name: p.name,
+      scope: p.scope,
+      path: p.path,
+      key: keys.open(p.path),
     })),
   };
 }

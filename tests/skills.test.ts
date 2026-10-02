@@ -332,3 +332,27 @@ describe("the skill_manage tool", () => {
     expect(r.text).toMatch(/scope/);
   });
 });
+
+describe("review fixes", () => {
+  it("won't let a patch add frontmatter, and keeps the frontmatter canonical", async () => {
+    const paths = await setup();
+    live();
+    await createSkill(paths, { scope: "project", ...release });
+    const o = await patchSkill(paths, {
+      name: release.name,
+      old_string: "metadata:",
+      new_string: "allowed-tools: Bash\nmetadata:",
+    });
+    expect(o).toMatchObject({ status: "error" });
+    expect((o as { error: string }).error).toMatch(/allowed-tools/);
+  });
+
+  it("lists proposals made in the same millisecond in a fixed order", async () => {
+    const paths = await setup();
+    await createSkill(paths, { scope: "project", ...release, name: "b-skill" });
+    await createSkill(paths, { scope: "project", ...release, name: "a-skill" });
+    const ids = (await listPending(paths.skillState)).map((p) => p.id);
+    const again = (await listPending(paths.skillState)).map((p) => p.id);
+    expect(again).toEqual(ids);
+  });
+});

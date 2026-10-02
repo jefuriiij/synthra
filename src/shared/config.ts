@@ -29,6 +29,8 @@ export interface SynthraConfig {
   userChars: number;
   memoryNudgeEvery: number;
   skillApproval: boolean;
+  skillNudgeEvery: number;
+  curator: boolean;
 }
 
 function num(name: string, fallback: number): number {
@@ -107,5 +109,10 @@ export function loadConfig(): SynthraConfig {
     // A skill the AI writes or changes waits for the user's OK in the
     // Learning tab (default), or goes live at once.
     skillApproval: settings.skillApproval,
+    // Tool calls without a skill saved before the Stop hook asks Claude
+    // whether the work was a repeatable workflow. 0 turns it off.
+    skillNudgeEvery: settings.skillNudgeEvery,
+    // The weekly tidy of the skills Synthra wrote (src/learn/curator.ts).
+    curator: settings.curator,
   };
 }

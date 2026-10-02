@@ -57,6 +57,22 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   - `syn .` creates `.claude/skills/` so the first skill shows up without a
     `/reload-skills`.
 
+- **The skill nudge.** After 15 tool calls without a skill saved, the Stop
+  hook asks Claude — in the same chat — whether the work was a repeatable
+  workflow worth saving. When the memory nudge is due too, it is one
+  question. `SYN_SKILL_NUDGE_EVERY` (or Settings) changes it; 0 turns it off.
+
+- **The Curator** tidies the skills Synthra wrote, once a week: unused for 14
+  days → stale, unused for 30 → archived (waiting for your OK, when that is
+  on). Nothing is deleted: a project skill's archive is
+  `.synthra/skills-archive/`, so the team keeps it in git, and any archived
+  skill can be restored. Pinned skills are never touched, and a skill Synthra
+  has never seen used — a teammate's, from git — starts its clock when the
+  Curator first sees it. Use is counted when Claude loads a skill (the
+  PreToolUse hook now also matches `Skill`, observe-only). The Learning tab
+  shows its last and next run, the stale and archived skills, and a Run now
+  button.
+
 - **A Settings tab** in the large panel (and a ⚙ on the sidebar) for the
   memory nudge (on or off, every how many replies), the two memory limits,
   and the Dispatcher's in-chat hints. They are saved in

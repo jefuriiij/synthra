@@ -29,20 +29,23 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `GET` | `/prime` | SessionStart hook, PreCompact hook | Returns priming text + recent stored context, including the "Since you were last here" resume digest and (v0.33) the two knowledge files, `.synthra/MEMORY.md` and `~/.synthra/USER.md`. |
 | `POST` | `/pack` | MCP tools, internal | Returns a context pack for a query. |
 | `POST` | `/log` | Stop hook | Append a token usage entry to `token_log.jsonl`. |
-| `POST` | `/nudge` | Stop hook (v0.33) | `{ stop_hook_active? }` → `{ reason? }`. Every `SYN_MEMORY_NUDGE_EVERY` replies (default 10) without a change to either knowledge file, `reason` asks Claude to save what it learned; the hook passes it on as `{"decision":"block","reason":…}`. A reply made because of a Stop hook neither counts nor is nudged. |
+| `POST` | `/nudge` | Stop hook (v0.33) | `{ stop_hook_active?, tool_calls? }` → `{ reason? }`. Every `SYN_MEMORY_NUDGE_EVERY` replies (default 10) without a change to either knowledge file, `reason` asks Claude to save what it learned; every `SYN_SKILL_NUDGE_EVERY` tool calls (default 15) without a skill saved, it asks whether the work was worth a skill; both at once become one question. The hook passes it on as `{"decision":"block","reason":…}`. A reply made because of a Stop hook neither counts nor is nudged. |
 | `POST` | `/gate` | PreToolUse hook | Decide block/allow for a `Grep`/`Glob` call (THE MOAT). `Bash` calls are also POSTed here but only observed (logged, never blocked). |
 | `POST` | `/route` | UserPromptSubmit hook (the Dispatcher, v0.16.0+) | Scores the prompt against the installed Arsenal; returns `{ hint }`. `hint` is `""` unless `SYN_ROUTE_HINTS=1` — injection has been off by default since v0.21's "shadow mode" (a field window measured a 1.2% follow-rate on injected hints). |
 | `GET` | `/activity` | MCP tool `recent_activity` | Returns recent human-activity events. |
 | `POST` | `/skills/approve` | IDE extension Learning tab (v0.33) | `{ id }` applies a skill proposal — refused when the file changed since it was proposed. `{ ok, error? }`. |
 | `POST` | `/skills/reject` | IDE extension Learning tab (v0.33) | `{ id }` drops a proposal and records the rejection. `{ ok, error? }`. |
 | `GET` | `/skills/blob` | IDE extension diffs (v0.33) | `?sha=<40 hex>` → `{ found, text? }`: a skill's before/after text, kept by content hash in `~/.synthra/skills/blobs/`. |
+| `POST` | `/skills/pin` | IDE extension Curator (v0.33) | `{ path, on }` pins (or unpins) a skill Synthra wrote, so the Curator never touches it. Refused for any other path. |
+| `POST` | `/skills/restore` | IDE extension Curator (v0.33) | `{ archivePath }` moves an archived skill back where it was — refused when something took its place. |
+| `POST` | `/curator/run` | IDE extension "Run now" (v0.33) | Runs the Curator now, ignoring the weekly clock and the on/off setting. `{ ok, run }`. |
 | `GET` | `/settings` | IDE extension Settings tab (v0.33) | `{ path, settings[] }`: every user-facing setting in `~/.synthra/settings.json` with its `value`, `default`, range and `source` (`default` / `file` / `env` — an environment variable wins and locks the control). |
 | `POST` | `/settings` | IDE extension Settings tab (v0.33) | `{ key, value }` sets one setting (`value: null` = back to the default); answers `{ ok, error?, path, settings[] }`. Changing a memory limit rewrites the AGENTS.md block at once. |
 | `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations, plus the same `settings` as `GET /settings`, and `learning` (proposals with their before/after text and a `stale` flag, the last 30 days of skill changes, the skills Synthra wrote). Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
 | `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
 
-18 routes total (verified against `src/server/http.ts`, 2026-10-02).
+21 routes total (verified against `src/server/http.ts`, 2026-10-02).
 
 ## HTTP routes — dashboard server (port 8901, fallback 8901–8910)
 
@@ -88,6 +91,8 @@ Plus the MCP envelope methods: `initialize`, `notifications/initialized`, `tools
 
 ## Hook payloads
 
+The PreToolUse hook matches `Grep|Glob|Bash|Skill` (v0.33): a `Skill` call is observe-only — `/gate` always allows it and counts the use for the Curator when it is a skill Synthra wrote.
+
 (See `src/hooks/scripts/` for the actual scripts — five hook events (`SessionStart`, `PreToolUse`, `PreCompact`, `Stop`, `UserPromptSubmit`) × two platforms (`.ps1`/`.sh`) = ten scripts.)
 
 ### PreToolUse → POST `/gate`
@@ -122,7 +127,7 @@ The hook reads `$hookInput.transcript_path`, parses recent assistant turns out o
 
 Uses an offset file (`<transcript>.stopoffset`) to avoid double-counting on resume.
 
-After `/log` and `/context-update`, the hook POSTs `{ "stop_hook_active": <bool> }` to `/nudge` (v0.33). When the answer has a `reason`, the hook prints `{"decision":"block","reason":"…"}` and exits 0 — Claude Code then keeps Claude for one more step and hands it the reason.
+After `/log` and `/context-update`, the hook POSTs `{ "stop_hook_active": <bool>, "tool_calls": <n> }` to `/nudge` (v0.33) — `tool_calls` counts the `tool_use` blocks since the last Stop, for the skill nudge. When the answer has a `reason`, the hook prints `{"decision":"block","reason":"…"}` and exits 0 — Claude Code then keeps Claude for one more step and hands it the reason.
 
 ### UserPromptSubmit → POST `/route` (the Dispatcher, v0.16.0+)
 

@@ -41,6 +41,14 @@ describe("installHooks", () => {
     expect(Object.keys(cfg.hooks).length).toBeGreaterThan(0);
   });
 
+  // Skill calls reach /gate too, observe-only, so the Curator can count use.
+  it("routes Skill calls through the PreToolUse hook", async () => {
+    const paths = await project();
+    await installHooks(paths);
+    const cfg = JSON.parse(await readFile(paths.claudeSettings, "utf8")) as HooksConfig;
+    expect(cfg.hooks?.PreToolUse?.map((e) => e.matcher)).toEqual(["Grep|Glob|Bash|Skill"]);
+  });
+
   it("keeps the user's permissions and foreign hooks when merging", async () => {
     const paths = await project();
     await mkdir(join(paths.claudeDir), { recursive: true });

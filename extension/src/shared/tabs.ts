@@ -139,11 +139,37 @@ export interface LearningTab {
   pending: ProposalRow[];
   recent: ChangeRow[];
   learned: LearnedRow[];
+  /** Synthra 0.33+. */
+  curator?: CuratorCard;
+}
+
+export interface CuratorCard {
+  enabled: boolean;
+  /** "2 days ago · 1 stale". */
+  lastRun: string;
+  nextRunAt?: number;
+  staleDays: number;
+  archiveDays: number;
+  stale: {
+    name: string;
+    scope: "project" | "global";
+    daysUnused: number;
+    path: string;
+    key: string;
+  }[];
+  archived: {
+    name: string;
+    scope: "project" | "global";
+    at: number;
+    archivePath: string;
+    key: string;
+  }[];
+  pinned: { name: string; scope: "project" | "global"; path: string; key: string }[];
 }
 
 export interface ProposalRow {
   id: string;
-  action: "create" | "patch" | "edit";
+  action: "create" | "patch" | "edit" | "archive";
   name: string;
   scope: "project" | "global";
   description: string;
@@ -157,7 +183,9 @@ export interface ProposalRow {
 
 export interface ChangeRow {
   id: string;
-  action: "create" | "patch" | "edit" | "reject";
+  action: "create" | "patch" | "edit" | "reject" | "archive" | "restore";
+  /** Who did it: the AI, you, or the Curator. */
+  actor: "agent" | "user" | "curator";
   name: string;
   scope: "project" | "global";
   approved: boolean;
@@ -209,7 +237,9 @@ export type HostToWebview =
   /** A setting change the server refused; `error` is "" once one succeeds. */
   | { type: "settingResult"; key: string; error: string }
   /** How an approve/reject went; `error` is "" when it worked. */
-  | { type: "answerResult"; id: string; error: string };
+  | { type: "answerResult"; id: string; error: string }
+  /** How a Curator action (pin, restore, run now) went, by its target. */
+  | { type: "curatorResult"; target: string; error: string };
 
 export type WebviewToHost =
   | { type: "ready" }
@@ -217,4 +247,8 @@ export type WebviewToHost =
   | { type: "refresh" }
   /** value null = back to the default. */
   | { type: "setSetting"; key: string; value: number | boolean | null }
-  | { type: "answer"; id: string; verdict: "approve" | "reject" };
+  | { type: "answer"; id: string; verdict: "approve" | "reject" }
+  /** Curator actions. `path` / `archivePath` come from the view the host sent. */
+  | { type: "pin"; path: string; on: boolean }
+  | { type: "restore"; archivePath: string }
+  | { type: "runCurator" };

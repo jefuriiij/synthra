@@ -44,6 +44,7 @@ import { computeArsenal } from "../dashboard/arsenal.js";
 import pkgJson from "../../package.json" with { type: "json" };
 import { loadConfig } from "../shared/config.js";
 import type { ServerContext } from "./context.js";
+import { noteSkillSaved } from "./routes/nudge.js";
 import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
 import { graphExtCounts } from "./routes/route.js";
 
@@ -1469,44 +1470,57 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
     return textContent(`${head}\n\n${s.text}`);
   }
 
+  // Any skill saved or proposed accounts for the work so far (the skill nudge).
+  const counted = async (o: Promise<Outcome>, verb: string) => {
+    const r = await o;
+    if (r.status !== "error") noteSkillSaved(ctx);
+    return outcomeText(r, verb);
+  };
+
   if (action === "create") {
     if (!scope) {
       return errorContent(
         "skill_manage: create needs a scope — 'project' (only true in this repo) or 'global' (reusable anywhere).",
       );
     }
-    const o = await createSkill(ctx.paths, {
-      scope,
-      name,
-      description: str("description") ?? "",
-      body: str("body") ?? "",
-      ...(reason ? { reason } : {}),
-    });
-    return outcomeText(o, "Skill created");
+    return counted(
+      createSkill(ctx.paths, {
+        scope,
+        name,
+        description: str("description") ?? "",
+        body: str("body") ?? "",
+        ...(reason ? { reason } : {}),
+      }),
+      "Skill created",
+    );
   }
 
   if (action === "patch") {
-    const o = await patchSkill(ctx.paths, {
-      ...(scope ? { scope } : {}),
-      name,
-      old_string: str("old_string") ?? "",
-      new_string: str("new_string") ?? "",
-      ...(reason ? { reason } : {}),
-    });
-    return outcomeText(o, "Skill patched");
+    return counted(
+      patchSkill(ctx.paths, {
+        ...(scope ? { scope } : {}),
+        name,
+        old_string: str("old_string") ?? "",
+        new_string: str("new_string") ?? "",
+        ...(reason ? { reason } : {}),
+      }),
+      "Skill patched",
+    );
   }
 
   if (action === "edit") {
     const description = str("description");
     const body = str("body");
-    const o = await editSkill(ctx.paths, {
-      ...(scope ? { scope } : {}),
-      name,
-      ...(description !== undefined ? { description } : {}),
-      ...(body !== undefined ? { body } : {}),
-      ...(reason ? { reason } : {}),
-    });
-    return outcomeText(o, "Skill rewritten");
+    return counted(
+      editSkill(ctx.paths, {
+        ...(scope ? { scope } : {}),
+        name,
+        ...(description !== undefined ? { description } : {}),
+        ...(body !== undefined ? { body } : {}),
+        ...(reason ? { reason } : {}),
+      }),
+      "Skill rewritten",
+    );
   }
 
   return errorContent("skill_manage: `action` must be list, view, create, patch or edit.");

@@ -19,6 +19,8 @@ export type SettingKey =
   | "memoryChars"
   | "userChars"
   | "skillApproval"
+  | "skillNudgeEvery"
+  | "curator"
   | "routeHints";
 
 interface Base {
@@ -80,6 +82,27 @@ export const SETTINGS: readonly SettingDef[] = [
     help: "When the AI writes or changes a skill, it waits in the Learning tab until you approve it. Turn this off to let skills go live at once; every change is still recorded and can be seen as a diff.",
   },
   {
+    key: "skillNudgeEvery",
+    env: "SYN_SKILL_NUDGE_EVERY",
+    group: "Learning",
+    type: "number",
+    default: 15,
+    min: 0,
+    max: 200,
+    unit: "tool calls",
+    label: "Skill nudge",
+    help: "After this much work with no skill saved, Claude takes one short extra step to ask whether it worked out a repeatable workflow worth saving as a skill. 0 turns the nudge off.",
+  },
+  {
+    key: "curator",
+    env: "SYN_CURATOR",
+    group: "Learning",
+    type: "boolean",
+    default: true,
+    label: "Curator",
+    help: "Once a week, tidies the skills Synthra wrote: one unused for 14 days is marked stale, one unused for 30 is moved to an archive (waiting for your OK first, when that is on). Nothing is deleted, pinned skills are never touched, and an archived skill can be restored.",
+  },
+  {
     key: "routeHints",
     env: "SYN_ROUTE_HINTS",
     group: "Dispatcher",
@@ -91,7 +114,7 @@ export const SETTINGS: readonly SettingDef[] = [
 ];
 
 export type SettingValues = {
-  [K in SettingKey]: K extends "routeHints" | "skillApproval" ? boolean : number;
+  [K in SettingKey]: K extends "routeHints" | "skillApproval" | "curator" ? boolean : number;
 };
 export type SettingSource = "default" | "file" | "env";
 

@@ -10,8 +10,10 @@ import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js
 import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
 import { runDoctorChecks, worstStatus } from "../cli/doctor-command.js";
 import { scanProject } from "../cli/scan-command.js";
+import { checkLocalJsonPost } from "../dashboard/origin-guard.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
+import { runCurator } from "../learn/curator.js";
 import { LearnRuntime } from "../learn/runtime.js";
 import { loadConfig } from "../shared/config.js";
 import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
@@ -25,7 +27,13 @@ import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
 import { handleGate } from "./routes/gate.js";
-import { handleAnswer, handleBlob } from "./routes/learning.js";
+import {
+  handleAnswer,
+  handleBlob,
+  handleCuratorRun,
+  handlePin,
+  handleRestore,
+} from "./routes/learning.js";
 import { handleLog } from "./routes/log.js";
 import { handleNudge } from "./routes/nudge.js";
 import { handlePack } from "./routes/pack.js";
@@ -110,6 +118,26 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     if (!isAllowedHost(host, port, loadConfig().allowedHosts)) {
       log.warn(`refused request with Host: ${host ?? "(none)"}`);
       return c.json({ error: forbiddenHostMessage(host) }, 403);
+    }
+    await next();
+  });
+
+  // Every POST changes something (a skill, a setting, the memory files, the
+  // Moat's log), so none may come from a web page. The Host check above stops
+  // DNS rebinding, but a page on any site can still fire a "simple" no-cors
+  // POST at 127.0.0.1 — text/plain body, its own Origin — and the server would
+  // act on it: turn approval off, then plant a global skill through /mcp. A
+  // browser can only send application/json cross-site after a CORS preflight
+  // this server never answers, and it always names its Origin. The hooks
+  // (curl / Invoke-RestMethod), the IDE extension and Claude Code's MCP client
+  // all send application/json with no browser Origin, so they pass.
+  app.use("*", async (c, next) => {
+    if (c.req.method === "POST") {
+      const guard = checkLocalJsonPost(c.req.header("content-type"), c.req.header("origin"), port);
+      if (!guard.ok) {
+        log.warn(`refused POST ${c.req.path}: ${guard.error}`);
+        return c.json({ error: guard.error }, guard.status);
+      }
     }
     await next();
   });
@@ -209,6 +237,16 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     return c.json(await handleAnswer("reject", body, ctx));
   });
   app.get("/skills/blob", async (c) => c.json(await handleBlob(c.req.query("sha"), ctx)));
+  // The Curator card: pin, restore, run now.
+  app.post("/skills/pin", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handlePin(body, ctx));
+  });
+  app.post("/skills/restore", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleRestore(body, ctx));
+  });
+  app.post("/curator/run", async (c) => c.json(await handleCuratorRun(ctx)));
 
   // The IDE's Settings tab: ~/.synthra/settings.json, with where each value
   // comes from. POST {key, value} sets one (value null = back to default).
@@ -230,6 +268,10 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
 
   return app;
 }
+
+/** The Curator's first look after start, then how often it checks again. */
+const CURATOR_FIRST_MS = 60_000;
+const CURATOR_EVERY_MS = 6 * 60 * 60 * 1000;
 
 /** How many ports to try when another server wins the race for the one we
  *  picked. Each loss means someone else just bound it, so the next free port is
@@ -371,12 +413,27 @@ export async function startServer(
     log.warn(`git watcher failed to start: ${(err as Error).message}`);
   }
 
+  // The Curator: a weekly tidy of the skills Synthra wrote. Checked a little
+  // after start (never on the startup path) and every few hours while the
+  // server runs; runCurator itself skips until a week has passed. Timers are
+  // unref'd so they never keep the process alive.
+  const curate = () =>
+    void runCurator(paths).catch((err) =>
+      log.warn(`curator: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  const curatorFirst = setTimeout(curate, CURATOR_FIRST_MS);
+  const curatorEvery = setInterval(curate, CURATOR_EVERY_MS);
+  curatorFirst.unref();
+  curatorEvery.unref();
+
   const url = `http://127.0.0.1:${port}`;
 
   return {
     port,
     url,
     async stop() {
+      clearTimeout(curatorFirst);
+      clearInterval(curatorEvery);
       reindexer?.stop();
       await fileWatcher.stop().catch(() => undefined);
       await gitWatcher.stop().catch(() => undefined);

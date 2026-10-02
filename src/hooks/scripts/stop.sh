@@ -67,6 +67,12 @@ DELEG=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
           session_id: $s }
     ' 2>/dev/null | jq -s '.' 2>/dev/null)
 DELEG=${DELEG:-[]}
+
+# Tool calls in this window, for the skill nudge (v0.33): every tool_use block.
+TOOLS=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+  | jq -c '(.message.content // []) | if type == "array" then .[] else empty end | select(.type == "tool_use") | 1' 2>/dev/null \
+  | wc -l | tr -d ' ')
+case "$TOOLS" in ''|*[!0-9]*) TOOLS=0 ;; esac
 DELEG_N=$(printf '%s' "$DELEG" | jq 'length' 2>/dev/null)
 DELEG_N=${DELEG_N:-0}
 
@@ -91,13 +97,14 @@ curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
   --data "$(jq -nc --arg t "$TRANSCRIPT" '{transcript_path:$t}')" \
   "http://127.0.0.1:$PORT/context-update" >/dev/null 2>&1
 
-# Memory nudge (v0.33): every N replies without a change to MEMORY.md/USER.md,
-# the server answers with a reason, and this hook asks Claude Code to keep
-# Claude for one more step ({"decision":"block"}). stop_hook_active is passed
-# through so the step Claude takes because of a nudge is never nudged again.
+# Memory and skill nudges (v0.33): every N replies without a change to
+# MEMORY.md/USER.md, or N tool calls without a skill saved, the server answers
+# with a reason, and this hook asks Claude Code to keep Claude for one more
+# step ({"decision":"block"}). stop_hook_active is passed through so the step
+# Claude takes because of a nudge is never nudged again.
 ACTIVE=$(printf '%s' "$INPUT" | jq -r 'if .stop_hook_active == true then "true" else "false" end' 2>/dev/null)
 REASON=$(curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "{\"stop_hook_active\":${ACTIVE:-false}}" \
+  --data "{\"stop_hook_active\":${ACTIVE:-false},\"tool_calls\":${TOOLS:-0}}" \
   "http://127.0.0.1:$PORT/nudge" 2>/dev/null | jq -r '.reason // empty' 2>/dev/null)
 if [ -n "$REASON" ]; then
   jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'

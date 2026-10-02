@@ -16,7 +16,17 @@ import { loadConfig } from "../src/shared/config.js";
 import { resolvePaths } from "../src/shared/paths.js";
 import { resolveSettings, settingValues, writeSetting } from "../src/shared/settings.js";
 
-const ENV = ["SYN_SETTINGS", "SYN_MEMORY_NUDGE_EVERY", "SYN_MEMORY_CHARS", "SYN_ROUTE_HINTS"];
+// Every override a developer might have exported, or the defaults below fail.
+const ENV = [
+  "SYN_SETTINGS",
+  "SYN_MEMORY_NUDGE_EVERY",
+  "SYN_MEMORY_CHARS",
+  "SYN_USER_CHARS",
+  "SYN_SKILL_APPROVAL",
+  "SYN_SKILL_NUDGE_EVERY",
+  "SYN_CURATOR",
+  "SYN_ROUTE_HINTS",
+];
 const saved = Object.fromEntries(ENV.map((k) => [k, process.env[k]]));
 afterEach(() => {
   for (const k of ENV) {
@@ -43,6 +53,8 @@ describe("settings file", () => {
       memoryChars: 3500,
       userChars: 2000,
       skillApproval: true,
+      skillNudgeEvery: 15,
+      curator: true,
       routeHints: false,
     });
     expect(source("memoryChars")).toBe("default");
@@ -120,6 +132,8 @@ describe("settings routes", () => {
       ["memoryChars", 3500, "default"],
       ["userChars", 2000, "default"],
       ["skillApproval", true, "default"],
+      ["skillNudgeEvery", 15, "default"],
+      ["curator", true, "default"],
       ["routeHints", true, "env"],
     ]);
     expect(v.settings[0]).toMatchObject({ type: "number", min: 0, max: 100, unit: "replies" });
@@ -140,7 +154,7 @@ describe("settings routes", () => {
     const r = await handleSettingsPost({ key: "memoryChars", value: "lots" }, await ctx());
     expect(r.ok).toBe(false);
     expect(r.error).toContain("number from 500 to 20000");
-    expect(r.settings).toHaveLength(5);
+    expect(r.settings).toHaveLength(7);
   });
 
   it("is served over HTTP, and /panels carries it too", async () => {
@@ -162,7 +176,7 @@ describe("settings routes", () => {
       const panels = (await (await fetch(`${base}/panels`)).json()) as {
         settings?: { settings: unknown[] };
       };
-      expect(panels.settings?.settings).toHaveLength(5);
+      expect(panels.settings?.settings).toHaveLength(7);
     } finally {
       await handle.stop();
     }

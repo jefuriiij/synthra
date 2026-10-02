@@ -28,6 +28,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   appendFile,
+  cp,
   mkdir,
   readFile,
   readdir,
@@ -41,9 +42,18 @@ import { basename, dirname, join } from "node:path";
 import { readFrontmatter } from "../dashboard/arsenal.js";
 import { INVISIBLE, SECRETS } from "../memory/knowledge.js";
 import { loadConfig } from "../shared/config.js";
+import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 
 export type SkillScope = "project" | "global";
+
+/** The frontmatter a Synthra skill has, and all it may have. */
+const FRONTMATTER_KEYS = new Set([
+  "name",
+  "description",
+  "metadata.synthra",
+  "metadata.synthra-origin",
+]);
 
 export const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const DESCRIPTION_MAX = 1024;
@@ -227,7 +237,8 @@ export type SkillAction = "create" | "patch" | "edit";
 export interface Proposal {
   id: string;
   ts: string;
-  action: SkillAction;
+  /** "archive" comes from the Curator: move the skill out of use. */
+  action: SkillAction | "archive";
   scope: SkillScope;
   name: string;
   path: string;
@@ -238,14 +249,16 @@ export interface Proposal {
   after: string;
   /** What the AI said the change is for. */
   reason?: string;
+  /** archive: the folder the skill moves to. */
+  archiveTo?: string;
 }
 
 export interface SkillEvent {
   id: string;
   ts: string;
-  action: SkillAction | "reject";
-  /** Who made the change. An approved proposal is still the agent's. */
-  actor: "agent" | "user";
+  action: SkillAction | "reject" | "archive" | "restore";
+  /** Who made the change. An approved proposal is still its author's. */
+  actor: "agent" | "user" | "curator";
   /** Set when the user approved it (approval on). */
   approved?: boolean;
   scope: SkillScope;
@@ -255,6 +268,11 @@ export interface SkillEvent {
   beforeSha?: string;
   afterSha?: string;
   reason?: string;
+  /** archive/restore: where the archived copy is. */
+  archivePath?: string;
+  /** reject: what the rejected proposal would have done. Rejecting an
+   *  archive means "keep it", which the Curator counts as activity. */
+  rejected?: SkillAction | "archive";
 }
 
 const sha = (text: string) => createHash("sha1").update(text).digest("hex");
@@ -314,7 +332,8 @@ export async function listPending(state: string): Promise<Proposal[]> {
       // A torn proposal is skipped, never applied.
     }
   }
-  return out.sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  // Oldest first; two made in the same millisecond keep a fixed order by id.
+  return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
 }
 
 async function writeSkillFile(path: string, text: string): Promise<void> {
@@ -324,7 +343,80 @@ async function writeSkillFile(path: string, text: string): Promise<void> {
   await rename(tmp, path);
 }
 
+/**
+ * Move a folder. rename() first. Only when that can't cross a filesystem
+ * boundary (EXDEV — ~/.claude on its own volume, a project on another disk)
+ * does it copy instead:
+ *   - a copy that fails is removed again, and the original is untouched;
+ *   - the original is removed only once the copy is complete (its SKILL.md is
+ *     there); if removing it fails after that, the move still counts as done,
+ *     so the caller records the archive and the skill stays restorable —
+ *     better a leftover folder than a skill in neither place.
+ * A locked file (EPERM/EBUSY on Windows) is not a reason to copy: deleting
+ * the original would stop halfway on that same lock. It fails cleanly, as a
+ * rename does, and the next pass tries again.
+ */
+export async function moveDir(
+  from: string,
+  to: string,
+  /** Tests pass a rename that fails, to reach the copy path on one disk. */
+  tryRename: (a: string, b: string) => Promise<void> = rename,
+): Promise<void> {
+  try {
+    await tryRename(from, to);
+    return;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+  }
+  try {
+    await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+    await stat(join(to, "SKILL.md"));
+  } catch (err) {
+    await rm(to, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+  await rm(from, { recursive: true, force: true }).catch((err) =>
+    log.warn(`moved ${from} by copy, but couldn't remove the original: ${(err as Error).message}`),
+  );
+}
+
+/** A folder name that isn't taken: `name`, else `name-2`, `name-3`, … */
+async function freeDir(dir: string): Promise<string> {
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? dir : `${dir}-${n}`;
+    try {
+      await stat(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+}
+
+/** Move a skill's folder into the archive and record it. */
+async function archive(state: string, p: Proposal, approved: boolean): Promise<SkillEvent> {
+  const to = await freeDir(p.archiveTo ?? join(state, "archive", p.name));
+  await mkdir(dirname(to), { recursive: true });
+  await moveDir(dirname(p.path), to);
+  const e: SkillEvent = {
+    id: p.id,
+    ts: new Date().toISOString(),
+    action: "archive",
+    actor: "curator",
+    ...(approved ? { approved: true } : {}),
+    scope: p.scope,
+    name: p.name,
+    path: p.path,
+    project: p.project,
+    ...(p.before !== null ? { beforeSha: await saveBlob(state, p.before) } : {}),
+    ...(p.reason ? { reason: p.reason } : {}),
+    archivePath: to,
+  };
+  await record(state, e);
+  return e;
+}
+
 async function apply(state: string, p: Proposal, approved: boolean): Promise<SkillEvent> {
+  if (p.action === "archive") return archive(state, p, approved);
   await writeSkillFile(p.path, p.after);
   markViewed(p.path);
   const e: SkillEvent = {
@@ -352,12 +444,12 @@ export type Outcome =
   | { status: "pending"; proposal: Proposal }
   | { status: "error"; error: string };
 
-function newId(): string {
+export function newId(): string {
   return `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
 }
 
 /** Apply now, or park as a proposal, per the "New skills wait for my OK" setting. */
-async function submit(paths: SynthraPaths, p: Proposal): Promise<Outcome> {
+export async function submit(paths: SynthraPaths, p: Proposal): Promise<Outcome> {
   if (loadConfig().skillApproval) {
     await mkdir(pendingDir(paths.skillState), { recursive: true });
     await writeFile(
@@ -464,8 +556,8 @@ export async function patchSkill(paths: SynthraPaths, input: PatchInput): Promis
       status: "error",
       error: `old_string appears ${hits} times; include more of the surrounding text so it is unique.`,
     };
-  const after = s.text.replace(input.old_string, () => input.new_string);
-  const p = parseSkill(after);
+  const patched = s.text.replace(input.old_string, () => input.new_string);
+  const p = parseSkill(patched);
   if (!p.learned || p.name !== s.name) {
     return {
       status: "error",
@@ -473,8 +565,25 @@ export async function patchSkill(paths: SynthraPaths, input: PatchInput): Promis
         "The patch would change the skill's name or remove Synthra's mark. Change the body or the description only.",
     };
   }
-  const bad = checkDraft({ name: s.name, description: p.description ?? "", body: p.body });
+  // Only Synthra's own frontmatter keys. Anything else — allowed-tools, hooks,
+  // model — changes what the skill may do, and would hide in a diff as one line.
+  const extra = Object.keys(readFrontmatter(patched).fm).filter((k) => !FRONTMATTER_KEYS.has(k));
+  if (extra.length) {
+    return {
+      status: "error",
+      error: `A patch can't add frontmatter (${extra.join(", ")}). Change the body or the description only.`,
+    };
+  }
+  const draft: SkillDraft = {
+    name: s.name,
+    description: (p.description ?? "").trim(),
+    body: p.body,
+    ...(p.origin ? { origin: p.origin } : {}),
+  };
+  const bad = checkDraft(draft);
   if (bad) return { status: "error", error: bad };
+  // Re-rendered, so the frontmatter is always Synthra's canonical form.
+  const after = renderSkill(draft);
   return submit(paths, {
     id: newId(),
     ts: new Date().toISOString(),
@@ -572,11 +681,83 @@ export async function rejectProposal(state: string, id: string): Promise<Answer>
     ts: new Date().toISOString(),
     action: "reject",
     actor: "user",
+    rejected: p.action,
     scope: p.scope,
     name: p.name,
     path: p.path,
     project: p.project,
     ...(p.reason ? { reason: p.reason } : {}),
+  };
+  await record(state, event);
+  return { ok: true, event };
+}
+
+// ─── archive and restore (the Curator) ──────────────────────────────────────
+
+/** Where an archived skill goes: inside the project for a project skill (the
+ *  team keeps it in git), under ~/.synthra/skills/archive for a global one. */
+export function archiveDirFor(paths: SynthraPaths, scope: SkillScope, name: string): string {
+  return scope === "project"
+    ? join(paths.contextDir, "skills-archive", name)
+    : join(paths.skillState, "archive", name);
+}
+
+export interface ArchivedSkill {
+  name: string;
+  scope: SkillScope;
+  /** Where it lived, and goes back to on restore. */
+  path: string;
+  archivePath: string;
+  archivedAt: string;
+  project: string;
+}
+
+/** Archived skills whose copy is still there and that weren't restored since. */
+export async function listArchived(state: string): Promise<ArchivedSkill[]> {
+  const latest = new Map<string, SkillEvent>();
+  for (const e of await readLedger(state)) {
+    if ((e.action === "archive" || e.action === "restore") && e.archivePath)
+      latest.set(e.archivePath, e);
+  }
+  const out: ArchivedSkill[] = [];
+  for (const e of latest.values()) {
+    if (e.action !== "archive" || !e.archivePath) continue;
+    if ((await readText(join(e.archivePath, "SKILL.md"))) === null) continue;
+    out.push({
+      name: e.name,
+      scope: e.scope,
+      path: e.path,
+      archivePath: e.archivePath,
+      archivedAt: e.ts,
+      project: e.project,
+    });
+  }
+  return out.sort((a, b) => (a.archivedAt < b.archivedAt ? 1 : -1));
+}
+
+/** Put an archived skill back where it was. Refused when something took its place. */
+export async function restoreSkill(state: string, archivePath: string): Promise<Answer> {
+  const a = (await listArchived(state)).find((x) => x.archivePath === archivePath);
+  if (!a) return { ok: false, error: "That skill isn't in the archive any more." };
+  if ((await readText(a.path)) !== null) {
+    return {
+      ok: false,
+      error: `A skill named "${a.name}" is back in its place already; rename one of them first.`,
+    };
+  }
+  await mkdir(dirname(dirname(a.path)), { recursive: true });
+  await moveDir(a.archivePath, dirname(a.path));
+  markViewed(a.path);
+  const event: SkillEvent = {
+    id: newId(),
+    ts: new Date().toISOString(),
+    action: "restore",
+    actor: "user",
+    scope: a.scope,
+    name: a.name,
+    path: a.path,
+    project: a.project,
+    archivePath: a.archivePath,
   };
   await record(state, event);
   return { ok: true, event };

@@ -46,9 +46,10 @@ const SCRIPTS: ScriptDef[] = [
   {
     event: "PreToolUse",
     // Grep/Glob are gated (blockable); Bash is observe-only (the terminal
-    // bypass — see src/server/routes/bash-observe.ts). The shared hook forwards
-    // the tool call to /gate, which decides per-tool.
-    matcher: "Grep|Glob|Bash",
+    // bypass — see src/server/routes/bash-observe.ts); Skill is observe-only
+    // too (the Curator's usage count). The shared hook forwards the tool call
+    // to /gate, which decides per-tool.
+    matcher: "Grep|Glob|Bash|Skill",
     baseName: "synthra-pre-tool-use",
     ps1: preToolUsePs1,
     sh: preToolUseSh,

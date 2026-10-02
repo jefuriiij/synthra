@@ -107,7 +107,10 @@ describe("POST /skills/approve and /skills/reject", () => {
     const paths = await setup();
     await createSkill(paths, { scope: "project", ...skill });
     await createSkill(paths, { scope: "global", ...skill, name: "other-skill" });
-    const [a, b] = await listPending(paths.skillState);
+    // By name: two proposals made in the same millisecond have no meaningful order.
+    const pending = await listPending(paths.skillState);
+    const a = pending.find((p) => p.name === skill.name);
+    const b = pending.find((p) => p.name === "other-skill");
     const handle = await startServer(paths, { version: "test" });
     try {
       const base = `http://127.0.0.1:${handle.port}`;
@@ -244,7 +247,91 @@ describe("the Learning views", () => {
     });
   });
 
+  it("shows the Curator: its last run, stale and archived skills, with their buttons", () => {
+    const withCurator: PanelsPayload = {
+      ...payload,
+      learning: {
+        ...learning,
+        curator: {
+          enabled: true,
+          lastRun: {
+            ranAt: "2026-09-30T12:00:00.000Z",
+            checked: 3,
+            stale: 1,
+            proposed: 0,
+            archived: 1,
+          },
+          nextRunAt: "2026-10-07T12:00:00.000Z",
+          staleDays: 14,
+          archiveDays: 30,
+          stale: [
+            {
+              name: "old-one",
+              scope: "project",
+              path: "/p/.claude/skills/old-one/SKILL.md",
+              daysUnused: 20,
+              pinned: false,
+            },
+          ],
+          pinned: [{ name: "keeper", scope: "global", path: "/h/.claude/skills/keeper/SKILL.md" }],
+          archived: [
+            {
+              name: "gone",
+              scope: "global",
+              path: "/h/.claude/skills/gone/SKILL.md",
+              archivePath: "/h/.synthra/skills/archive/gone",
+              archivedAt: "2026-09-30T12:00:00.000Z",
+              project: "/p",
+            },
+          ],
+        },
+      },
+    };
+    const v = learningView(withCurator, now);
+    const cur = v.nodes.find((n) => n.id === "learn:curator");
+    expect(cur?.description).toBe("on · weekly · last run 2 days ago · 1 stale, 1 archived");
+    expect(cur?.contextValue).toBe("synthraCurator");
+    expect(cur?.children?.map((n) => [n.label, n.contextValue])).toEqual([
+      ["old-one", "synthraStaleSkill"],
+      ["gone", "synthraArchivedSkill"],
+      ["keeper", "synthraPinnedSkill"],
+    ]);
+    expect(cur?.children?.[1]?.id).toBe("learn:archived:/h/.synthra/skills/archive/gone");
+
+    const { view, targets } = buildTabs("/p", withCurator, now);
+    const card = view.learning!.curator!;
+    expect(card).toMatchObject({
+      enabled: true,
+      lastRun: "2 days ago · 1 stale, 1 archived",
+      staleDays: 14,
+    });
+    expect(targets.get(card.archived[0]!.key)).toEqual({
+      kind: "file",
+      path: join("/h/.synthra/skills/archive/gone", "SKILL.md"),
+    });
+  });
+
   it("says when the server can't learn yet", () => {
     expect(learningView({ version: 1 } as unknown as PanelsPayload, now).message).toMatch(/0\.33/);
+  });
+});
+
+describe("one project's Learning", () => {
+  it("shows its own and global proposals, never another project's", async () => {
+    const a = await setup();
+    const b = {
+      ...resolvePaths(join(a.projectRoot, "..", "other")),
+      globalSkillsDir: a.globalSkillsDir,
+      skillState: a.skillState,
+    };
+    await mkdir(b.projectRoot, { recursive: true });
+    await createSkill(a, { scope: "project", ...skill, name: "only-in-a" });
+    await createSkill(a, { scope: "global", ...skill, name: "everywhere" });
+    const seen = await handlePanels(ctxOf(b));
+    expect(seen.learning?.pending.map((p) => p.name)).toEqual(["everywhere"]);
+    // And it can't be approved from the wrong project.
+    const [mine] = (await listPending(a.skillState)).filter((p) => p.name === "only-in-a");
+    const { handleAnswer } = await import("../src/server/routes/learning.js");
+    expect(await handleAnswer("approve", { id: mine!.id }, ctxOf(b))).toMatchObject({ ok: false });
   });
 });

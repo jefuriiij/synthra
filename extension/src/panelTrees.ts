@@ -96,7 +96,7 @@ export interface PanelLearning {
   pending: {
     id: string;
     ts: string;
-    action: "create" | "patch" | "edit";
+    action: "create" | "patch" | "edit" | "archive";
     scope: SkillScope;
     name: string;
     path: string;
@@ -109,8 +109,8 @@ export interface PanelLearning {
   recent: {
     id: string;
     ts: string;
-    action: "create" | "patch" | "edit" | "reject";
-    actor: "agent" | "user";
+    action: "create" | "patch" | "edit" | "reject" | "archive" | "restore";
+    actor: "agent" | "user" | "curator";
     approved?: boolean;
     scope: SkillScope;
     name: string;
@@ -118,6 +118,7 @@ export interface PanelLearning {
     reason?: string;
     beforeSha?: string;
     afterSha?: string;
+    archivePath?: string;
   }[];
   learned: {
     name: string;
@@ -125,6 +126,26 @@ export interface PanelLearning {
     path: string;
     description: string;
     origin?: string;
+  }[];
+  /** Synthra 0.33+ (the Curator). */
+  curator?: PanelCurator;
+}
+
+export interface PanelCurator {
+  enabled: boolean;
+  lastRun?: { ranAt: string; checked: number; stale: number; proposed: number; archived: number };
+  nextRunAt?: string;
+  staleDays: number;
+  archiveDays: number;
+  stale: { name: string; scope: SkillScope; path: string; daysUnused: number; pinned: boolean }[];
+  pinned: { name: string; scope: SkillScope; path: string }[];
+  archived: {
+    name: string;
+    scope: SkillScope;
+    path: string;
+    archivePath: string;
+    archivedAt: string;
+    project: string;
   }[];
 }
 
@@ -548,7 +569,21 @@ export const ACTION_LABEL: Record<string, string> = {
   patch: "Improved",
   edit: "Rewrote",
   reject: "Rejected",
+  archive: "Archive",
+  restore: "Restored",
 };
+
+/** "2 days ago · 1 stale", for the Curator's last run. */
+export function curatorSummary(c: PanelCurator, now: number): string {
+  if (!c.lastRun) return "not run yet";
+  const r = c.lastRun;
+  const parts = [
+    r.stale ? `${r.stale} stale` : "",
+    r.proposed ? `${r.proposed} to archive (waiting for you)` : "",
+    r.archived ? `${r.archived} archived` : "",
+  ].filter(Boolean);
+  return `${relativeTime(r.ranAt, now)} · ${parts.length ? parts.join(", ") : "nothing to tidy"}`;
+}
 
 /** A pending proposal's diff: its own before/after text. */
 export function proposalDiff(p: PanelLearning["pending"][number]): PanelTarget {
@@ -567,7 +602,11 @@ export function eventTarget(
   now: number,
 ): PanelTarget | undefined {
   if (e.action === "reject") return undefined;
-  if (!e.afterSha) return { kind: "file", path: e.path };
+  // An archived skill's text is in the archive; a restored one is back in place.
+  if (e.action === "archive") {
+    return e.archivePath ? { kind: "file", path: `${e.archivePath}/SKILL.md` } : undefined;
+  }
+  if (e.action === "restore" || !e.afterSha) return { kind: "file", path: e.path };
   return {
     kind: "diff",
     title: `${e.name}: ${ACTION_LABEL[e.action]?.toLowerCase()} ${relativeTime(e.ts, now)}`,
@@ -606,9 +645,14 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
         tooltip: [x.description, x.reason ? `Why: ${x.reason}` : "", "Click to see the change."]
           .filter(Boolean)
           .join("\n\n"),
-        icon: x.stale ? { id: "warning", color: "editorWarning.foreground" } : { id: "sparkle" },
+        icon: x.stale
+          ? { id: "warning", color: "editorWarning.foreground" }
+          : x.action === "archive"
+            ? { id: "archive" }
+            : { id: "sparkle" },
         open: proposalDiff(x),
-        contextValue: "synthraProposal",
+        // Its own tag, so approving says "archived" rather than "is live".
+        contextValue: x.action === "archive" ? "synthraArchiveProposal" : "synthraProposal",
       })),
     });
   }
@@ -635,9 +679,11 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
         icon:
           e.action === "reject"
             ? { id: "close" }
-            : e.action === "create"
-              ? { id: "sparkle" }
-              : { id: "edit" },
+            : e.action === "archive"
+              ? { id: "archive" }
+              : e.action === "create"
+                ? { id: "sparkle" }
+                : { id: "edit" },
         ...(target ? { open: target } : {}),
       };
     }),
@@ -659,6 +705,48 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
       open: { kind: "file", path: s.path },
     })),
   });
+  const c = l.curator;
+  if (c) {
+    nodes.push({
+      id: "learn:curator",
+      label: "Curator",
+      description: c.enabled
+        ? `on · weekly · ${c.lastRun ? `last run ${curatorSummary(c, now)}` : "not run yet"}`
+        : "off",
+      tooltip: `Tidies the skills Synthra wrote: unused ${c.staleDays} days → stale, unused ${c.archiveDays} days → archived. Nothing is deleted; pinned skills are never touched. Turn it on or off in Settings.`,
+      icon: { id: "wand" },
+      expanded: c.stale.length > 0,
+      contextValue: "synthraCurator",
+      children: [
+        ...c.stale.map((s) => ({
+          id: `learn:stale:${s.path}`,
+          label: s.name,
+          description: `stale · unused ${s.daysUnused} days · ${SCOPE_LABEL[s.scope]}`,
+          tooltip: "Not used for a while. Pin it to keep it, or let the Curator archive it later.",
+          icon: { id: "watch" },
+          open: { kind: "file", path: s.path } as const,
+          contextValue: "synthraStaleSkill",
+        })),
+        ...c.archived.map((a) => ({
+          id: `learn:archived:${a.archivePath}`,
+          label: a.name,
+          description: `archived ${relativeTime(a.archivedAt, now)} · ${SCOPE_LABEL[a.scope]}`,
+          tooltip: `In the archive at ${a.archivePath}. Restore puts it back where it was.`,
+          icon: { id: "archive" },
+          open: { kind: "file", path: `${a.archivePath}/SKILL.md` } as const,
+          contextValue: "synthraArchivedSkill",
+        })),
+        ...c.pinned.map((p) => ({
+          id: `learn:pinned:${p.path}`,
+          label: p.name,
+          description: `pinned · ${SCOPE_LABEL[p.scope]}`,
+          icon: { id: "pinned" },
+          open: { kind: "file", path: p.path } as const,
+          contextValue: "synthraPinnedSkill",
+        })),
+      ],
+    });
+  }
   return {
     nodes,
     ...(l.pending.length === 0 && l.recent.length === 0 && l.learned.length === 0

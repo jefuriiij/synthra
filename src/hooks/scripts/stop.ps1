@@ -33,6 +33,7 @@ $sessionId = [IO.Path]::GetFileNameWithoutExtension($transcript)
 $lines = Get-Content -Path $transcript
 $inT = 0; $outT = 0; $cc = 0; $cr = 0; $model = ""
 $delegations = New-Object System.Collections.ArrayList
+$toolCalls = 0
 $lineNum = 0
 foreach ($line in $lines) {
     $lineNum++
@@ -43,6 +44,7 @@ foreach ($line in $lines) {
     # Subagent delegations: assistant content blocks calling Task/Agent.
     foreach ($blk in @($e.message.content)) {
         if (-not $blk -or $blk.type -ne "tool_use") { continue }
+        $toolCalls++
         if ($blk.name -ne "Task" -and $blk.name -ne "Agent") { continue }
         $ts = $e.timestamp
         if ($ts -is [DateTime]) { $ts = $ts.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
@@ -97,11 +99,15 @@ try {
     # silent
 }
 
-# Memory nudge (v0.33): every N replies without a change to MEMORY.md/USER.md,
-# the server answers with a reason, and this hook asks Claude Code to keep
-# Claude for one more step ({"decision":"block"}). stop_hook_active is passed
-# through so the step Claude takes because of a nudge is never nudged again.
-$nudgePayload = @{ stop_hook_active = ($hookInput.stop_hook_active -eq $true) } | ConvertTo-Json -Compress
+# Memory and skill nudges (v0.33): every N replies without a change to
+# MEMORY.md/USER.md, or N tool calls without a skill saved, the server answers
+# with a reason, and this hook asks Claude Code to keep Claude for one more
+# step ({"decision":"block"}). stop_hook_active is passed through so the step
+# Claude takes because of a nudge is never nudged again.
+$nudgePayload = @{
+    stop_hook_active = ($hookInput.stop_hook_active -eq $true)
+    tool_calls       = $toolCalls
+} | ConvertTo-Json -Compress
 try {
     $nudge = Invoke-RestMethod -Uri "http://127.0.0.1:$port/nudge" -Method POST `
         -Body $nudgePayload -ContentType "application/json" -TimeoutSec 3

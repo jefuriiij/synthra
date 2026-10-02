@@ -18,6 +18,7 @@ import { tokenizeQuery } from "../../graph/rank.js";
 import type { GraphSchema, SymbolNode } from "../../graph/types.js";
 import { loadConfig } from "../../shared/config.js";
 import type { ServerContext } from "../context.js";
+import { recordUseByName } from "../../learn/curator.js";
 import { observeBash } from "./bash-observe.js";
 import { looksLikeNonSymbolQuery } from "./query-heuristics.js";
 
@@ -230,6 +231,18 @@ export function buildBlockHint(
   return `${header}\n${parts.join("\n")}\n${footer}`;
 }
 
+/**
+ * The skill a Skill call loads, if it is one Synthra wrote — then count the
+ * use. Claude Code doesn't document the input's field name, so the likely
+ * ones are tried. A namespaced name (`plugin:skill`) is a plugin's, never
+ * Synthra's.
+ */
+async function noteSkillUse(input: unknown, ctx: ServerContext): Promise<void> {
+  const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const raw = [o.skill, o.command, o.name].find((v): v is string => typeof v === "string");
+  if (raw) await recordUseByName(ctx.paths, raw);
+}
+
 export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<GateResponse> {
   if (!req?.tool_name || typeof req.tool_name !== "string") {
     return { decision: "allow", reason: "no tool_name" };
@@ -242,6 +255,13 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
       req.tool_input && typeof req.tool_input === "object" ? req.tool_input : {}
     ) as Record<string, unknown>;
     await observeBash(input, ctx);
+    return { decision: "allow" };
+  }
+
+  // Skill is OBSERVE-ONLY too: a Synthra skill being loaded is what tells the
+  // Curator it is still in use. Never blocks, never fails the hook.
+  if (req.tool_name === "Skill") {
+    await noteSkillUse(req.tool_input, ctx).catch(() => undefined);
     return { decision: "allow" };
   }
 
