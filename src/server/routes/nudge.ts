@@ -104,12 +104,22 @@ const MEMORY_QUESTION =
   "mcp__synthra__memory (target `project` or `user`): one short fact per entry, merged with " +
   "what is already there.";
 
+// Update first, create last (Hermes' rule): one hard task is not a new kind of
+// work, and asking "was this hard?" filled the library with one skill per UI
+// effect. The question is what a skill should HOLD, and where it goes.
 const SKILL_QUESTION =
-  "Was this work a non-trivial, repeatable workflow - several steps or tries that will come up " +
-  "again (a release, a fix for a recurring error, this project's way of doing X)? If yes, save " +
-  "it with mcp__synthra__skill_manage: if a skill already covers it, view it and patch it; " +
-  "otherwise create one (scope `project` if it only applies to this repo, `global` if it is " +
-  "reusable). Write the steps and the why, not a log of this session.";
+  "Did this work teach a reusable procedure, or a correction from the user, that a skill " +
+  "should hold? If yes, use mcp__synthra__skill_manage and take the FIRST step that fits: " +
+  "1) a skill you used in this task: view it and patch it; 2) an existing skill for the same " +
+  "kind of work (list, then view): patch it; 3) detail that is only needed sometimes: add " +
+  "references/<topic>.md under that skill with write_file, plus a one-line pointer in its " +
+  "SKILL.md; 4) only if nothing fits, create a skill named for the CLASS of work " +
+  "(css-motion-effects, not rail-travelling-light). A name that only fits today's task is " +
+  "wrong: one UI effect, component, error or ticket is not a class. Write rules with one " +
+  "clause of why, not a story of this session. Do not save setup failures, claims that a tool " +
+  "is broken, errors that went away, or one-off tasks. A preference about this kind of task " +
+  "goes into its skill; facts about one client or project go to .synthra/MEMORY.md " +
+  "(mcp__synthra__memory) or a project-scope skill, never a global skill.";
 
 export function nudgeReason(every: number): string {
   return (
@@ -122,7 +132,8 @@ export function nudgeReason(every: number): string {
 export function skillNudgeReason(calls: number): string {
   return (
     `[Synthra skill check - after ${calls} tool calls] Before you stop, look back over this ` +
-    `work. ${SKILL_QUESTION} If not, reply only: No skill to save. Do not continue the task.`
+    `work. ${SKILL_QUESTION} If nothing qualifies, reply only: No skill to save. That is a ` +
+    "normal answer. Do not continue the task."
   );
 }
 

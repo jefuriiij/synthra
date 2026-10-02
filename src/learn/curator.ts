@@ -36,6 +36,7 @@ import {
   listSkills,
   newId,
   readLedger,
+  skillMdOf,
   submit,
 } from "./skills.js";
 
@@ -177,7 +178,9 @@ export async function skillAges(paths: SynthraPaths, now = Date.now()): Promise<
     if (e.action === "archive") continue;
     if (e.action === "reject" && e.rejected !== "archive") continue;
     const t = Date.parse(e.ts);
-    if (Number.isFinite(t)) touched.set(e.path, Math.max(touched.get(e.path) ?? 0, t));
+    // A change to a support file is activity for the skill it belongs to.
+    const key = skillMdOf(e);
+    if (Number.isFinite(t)) touched.set(key, Math.max(touched.get(key) ?? 0, t));
   }
   const unseen: string[] = [];
   const out: SkillAge[] = [];

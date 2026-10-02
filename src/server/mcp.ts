@@ -16,15 +16,22 @@ import { retrieve } from "../graph/retrieve.js";
 import type { FileNode, GraphSchema, SymbolNode } from "../graph/types.js";
 import {
   type Outcome,
-  type SkillInfo,
+  type Ownership,
   type SkillScope,
   createSkill,
   editSkill,
   findSkill,
   listPending,
   listSkills,
+  listSupportFiles,
   markViewed,
+  ownership,
   patchSkill,
+  removeSupportFile,
+  skillMdOf,
+  viewSupportFile,
+  waitingFor,
+  writeSupportFile,
 } from "../learn/skills.js";
 import { appendAccess } from "../learn/store.js";
 import type { AccessEvent } from "../learn/usage.js";
@@ -43,6 +50,7 @@ import { findTestsForFile } from "../packer/tests.js";
 import { computeArsenal } from "../dashboard/arsenal.js";
 import pkgJson from "../../package.json" with { type: "json" };
 import { loadConfig } from "../shared/config.js";
+import { pathKey } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
 import { noteSkillSaved } from "./routes/nudge.js";
 import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
@@ -218,34 +226,45 @@ const TOOLS = [
   {
     name: "skill_manage",
     description:
-      "Write and improve skills — step-by-step guides that Claude Code loads by itself when a task matches their description. Save one when you have worked out a non-trivial, repeatable workflow (a fix that took several tries, a release procedure, this project's way of doing X), so next time it is one step. scope 'project' = `.claude/skills/` (steps that are only true in this repo; shared with the team in git); scope 'global' = `~/.claude/skills/` (reusable in any project — write it so it doesn't depend on this repo). The description is one line that starts with the trigger: 'Use when <situation>. <what it does>.' Write lessons, not logs: imperative steps plus the why; no dates, PR numbers or incident stories. Prefer improving an existing skill (view, then patch) over a near-duplicate. Synthra changes only skills it wrote, and only after you view them. By default a new or changed skill waits for the user's OK in Synthra's Learning tab — tell the user when you save one. Never put secrets in a skill.",
+      "The user's skills: step-by-step guides Claude Code loads by itself when a task matches their description. Aim for a few BROAD skills, one per class of work, each a SKILL.md of always-on rules plus a small set of topical support files. When something is worth keeping, take the FIRST step that fits: 1) patch the skill you used in this task; 2) patch an existing skill for the same kind of work (list, then view); 3) put detail that is only needed sometimes in a support file under that skill (write_file with file_path 'references/<topic>.md'; extend an existing file first) and add a one-line pointer in SKILL.md; 4) only if nothing fits, create a skill named for the CLASS of work ('css-motion-effects', not 'rail-travelling-light'). A name that only fits today's task is wrong: one UI effect, component, error or ticket is not a class. Write lessons, not logs: an imperative rule plus one clause of why, attached to its step; no dates, PR numbers or stories; the same lesson twice is one rule; fix a wrong sentence in place. Do not save setup failures, claims that a tool is broken, errors that went away, or one-off tasks. A preference about this kind of task belongs in its skill; facts about one client or project go to .synthra/MEMORY.md (the memory tool) or a project-scope skill, never a global one. Nothing worth keeping is a normal outcome. Who owns a skill decides what you may do: skills Synthra wrote (any change); the user's own skills (patch and support files only, and every change waits for the user's OK); installed and plugin skills (read-only). View before you change anything. By default every change waits for the user's OK in Synthra's Learning tab: tell the user when you save one. Never put secrets in a skill.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "view", "create", "patch", "edit"],
+          enum: ["list", "view", "create", "patch", "edit", "write_file", "remove_file"],
           description:
-            "list: all skills and what waits for approval. view: one skill's full text (required before patch/edit). create: a new skill. patch: replace one exact piece of SKILL.md (preferred for small fixes). edit: a new description and/or body.",
+            "list: every skill, who owns it, and what waits for approval. view: a skill's SKILL.md and its support files, or with file_path one support file (required before any change). patch: replace one exact piece of SKILL.md, or of a support file with file_path (preferred). write_file: a new support file, or a whole new text for one. remove_file: delete a support file. edit: a new description and/or body for a skill Synthra wrote. create: a new skill, only when no skill covers this kind of work.",
         },
         scope: {
           type: "string",
           enum: ["project", "global"],
           description:
-            "Where the skill lives. Required for create; for view/patch/edit it defaults to project, then global.",
+            "Where the skill lives: 'project' = .claude/skills/ (only true in this repo; shared with the team in git), 'global' = ~/.claude/skills/ (reusable in any project, so nothing about one client in it). Required for create; otherwise it defaults to project, then global.",
         },
         name: {
           type: "string",
           description:
-            "Lowercase letters, digits and hyphens, at most 64 characters, e.g. 'release-checklist'.",
+            "The skill. For create: lowercase letters, digits and hyphens, at most 64 characters, named for the class of work, e.g. 'release-checklist'.",
+        },
+        file_path: {
+          type: "string",
+          description:
+            "view/patch/write_file/remove_file: a support file, relative to the skill's folder: 'references/<topic>.md', 'templates/<name>' or 'scripts/<name>'. Name it by topic. A change to a script always waits for the user's OK.",
+        },
+        content: {
+          type: "string",
+          description: "write_file: the file's whole text.",
         },
         description: {
           type: "string",
-          description: "create/edit: one line, starting 'Use when …'. At most 1,024 characters.",
+          description:
+            "create/edit: one line that starts with the trigger: 'Use when <situation>. <what it does>.' At most 1,024 characters.",
         },
         body: {
           type: "string",
-          description: "create/edit: the Markdown steps (no frontmatter — Synthra writes it).",
+          description:
+            "create/edit: the Markdown steps (no frontmatter: Synthra writes it). Always-on rules here; detail in support files.",
         },
         old_string: {
           type: "string",
@@ -255,7 +274,7 @@ const TOOLS = [
         reason: {
           type: "string",
           description:
-            "create/patch/edit: one sentence on why — shown to the user with the change.",
+            "One sentence on why, shown to the user with the change. Required for create: say which existing skills you checked and why none of them fits.",
         },
       },
       required: ["action"],
@@ -1404,16 +1423,29 @@ function recentActivity(args: Record<string, unknown> | undefined, ctx: ServerCo
 
 const SCOPE_WORD: Record<SkillScope, string> = { project: "this project", global: "all projects" };
 
+/** Who owns a skill, in the words `list` and `view` use. */
+function ownerWord(o: Ownership): string {
+  if (o.owner === "synthra") return "written by Synthra";
+  if (o.owner === "third_party") return `installed from ${o.source}, read-only`;
+  return "the user's own";
+}
+
 function outcomeText(o: Outcome, verb: string): ReturnType<typeof textContent> {
   if (o.status === "error") return errorContent(`skill_manage: ${o.error}`);
   if (o.status === "applied") {
     return textContent(
-      `${verb}: ${o.path}\nIt is live now — Claude Code picks it up without a restart. (If it doesn't show, the user can run /reload-skills.)`,
+      `${verb}: ${o.path}\nIt is live now: Claude Code picks it up without a restart. (If it doesn't show, the user can run /reload-skills.)`,
+    );
+  }
+  if (o.status === "dropped") {
+    return textContent(
+      `That change cancels the one that waited for "${o.name}", so nothing waits for it now.`,
     );
   }
   const p = o.proposal;
+  const what = p.file ? `${p.file} in ${p.name}` : p.name;
   return textContent(
-    `${verb} — waiting for the user's OK in Synthra's Learning tab (proposal ${p.id}, ${p.name}, ${SCOPE_WORD[p.scope]}). It is not active until approved. Tell the user it is there.`,
+    `${verb}: waiting for the user's OK in Synthra's Learning tab (proposal ${p.id}, ${what}, ${SCOPE_WORD[p.scope]}). It is not active until approved. Tell the user it is there.${o.always ? " (Changes to the user's own skills and to scripts always wait for the user's OK.)" : ""}`,
   );
 }
 
@@ -1426,26 +1458,32 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
   }
   const scope = scopeArg as SkillScope | undefined;
   const name = str("name") ?? "";
+  const filePath = str("file_path")?.trim() || undefined;
   const reason = str("reason")?.trim() || undefined;
+  const at = scope ? { scope } : {};
 
   if (action === "list") {
     const [skills, pending] = await Promise.all([
       listSkills(ctx.paths),
       listPending(ctx.paths.skillState),
     ]);
-    const line = (s: SkillInfo) =>
-      `- \`${s.name}\` (${SCOPE_WORD[s.scope]}${s.learned ? ", written by Synthra" : ""}) — ${s.description || "(no description)"}`;
+    const owners = await Promise.all(skills.map((s) => ownership(ctx.paths, s)));
     const lines = [
-      `# Skills — ${skills.length}`,
-      ...(skills.length ? skills.map(line) : ["(none yet)"]),
+      `# Skills: ${skills.length}`,
+      ...(skills.length
+        ? skills.map(
+            (s, i) =>
+              `- \`${s.name}\` (${SCOPE_WORD[s.scope]}, ${ownerWord(owners[i] ?? { owner: "user" })}): ${s.description || "(no description)"}`,
+          )
+        : ["(none yet)"]),
     ];
     if (pending.length) {
       lines.push(
         "",
-        `# Waiting for the user's OK — ${pending.length}`,
+        `# Waiting for the user's OK: ${pending.length}`,
         ...pending.map(
           (p) =>
-            `- ${p.action} \`${p.name}\` (${SCOPE_WORD[p.scope]})${p.reason ? ` — ${p.reason}` : ""}`,
+            `- ${p.action} \`${p.name}\`${p.file ? ` ${p.file}` : ""} (${SCOPE_WORD[p.scope]})${p.reason ? `: ${p.reason}` : ""}`,
         ),
       );
     }
@@ -1453,21 +1491,46 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
   }
 
   if (action === "view") {
+    if (filePath) {
+      const f = await viewSupportFile(ctx.paths, name, scope, filePath);
+      if ("error" in f) return errorContent(`skill_manage: ${f.error}`);
+      const head = f.waiting
+        ? "A change to this file waits for the user's OK; the text below includes it."
+        : "";
+      return textContent(`${f.path}\n${head}${head ? "\n" : ""}\n${f.text}`);
+    }
     const s = await findSkill(ctx.paths, name, scope);
     if (!s)
       return errorContent(`skill_manage: No skill named "${name}"${scope ? ` in ${scope}` : ""}.`);
     markViewed(s.path);
-    const waiting = (await listPending(ctx.paths.skillState)).filter(
-      (p) => p.path === s.path,
-    ).length;
+    const [own, w, pending, support] = await Promise.all([
+      ownership(ctx.paths, s),
+      waitingFor(ctx.paths.skillState, s.path),
+      listPending(ctx.paths.skillState),
+      listSupportFiles(dirname(s.path)),
+    ]);
+    const mine = pathKey(s.path);
+    const others = pending.filter((p) => p.file && pathKey(skillMdOf(p)) === mine).length;
+    const rights =
+      own.owner === "synthra"
+        ? "Written by Synthra: you may patch or edit it, and add or change its support files."
+        : own.owner === "user"
+          ? "The user's own skill (Synthra didn't write it): you may patch it and add or change its support files; every change waits for the user's OK. A full rewrite isn't allowed."
+          : `Installed from ${own.source} with npx skills: read-only.`;
+    const files = support.files.length
+      ? `Support files (${support.files.length + support.more}): ${support.files.join(", ")}${support.more ? `, and ${support.more} more` : ""}. Read one with view and file_path.`
+      : "No support files yet.";
     const head = [
       `${s.path} (${SCOPE_WORD[s.scope]})`,
-      s.learned
-        ? "Written by Synthra — you may patch or edit it."
-        : "Not written by Synthra — read-only for skill_manage.",
-      ...(waiting ? [`${waiting} change(s) to it wait for the user's OK.`] : []),
+      rights,
+      ...(own.linkedTo
+        ? [`Its folder is a link to ${own.linkedTo}: changes are saved there.`]
+        : []),
+      files,
+      ...(w ? ["A change to SKILL.md waits for the user's OK; the text below includes it."] : []),
+      ...(others ? [`${others} change(s) to its support files wait for the user's OK.`] : []),
     ].join("\n");
-    return textContent(`${head}\n\n${s.text}`);
+    return textContent(`${head}\n\n${w ? w.after : s.text}`);
   }
 
   // Any skill saved or proposed accounts for the work so far (the skill nudge).
@@ -1480,7 +1543,12 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
   if (action === "create") {
     if (!scope) {
       return errorContent(
-        "skill_manage: create needs a scope — 'project' (only true in this repo) or 'global' (reusable anywhere).",
+        "skill_manage: create needs a scope: 'project' (only true in this repo) or 'global' (reusable anywhere).",
+      );
+    }
+    if (!reason) {
+      return errorContent(
+        "skill_manage: create is the last step. Say in `reason` which existing skills you checked and why none of them fits; if one does, patch it or add a support file to it instead.",
       );
     }
     return counted(
@@ -1489,7 +1557,7 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
         name,
         description: str("description") ?? "",
         body: str("body") ?? "",
-        ...(reason ? { reason } : {}),
+        reason,
       }),
       "Skill created",
     );
@@ -1498,13 +1566,14 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
   if (action === "patch") {
     return counted(
       patchSkill(ctx.paths, {
-        ...(scope ? { scope } : {}),
+        ...at,
         name,
+        ...(filePath ? { file_path: filePath } : {}),
         old_string: str("old_string") ?? "",
         new_string: str("new_string") ?? "",
         ...(reason ? { reason } : {}),
       }),
-      "Skill patched",
+      filePath ? "Support file patched" : "Skill patched",
     );
   }
 
@@ -1513,7 +1582,7 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
     const body = str("body");
     return counted(
       editSkill(ctx.paths, {
-        ...(scope ? { scope } : {}),
+        ...at,
         name,
         ...(description !== undefined ? { description } : {}),
         ...(body !== undefined ? { body } : {}),
@@ -1523,7 +1592,40 @@ async function skillManage(args: Record<string, unknown> | undefined, ctx: Serve
     );
   }
 
-  return errorContent("skill_manage: `action` must be list, view, create, patch or edit.");
+  if (action === "write_file" || action === "remove_file") {
+    if (!filePath) {
+      return errorContent(
+        `skill_manage: ${action} needs file_path, relative to the skill's folder (e.g. references/forms.md).`,
+      );
+    }
+    if (action === "remove_file") {
+      return counted(
+        removeSupportFile(ctx.paths, {
+          ...at,
+          name,
+          file_path: filePath,
+          ...(reason ? { reason } : {}),
+        }),
+        "Support file removed",
+      );
+    }
+    const content = str("content");
+    if (content === undefined) return errorContent("skill_manage: write_file needs content.");
+    return counted(
+      writeSupportFile(ctx.paths, {
+        ...at,
+        name,
+        file_path: filePath,
+        content,
+        ...(reason ? { reason } : {}),
+      }),
+      "Support file saved",
+    );
+  }
+
+  return errorContent(
+    "skill_manage: `action` must be list, view, patch, write_file, remove_file, edit or create.",
+  );
 }
 
 const KNOWLEDGE_TITLE: Record<KnowledgeTarget, string> = {

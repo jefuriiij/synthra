@@ -28,6 +28,7 @@ import {
   readLedger,
   rejectProposal,
   restoreSkill,
+  skillMdOf,
 } from "../../learn/skills.js";
 import { loadConfig } from "../../shared/config.js";
 import { type SynthraPaths, sameRoot } from "../../shared/paths.js";
@@ -39,12 +40,22 @@ const RECENT_MAX = 50;
 export interface PanelProposal {
   id: string;
   ts: string;
-  /** "archive" comes from the Curator. */
-  action: "create" | "patch" | "edit" | "archive";
+  /** "archive" comes from the Curator or a merge; "remove" deletes a support file. */
+  action: "create" | "patch" | "edit" | "remove" | "archive";
   scope: SkillScope;
   name: string;
+  /** The file it writes: SKILL.md, or a support file. */
   path: string;
-  /** The description the skill will have (or has, for an archive). */
+  /** A support file, relative to the skill's folder ("references/maps.md"). */
+  file?: string;
+  /** "user": a change to the user's own skill. */
+  owner?: "user";
+  /** The skill's folder is a link to this folder: the change is saved there. */
+  linkedTo?: string;
+  /** A merge: the skill this one was merged into. */
+  absorbedInto?: string;
+  /** The description the skill will have (or has, for an archive or a
+   *  support file). */
   description: string;
   reason?: string;
   before: string | null;
@@ -92,20 +103,33 @@ export async function readLearning(
   return {
     approval: loadConfig().skillApproval,
     pending: await Promise.all(
-      pending.filter(ours).map(async (p) => ({
-        id: p.id,
-        ts: p.ts,
-        action: p.action,
-        scope: p.scope,
-        name: p.name,
-        path: p.path,
-        description:
-          parseSkill(p.action === "archive" ? (p.before ?? "") : p.after).description ?? "",
-        ...(p.reason ? { reason: p.reason } : {}),
-        before: p.before,
-        after: p.after,
-        stale: (await current(p.path)) !== p.before,
-      })),
+      pending.filter(ours).map(async (p) => {
+        // A support file: the skill it belongs to must still be there.
+        const skillText = p.file ? await current(skillMdOf(p)) : null;
+        const described = p.file
+          ? (skillText ?? "")
+          : p.action === "archive"
+            ? (p.before ?? "")
+            : p.after;
+        return {
+          id: p.id,
+          ts: p.ts,
+          action: p.action,
+          scope: p.scope,
+          name: p.name,
+          path: p.path,
+          ...(p.file ? { file: p.file } : {}),
+          ...(p.owner ? { owner: p.owner } : {}),
+          ...(p.linkedTo ? { linkedTo: p.linkedTo } : {}),
+          ...(p.absorbedInto ? { absorbedInto: p.absorbedInto } : {}),
+          description: parseSkill(described).description ?? "",
+          ...(p.reason ? { reason: p.reason } : {}),
+          before: p.before,
+          after: p.after,
+          stale:
+            (p.file !== undefined && skillText === null) || (await current(p.path)) !== p.before,
+        };
+      }),
     ),
     recent: ledger
       .filter((e) => ours(e) && now - Date.parse(e.ts) < RECENT_MS)

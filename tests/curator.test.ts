@@ -93,6 +93,26 @@ describe("how long a skill has gone unused", () => {
     });
   });
 
+  it("counts a change to a support file as activity for its skill", async () => {
+    const paths = await setup();
+    const a = await learned(paths, "alpha", T0);
+    const ledger = join(paths.skillState, "ledger.jsonl");
+    const e = {
+      id: "x",
+      ts: new Date(T0 + 15 * DAY).toISOString(),
+      action: "create",
+      actor: "agent",
+      scope: "project",
+      name: "alpha",
+      path: join(a, "..", "references", "deep", "notes.md"),
+      file: "references/deep/notes.md",
+      project: paths.projectRoot,
+    };
+    await writeFile(ledger, `${await readFile(ledger, "utf8")}${JSON.stringify(e)}\n`, "utf8");
+    const [age] = await skillAges(paths, T0 + 20 * DAY);
+    expect(age?.daysUnused).toBe(5);
+  });
+
   // A teammate's skill arrives through git with no history here.
   it("starts the clock when it first sees a skill it has no record of", async () => {
     const paths = await setup();

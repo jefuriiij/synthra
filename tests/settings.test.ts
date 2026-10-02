@@ -53,7 +53,7 @@ describe("settings file", () => {
       memoryChars: 3500,
       userChars: 2000,
       skillApproval: true,
-      skillNudgeEvery: 15,
+      skillNudgeEvery: 25,
       curator: true,
       routeHints: false,
     });
@@ -132,7 +132,7 @@ describe("settings routes", () => {
       ["memoryChars", 3500, "default"],
       ["userChars", 2000, "default"],
       ["skillApproval", true, "default"],
-      ["skillNudgeEvery", 15, "default"],
+      ["skillNudgeEvery", 25, "default"],
       ["curator", true, "default"],
       ["routeHints", true, "env"],
     ]);

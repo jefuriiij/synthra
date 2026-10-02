@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   POLICY_BEGIN,
+  POLICY_VERSION,
   claudeStub,
   isSynthraOnlyClaudeMd,
   legacyOnboardingSkeleton,
@@ -27,7 +28,7 @@ describe("patchClaudeMd: a short note, and the block imports AGENTS.md", () => {
     expect(content.startsWith(claudeStub("my-proj").trimEnd())).toBe(true);
     // The rules starter lives in AGENTS.md now, not here.
     expect(content).not.toContain("## Build & test");
-    expect(content).toContain("synthra-policy v11 BEGIN");
+    expect(content).toContain(`synthra-policy v${POLICY_VERSION} BEGIN`);
     expect(content).toContain("find_symbol"); // reuse-first nudge (v0.12)
     expect(content).toContain("route_task"); // delegate-first nudge (v0.16)
   });
@@ -56,7 +57,7 @@ describe("patchClaudeMd: a short note, and the block imports AGENTS.md", () => {
     const content = await readFile(path, "utf8");
     expect(content.startsWith("# Existing user doc\n\nsome notes\n\n")).toBe(true);
     expect(content).not.toContain("(Claude Code)");
-    expect(content).toContain("synthra-policy v11 BEGIN"); // policy still appended
+    expect(content).toContain(`synthra-policy v${POLICY_VERSION} BEGIN`); // policy still appended
     expect(content).toContain("\n@AGENTS.md\n");
   });
 
@@ -97,7 +98,7 @@ describe("patchClaudeMd: a short note, and the block imports AGENTS.md", () => {
     const content = await readFile(path, "utf8");
     expect(content.startsWith(claudeStub("my-proj").trimEnd())).toBe(true);
     expect(content).not.toContain("TODO");
-    expect(content).toContain("synthra-policy v11 BEGIN");
+    expect(content).toContain(`synthra-policy v${POLICY_VERSION} BEGIN`);
     expect((await patchClaudeMd(path, "my-proj")).skipped).toBe(true);
   });
 
@@ -127,7 +128,7 @@ describe("patchClaudeMd: a short note, and the block imports AGENTS.md", () => {
   });
 });
 
-describe("patchClaudeMd policy v11 (namespaced tools + reuse-first + delegate-first)", () => {
+describe("patchClaudeMd policy (namespaced tools + reuse-first + delegate-first)", () => {
   it("strips a prior v6 block and installs the current block with full tool names + loader line", async () => {
     const path = await tmpClaudeMd();
     await writeFile(
@@ -140,7 +141,7 @@ describe("patchClaudeMd policy v11 (namespaced tools + reuse-first + delegate-fi
     expect(res.updated).toBe(true);
 
     const content = await readFile(path, "utf8");
-    expect(content).toContain("synthra-policy v11 BEGIN");
+    expect(content).toContain(`synthra-policy v${POLICY_VERSION} BEGIN`);
     expect(content).not.toContain("synthra-policy v6 BEGIN");
     expect(content).toContain("### Resuming a session");
     expect(content).toContain("Since you were last here");
@@ -154,5 +155,32 @@ describe("patchClaudeMd policy v11 (namespaced tools + reuse-first + delegate-fi
     // The user's prose is preserved; exactly one managed block remains.
     expect(content).toContain("# Doc");
     expect((content.match(/synthra-policy v\d+ BEGIN/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("the Skills section: update first, create last", () => {
+  const skills = () => {
+    const block = policyBlock();
+    return block.slice(block.indexOf("### Skills"), block.indexOf("_This block is managed"));
+  };
+
+  it("orders the steps and names a class, not a task", () => {
+    const s = skills();
+    for (const step of [
+      "1. Patch the skill you used",
+      "2. Patch an existing skill",
+      "references/<topic>.md",
+      "4. Only if nothing fits",
+    ]) {
+      expect(s).toContain(step);
+    }
+    expect(s).toContain("not `rail-travelling-light`");
+    expect(s).toContain(".synthra/MEMORY.md");
+  });
+
+  // "A fix that took several tries" is how one skill per UI effect happened.
+  it("no longer asks for a skill because a task was hard, and has no em dash", () => {
+    expect(skills()).not.toMatch(/several tries/);
+    expect(skills()).not.toContain(String.fromCharCode(0x2014));
   });
 });

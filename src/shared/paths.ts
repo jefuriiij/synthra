@@ -1,7 +1,7 @@
 // Resolves Synthra's storage locations inside a project root.
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * Canonical form of a project root, for comparison only — never for display or
@@ -79,6 +79,13 @@ export interface SynthraPaths {
  */
 export function defaultUserMemory(home: string = homedir()): string {
   return process.env.SYN_USER_MEMORY || join(home, ".synthra", "USER.md");
+}
+
+/** A path in the form two paths are compared in: resolved, and lower-cased on
+ *  Windows, where C:\Users\X and c:\users\x are the same file. */
+export function pathKey(p: string): string {
+  const r = resolve(p);
+  return process.platform === "win32" ? r.toLowerCase() : r;
 }
 
 /** ~/.claude/skills, or SYN_GLOBAL_SKILLS (the suite's throwaway folder). */

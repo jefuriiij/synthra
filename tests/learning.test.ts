@@ -3,7 +3,7 @@
 // the large panel show it.
 
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,7 @@ import { learningView, type PanelsPayload } from "../extension/src/panelTrees.js
 import { ActivityStore } from "../src/activity/activity-log.js";
 import {
   __resetViewed,
+  writeSupportFile,
   createSkill,
   listPending,
   markViewed,
@@ -333,5 +334,40 @@ describe("one project's Learning", () => {
     const [mine] = (await listPending(a.skillState)).filter((p) => p.name === "only-in-a");
     const { handleAnswer } = await import("../src/server/routes/learning.js");
     expect(await handleAnswer("approve", { id: mine!.id }, ctxOf(b))).toMatchObject({ ok: false });
+  });
+});
+
+describe("GET /panels: changes to support files and to the user's own skills", () => {
+  it("names the file and the owner, and goes stale when the skill is gone", async () => {
+    const paths = await setup();
+    const dir = join(paths.projectSkillsDir, "deploy");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "SKILL.md"),
+      "---\nname: deploy\ndescription: Ship it\n---\nSteps\n",
+      "utf8",
+    );
+    markViewed(join(dir, "SKILL.md"));
+    await writeSupportFile(paths, {
+      name: "deploy",
+      file_path: "references/checks.md",
+      content: "# Checks\n",
+    });
+
+    let p = await handlePanels(ctxOf(paths));
+    expect(p.learning?.pending).toEqual([
+      expect.objectContaining({
+        action: "create",
+        name: "deploy",
+        file: "references/checks.md",
+        owner: "user",
+        description: "Ship it",
+        stale: false,
+      }),
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+    p = await handlePanels(ctxOf(paths));
+    expect(p.learning?.pending[0]?.stale).toBe(true);
   });
 });

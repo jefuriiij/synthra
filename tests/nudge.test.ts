@@ -9,7 +9,12 @@ import { join } from "node:path";
 
 import { ActivityStore } from "../src/activity/activity-log.js";
 import type { ServerContext } from "../src/server/context.js";
-import { handleNudge, noteSkillSaved } from "../src/server/routes/nudge.js";
+import {
+  combinedNudgeReason,
+  handleNudge,
+  noteSkillSaved,
+  skillNudgeReason,
+} from "../src/server/routes/nudge.js";
 import { resolvePaths } from "../src/shared/paths.js";
 
 async function ctx(): Promise<ServerContext> {
@@ -201,5 +206,19 @@ describe("POST /nudge — the skill nudge", () => {
       reason: expect.stringContaining("after 500"),
     });
     expect(await handleNudge({ tool_calls: Number.NaN }, c)).toEqual({});
+  });
+});
+
+// Update first, create last: the old question ("several steps or tries")
+// turned every hard task into a new, narrow skill.
+describe("the skill question", () => {
+  it("asks to patch an existing skill before creating one, in plain ASCII", () => {
+    for (const r of [skillNudgeReason(25), combinedNudgeReason()]) {
+      expect(r).toMatch(/^[ -~]+$/);
+      expect(r).toContain("references/<topic>.md");
+      expect(r).toContain("only if nothing fits, create");
+      expect(r).not.toMatch(/tries/);
+    }
+    expect(skillNudgeReason(25)).toContain("No skill to save. That is a normal answer.");
   });
 });

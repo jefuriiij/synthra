@@ -15,7 +15,7 @@ import { basename, dirname, join } from "node:path";
 
 import { writeTarget } from "./agents-md.js";
 
-export const POLICY_VERSION = 11;
+export const POLICY_VERSION = 12;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -194,14 +194,23 @@ export function policyBlock({ importAgents = true }: PolicyOptions = {}): string
     "",
     "### Skills",
     "",
-    "When you work out a non-trivial, repeatable workflow — a fix that took",
-    "several tries, a release procedure, this project's way of doing X — save",
-    "it as a skill with `mcp__synthra__skill_manage`: scope `project` for steps",
-    "only true in this repo, `global` for ones reusable anywhere. Start the",
-    'description with the trigger ("Use when …"); write steps and the why,',
-    "not a log. Prefer improving an existing skill (view, then patch) over a",
-    "near-duplicate. New and changed skills wait for the user's OK in Synthra's",
-    "Learning tab, so tell the user when you save one.",
+    "Keep a few broad skills, one per class of work, with `mcp__synthra__skill_manage`.",
+    "When a task taught a reusable procedure or the user corrected you, take the",
+    "first step that fits:",
+    "",
+    "1. Patch the skill you used for the task.",
+    "2. Patch an existing skill for the same kind of work (list, then view).",
+    "3. Put detail that is only needed sometimes in `references/<topic>.md` under",
+    "   that skill (write_file), with a one-line pointer in its SKILL.md.",
+    "4. Only if nothing fits, create a skill named for the class of work",
+    "   (`css-motion-effects`, not `rail-travelling-light`). Scope `project` for",
+    "   steps only true in this repo, `global` for ones reusable anywhere.",
+    "",
+    "Write rules with one clause of why, not the story of a session. Do not save",
+    "setup failures, claims that a tool is broken, or one-off tasks. Facts about",
+    "one client or project go to `.synthra/MEMORY.md`, never a global skill.",
+    "Every change waits for the user's OK in Synthra's Learning tab, so tell the",
+    "user when you save one. Nothing worth keeping is a normal outcome.",
     "",
     "_This block is managed by Synthra. Edits inside the BEGIN/END markers",
     "are overwritten on every `syn .` run._",

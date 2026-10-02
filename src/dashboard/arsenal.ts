@@ -461,14 +461,26 @@ async function applySkillLock(
   scope: ArsenalScope,
   skills: ArsenalItem[],
 ): Promise<void> {
-  const lock = await readJson<SkillLock>(lockPath);
-  const entries = lock?.skills;
-  if (!entries || typeof entries !== "object") return;
+  const lock = await readSkillLock(lockPath);
+  if (lock.size === 0) return;
   for (const item of skills) {
     if (item.scope !== scope || item.pack || item.pinned_as) continue;
-    const source = entries[item.name]?.source;
-    if (typeof source === "string" && source.trim()) item.pack = source.trim();
+    const source = lock.get(item.name);
+    if (source) item.pack = source;
   }
+}
+
+/** The skills a lock file lists, by name, with the repo each came from.
+ *  Missing or malformed lock file = an empty map. */
+export async function readSkillLock(lockPath: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const entries = (await readJson<SkillLock>(lockPath))?.skills;
+  if (!entries || typeof entries !== "object") return out;
+  for (const [name, e] of Object.entries(entries)) {
+    const source = e?.source;
+    if (typeof source === "string" && source.trim()) out.set(name, source.trim());
+  }
+  return out;
 }
 
 /**
