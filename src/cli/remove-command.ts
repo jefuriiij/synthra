@@ -14,8 +14,8 @@ import { readFile, readdir, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { writeJsonAtomic, writeTextAtomic } from "../shared/json-store.js";
 import { basename, join, resolve } from "node:path";
 
-import { AGENTS_TITLE, stripAgentsBlock } from "../hooks/agents-md.js";
-import { onboardingSkeleton, stripPolicyBlock } from "../hooks/claude-md.js";
+import { AGENTS_TITLE, rulesSkeleton, stripAgentsBlock } from "../hooks/agents-md.js";
+import { isSynthraOnlyClaudeMd, stripPolicyBlock } from "../hooks/claude-md.js";
 import { ourHookCounts, stripOurHooks, type HooksConfig } from "../hooks/hooks-config.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
@@ -112,8 +112,8 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
     }
   }
 
-  // 3. CLAUDE.md — strip the policy block; delete the file only when what's
-  // left is empty or the pristine untouched onboarding skeleton.
+  // 3. CLAUDE.md: strip the policy block; delete the file only when what's
+  // left is empty, the note Synthra writes, or the old untouched skeleton.
   const claudeMd = await readIfExists(paths.claudeMd);
   if (claudeMd === null) {
     result.skipped.push("CLAUDE.md");
@@ -122,8 +122,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
     if (remainder === claudeMd) {
       result.skipped.push("CLAUDE.md (no synthra policy block)");
     } else {
-      const pristine = onboardingSkeleton(basename(projectRoot)).trim();
-      if (remainder.trim().length === 0 || remainder.trim() === pristine) {
+      if (isSynthraOnlyClaudeMd(claudeMd, basename(projectRoot))) {
         await unlink(paths.claudeMd);
         result.removed.push("CLAUDE.md (was synthra-generated)");
       } else {
@@ -133,8 +132,9 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
     }
   }
 
-  // 3b. AGENTS.md — the same, for the block other AI tools read. Deleted only
-  // when what's left is nothing, or just the title Synthra created it with.
+  // 3b. AGENTS.md: the same, for the block other AI tools read. Deleted only
+  // when what's left is nothing, the title Synthra created it with, or the
+  // rules starter left untouched.
   const agentsMd = await readIfExists(paths.agentsMd);
   if (agentsMd === null) {
     result.skipped.push("AGENTS.md");
@@ -142,7 +142,11 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
     const remainder = stripAgentsBlock(agentsMd);
     if (remainder === agentsMd) {
       result.skipped.push("AGENTS.md (no synthra block)");
-    } else if (remainder.trim().length === 0 || remainder.trim() === AGENTS_TITLE) {
+    } else if (
+      remainder.trim().length === 0 ||
+      remainder.trim() === AGENTS_TITLE ||
+      remainder.trim() === rulesSkeleton(basename(projectRoot)).trim()
+    ) {
       await unlink(paths.agentsMd);
       result.removed.push("AGENTS.md (was synthra-generated)");
     } else {

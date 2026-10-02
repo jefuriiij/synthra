@@ -7,6 +7,10 @@
 //
 // Same rules as claude-md.ts: one block between versioned markers, any older
 // block replaced, everything outside the markers left exactly as it was.
+//
+// Since v0.35 AGENTS.md is also where the project's rules go: a new one starts
+// with the rules starter (`rulesSkeleton`) that CLAUDE.md used to carry, and
+// CLAUDE.md imports this file, so Claude Code reads the same rules.
 
 import { lstat, realpath } from "node:fs/promises";
 
@@ -87,18 +91,80 @@ export async function writeTarget(path: string): Promise<string> {
   return path;
 }
 
-export async function patchAgentsMd(path: string): Promise<PatchResult> {
+/**
+ * The rules starter a new AGENTS.md begins with: the durable "how and why" the
+ * graph can't infer. It lives OUTSIDE Synthra's markers, so later `syn .` runs
+ * never touch what the user fills in.
+ */
+export function rulesSkeleton(projectName: string): string {
+  return [
+    `# ${projectName}`,
+    "",
+    "> Rules for AI coding agents in this project. Claude Code, Codex, Cursor,",
+    "> Copilot, Gemini CLI and others all read this file. Synthra's map already",
+    "> knows the code's structure (files, symbols, imports). Write here what it",
+    "> can't infer: how to run the project, its conventions, and the reasons",
+    "> behind them. Keep it short, and delete the prompts you don't need.",
+    ">",
+    "> Rules the team agrees on go here. Facts an AI learns while it works go to",
+    "> `.synthra/MEMORY.md`.",
+    "",
+    "## Build & test",
+    "",
+    "- TODO: install dependencies, build",
+    "- TODO: run the tests, lint, type check",
+    "- TODO: run the app locally",
+    "",
+    "## Conventions",
+    "",
+    "- TODO: code style, naming, and file layout to follow",
+    "",
+    "## Key decisions",
+    "",
+    '- TODO: choices that are not obvious, and why ("we use X, not Y, because ...")',
+    "",
+    "## Gotchas",
+    "",
+    '- TODO: traps, and things like "don\'t touch X without Y"',
+    "",
+    "_Synthra manages its own block below. Leave it as it is._",
+    "",
+  ].join("\n");
+}
+
+export interface AgentsMdOptions {
+  /** Used for the starter's title. */
+  projectName?: string;
+  /**
+   * Start the file with the rules starter when it holds nothing of the user's
+   * yet (missing, or only Synthra's title and block from 0.33/0.34). `syn .`
+   * turns it off when the user already keeps rules in CLAUDE.md, so they don't
+   * get a second, empty set here.
+   */
+  scaffold?: boolean;
+}
+
+export async function patchAgentsMd(
+  path: string,
+  { projectName, scaffold = false }: AgentsMdOptions = {},
+): Promise<PatchResult> {
   const block = agentsBlock();
+  const name = projectName || "this project";
   let created = false;
   const result = await updateTextFile(await writeTarget(path), (existing) => {
     if (existing === null) {
       created = true;
-      return `${AGENTS_TITLE}\n\n${block}\n`;
+      return scaffold
+        ? `${rulesSkeleton(name).trimEnd()}\n\n${block}\n`
+        : `${AGENTS_TITLE}\n\n${block}\n`;
     }
     created = false;
     // Strip, trim, re-append with one blank line: idempotent, so an unchanged
     // block means no write (see patchClaudeMd for why that matters).
     const base = existing.replace(ANY_BLOCK_RE, "").replace(/\s+$/, "");
+    if (scaffold && (base.length === 0 || base === AGENTS_TITLE)) {
+      return `${rulesSkeleton(name).trimEnd()}\n\n${block}\n`;
+    }
     return base.length ? `${base}\n\n${block}\n` : `${block}\n`;
   });
   if (result.status === "unchanged") return { created: false, updated: false, skipped: true };

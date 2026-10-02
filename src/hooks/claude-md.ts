@@ -2,13 +2,20 @@
 // bounded by <!-- synthra-policy v<N> BEGIN --> ... <!-- synthra-policy v<N> END -->.
 // On each run, any prior synthra-policy block (any version) is removed and the
 // current-version block is appended at the end.
+//
+// The project's rules live in AGENTS.md, the file every AI tool reads (v11).
+// Claude Code reads AGENTS.md by itself only when there is no CLAUDE.md, and
+// Synthra always writes one, so the block opens with an `@AGENTS.md` import:
+// the setup Claude Code's docs recommend, and one that works on every version
+// and every "Project instructions" setting. Claude Code never loads it twice.
 
+import { realpath } from "node:fs/promises";
 import { updateTextFile } from "../shared/json-store.js";
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { writeTarget } from "./agents-md.js";
 
-export const POLICY_VERSION = 10;
+export const POLICY_VERSION = 11;
 export const POLICY_BEGIN = `<!-- synthra-policy v${POLICY_VERSION} BEGIN -->`;
 export const POLICY_END = `<!-- synthra-policy v${POLICY_VERSION} END -->`;
 
@@ -28,9 +35,24 @@ export function stripPolicyBlock(content: string): string {
   return content.replace(ANY_BLOCK_RE, "");
 }
 
-export function policyBlock(): string {
+export interface PolicyOptions {
+  /** Open the block with `@AGENTS.md`. Off when CLAUDE.md and AGENTS.md are
+   *  one file (a symlink), which would otherwise import itself. */
+  importAgents?: boolean;
+}
+
+export function policyBlock({ importAgents = true }: PolicyOptions = {}): string {
   return [
     POLICY_BEGIN,
+    ...(importAgents
+      ? [
+          // A block-level HTML comment: Claude Code strips it before the
+          // content reaches the model, so it costs no tokens.
+          "<!-- The project's rules are in AGENTS.md. This line loads them for Claude Code. -->",
+          "@AGENTS.md",
+          "",
+        ]
+      : []),
     "## Synthra context policy",
     "",
     "Synthra has pre-loaded structured context into this session and exposes",
@@ -188,12 +210,11 @@ export function policyBlock(): string {
   ].join("\n");
 }
 
-// A lean, agent-facing onboarding skeleton written ONLY when a project has no
-// CLAUDE.md yet. It captures the durable "why/how" the graph can't infer
-// (build/test, conventions, decisions, gotchas). It lives OUTSIDE the
-// synthra-policy markers, so later `syn .` runs — which strip and re-add the
-// policy block — never touch what the user fills in here.
-export function onboardingSkeleton(projectName: string): string {
+// The onboarding skeleton a new CLAUDE.md started with up to v0.34. The rules
+// starter now lives in AGENTS.md (agents-md.ts `rulesSkeleton`). Kept so a
+// CLAUDE.md that still holds it untouched is known as Synthra's own: `syn .`
+// swaps it for the short note below, and `syn remove` deletes it.
+export function legacyOnboardingSkeleton(projectName: string): string {
   return [
     `# ${projectName}`,
     "",
@@ -226,8 +247,41 @@ export function onboardingSkeleton(projectName: string): string {
   ].join("\n");
 }
 
+/** What a new CLAUDE.md holds above Synthra's block: a pointer to AGENTS.md,
+ *  where the rules go. Written once; the user owns it after that. */
+export function claudeStub(projectName: string): string {
+  return [
+    `# ${projectName} (Claude Code)`,
+    "",
+    "The rules for this project are in AGENTS.md, so every AI tool reads the same",
+    "ones. Claude Code loads that file through the `@AGENTS.md` line in Synthra's",
+    "block below. Write here only what is for Claude alone.",
+    "",
+  ].join("\n");
+}
+
+/** True when a CLAUDE.md holds nothing the user wrote: only Synthra's block,
+ *  the note above, or the old onboarding skeleton left as it was. */
+export function isSynthraOnlyClaudeMd(content: string, projectName: string): boolean {
+  const rest = stripPolicyBlock(content).trim();
+  return (
+    rest.length === 0 ||
+    rest === claudeStub(projectName).trim() ||
+    rest === legacyOnboardingSkeleton(projectName).trim()
+  );
+}
+
+/** Do these two paths name one file (one a symlink to the other)? */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const real = (p: string) => realpath(p).catch(() => null);
+  const [ra, rb] = await Promise.all([real(a), real(b)]);
+  return ra !== null && ra === rb;
+}
+
 export async function patchClaudeMd(path: string, projectName?: string): Promise<PatchResult> {
-  const block = policyBlock();
+  const name = projectName || basename(dirname(path)) || "this project";
+  const importAgents = !(await sameFile(path, join(dirname(path), "AGENTS.md")));
+  const block = policyBlock({ importAgents });
   let created = false;
 
   // Through updateTextFile: CLAUDE.md is user-authored, git-tracked, and read by
@@ -235,13 +289,19 @@ export async function patchClaudeMd(path: string, projectName?: string): Promise
   // survive. The mutate is pure and re-runs against whatever actually landed.
   const result = await updateTextFile(await writeTarget(path), (existing) => {
     if (existing === null) {
-      // First creation: scaffold the onboarding skeleton (user-owned, written
-      // once) followed by Synthra's managed policy block.
+      // First creation: a short note pointing at AGENTS.md (user-owned,
+      // written once), then Synthra's managed policy block.
       created = true;
-      const name = projectName || basename(dirname(path)) || "this project";
-      return onboardingSkeleton(name) + "\n" + block + "\n";
+      return `${claudeStub(name).trimEnd()}\n\n${block}\n`;
     }
     created = false;
+
+    // The old onboarding skeleton, untouched: its prompts now live in
+    // AGENTS.md, so swap it for the note instead of keeping two copies. A
+    // skeleton the user filled in is theirs and stays as it is.
+    if (existing.replace(ANY_BLOCK_RE, "").trim() === legacyOnboardingSkeleton(name).trim()) {
+      return `${claudeStub(name).trimEnd()}\n\n${block}\n`;
+    }
 
     // Strip any prior policy block (any version), then re-append the current
     // one. The block is always separated from the preceding content by exactly

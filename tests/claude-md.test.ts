@@ -3,33 +3,50 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { patchClaudeMd } from "../src/hooks/claude-md.js";
+import {
+  POLICY_BEGIN,
+  claudeStub,
+  isSynthraOnlyClaudeMd,
+  legacyOnboardingSkeleton,
+  patchClaudeMd,
+  policyBlock,
+} from "../src/hooks/claude-md.js";
 
 async function tmpClaudeMd(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "syn-cmd-"));
   return join(dir, "CLAUDE.md");
 }
 
-describe("patchClaudeMd onboarding skeleton", () => {
-  it("scaffolds skeleton + policy block when no CLAUDE.md exists", async () => {
+describe("patchClaudeMd: a short note, and the block imports AGENTS.md", () => {
+  it("writes the note + policy block when no CLAUDE.md exists", async () => {
     const path = await tmpClaudeMd();
     const res = await patchClaudeMd(path, "my-proj");
 
     expect(res.created).toBe(true);
     const content = await readFile(path, "utf8");
-    expect(content).toContain("# my-proj");
-    expect(content).toContain("## Build & test");
-    expect(content).toContain("## Key decisions");
-    expect(content).toContain("synthra-policy v10 BEGIN");
+    expect(content.startsWith(claudeStub("my-proj").trimEnd())).toBe(true);
+    // The rules starter lives in AGENTS.md now, not here.
+    expect(content).not.toContain("## Build & test");
+    expect(content).toContain("synthra-policy v11 BEGIN");
     expect(content).toContain("find_symbol"); // reuse-first nudge (v0.12)
     expect(content).toContain("route_task"); // delegate-first nudge (v0.16)
-    // Skeleton must come BEFORE the policy block.
-    expect(content.indexOf("## Build & test")).toBeLessThan(
-      content.indexOf("synthra-policy v10 BEGIN"),
-    );
   });
 
-  it("does NOT inject a skeleton into an existing CLAUDE.md", async () => {
+  // Claude Code reads AGENTS.md by itself only without a CLAUDE.md, and Synthra
+  // always writes one, so the import is what gets the rules to Claude.
+  it("opens the block with an @AGENTS.md import on a line of its own", async () => {
+    const path = await tmpClaudeMd();
+    await patchClaudeMd(path, "p");
+    const lines = (await readFile(path, "utf8")).split("\n");
+    const begin = lines.indexOf(POLICY_BEGIN);
+    const at = lines.indexOf("@AGENTS.md");
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(at).toBeGreaterThan(begin);
+    expect(at).toBeLessThan(lines.indexOf("## Synthra context policy"));
+    expect(policyBlock({ importAgents: false })).not.toContain("@AGENTS.md");
+  });
+
+  it("does NOT add the note to an existing CLAUDE.md", async () => {
     const path = await tmpClaudeMd();
     await writeFile(path, "# Existing user doc\n\nsome notes\n", "utf8");
 
@@ -37,9 +54,10 @@ describe("patchClaudeMd onboarding skeleton", () => {
 
     expect(res.created).toBe(false);
     const content = await readFile(path, "utf8");
-    expect(content).toContain("# Existing user doc");
-    expect(content).not.toContain("## Build & test"); // no skeleton injected
-    expect(content).toContain("synthra-policy v10 BEGIN"); // policy still appended
+    expect(content.startsWith("# Existing user doc\n\nsome notes\n\n")).toBe(true);
+    expect(content).not.toContain("(Claude Code)");
+    expect(content).toContain("synthra-policy v11 BEGIN"); // policy still appended
+    expect(content).toContain("\n@AGENTS.md\n");
   });
 
   it("is idempotent: re-running makes no change (no blank-line creep)", async () => {
@@ -50,7 +68,7 @@ describe("patchClaudeMd onboarding skeleton", () => {
     const res = await patchClaudeMd(path, "my-proj"); // re-run, nothing changed
     const second = await readFile(path, "utf8");
 
-    // Byte-identical — the policy block must not accumulate blank lines each
+    // Byte-identical: the policy block must not accumulate blank lines each
     // run (the bug that turned auto-reindex into an endless CLAUDE.md rewrite).
     expect(second).toBe(first);
     expect(res.skipped).toBe(true);
@@ -68,26 +86,48 @@ describe("patchClaudeMd onboarding skeleton", () => {
     expect(res.skipped).toBe(true);
   });
 
-  it("preserves the user's filled-in onboarding content across re-runs", async () => {
+  // A 0.34 project: CLAUDE.md still holds the old starter, untouched. Its
+  // prompts moved to AGENTS.md, so it becomes the note instead of a second copy.
+  it("swaps the old untouched starter for the note, once", async () => {
     const path = await tmpClaudeMd();
-    await patchClaudeMd(path, "my-proj"); // first run scaffolds
+    const v10 = "<!-- synthra-policy v10 BEGIN -->\nold\n<!-- synthra-policy v10 END -->\n";
+    await writeFile(path, `${legacyOnboardingSkeleton("my-proj")}\n${v10}`, "utf8");
 
-    // User fills in a section.
-    let content = await readFile(path, "utf8");
-    content = content.replace("- TODO: install deps / build", "- npm install && npm run build");
-    await writeFile(path, content, "utf8");
+    expect((await patchClaudeMd(path, "my-proj")).updated).toBe(true);
+    const content = await readFile(path, "utf8");
+    expect(content.startsWith(claudeStub("my-proj").trimEnd())).toBe(true);
+    expect(content).not.toContain("TODO");
+    expect(content).toContain("synthra-policy v11 BEGIN");
+    expect((await patchClaudeMd(path, "my-proj")).skipped).toBe(true);
+  });
 
-    // Second run: strips + re-adds the policy block. Must NOT touch the skeleton.
+  it("keeps an old starter the user filled in, exactly as it is", async () => {
+    const path = await tmpClaudeMd();
+    const filled = legacyOnboardingSkeleton("my-proj").replace(
+      "- TODO: install deps / build",
+      "- npm install && npm run build",
+    );
+    await writeFile(path, filled, "utf8");
+
+    await patchClaudeMd(path, "my-proj");
     await patchClaudeMd(path, "my-proj");
 
     const after = await readFile(path, "utf8");
-    expect(after).toContain("- npm install && npm run build"); // user content survives
+    expect(after.startsWith(filled.trimEnd())).toBe(true); // user content survives
     const blocks = after.match(/synthra-policy v\d+ BEGIN/g) ?? [];
     expect(blocks.length).toBe(1); // exactly one policy block, no duplication
   });
+
+  it("knows a CLAUDE.md that holds only Synthra's own text", () => {
+    const block = policyBlock();
+    expect(isSynthraOnlyClaudeMd(`${claudeStub("p")}\n${block}\n`, "p")).toBe(true);
+    expect(isSynthraOnlyClaudeMd(`${legacyOnboardingSkeleton("p")}\n${block}\n`, "p")).toBe(true);
+    expect(isSynthraOnlyClaudeMd(`${block}\n`, "p")).toBe(true);
+    expect(isSynthraOnlyClaudeMd(`# Rules\n\nUse tabs.\n\n${block}\n`, "p")).toBe(false);
+  });
 });
 
-describe("patchClaudeMd policy v10 (namespaced tools + reuse-first + delegate-first)", () => {
+describe("patchClaudeMd policy v11 (namespaced tools + reuse-first + delegate-first)", () => {
   it("strips a prior v6 block and installs the current block with full tool names + loader line", async () => {
     const path = await tmpClaudeMd();
     await writeFile(
@@ -100,7 +140,7 @@ describe("patchClaudeMd policy v10 (namespaced tools + reuse-first + delegate-fi
     expect(res.updated).toBe(true);
 
     const content = await readFile(path, "utf8");
-    expect(content).toContain("synthra-policy v10 BEGIN");
+    expect(content).toContain("synthra-policy v11 BEGIN");
     expect(content).not.toContain("synthra-policy v6 BEGIN");
     expect(content).toContain("### Resuming a session");
     expect(content).toContain("Since you were last here");

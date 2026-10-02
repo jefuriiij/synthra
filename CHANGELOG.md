@@ -9,6 +9,29 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Changed
+
+- **The project's rules live in AGENTS.md, for every AI tool.** A new
+  project's `AGENTS.md` now starts with the rules starter (Build & test,
+  Conventions, Key decisions, Gotchas) that `CLAUDE.md` used to carry, so
+  Codex, Cursor, Copilot and Gemini CLI read the same rules as Claude. A new
+  `CLAUDE.md` holds a short note and Synthra's block.
+- **Claude Code reads those rules through an import.** Claude Code reads
+  `AGENTS.md` by itself only when a project has no `CLAUDE.md`, and Synthra
+  always writes one. So the policy block (now v11) opens with an `@AGENTS.md`
+  line, the setup Claude Code's docs recommend. It works on every Claude Code
+  version and every "Project instructions" setting, and Claude Code never
+  loads the file twice. When `CLAUDE.md` is a symlink to `AGENTS.md`, the line
+  is left out so the file does not import itself.
+- **Existing projects move over by themselves on the next `syn .`.** A
+  `CLAUDE.md` that still holds the old starter untouched gets the short note
+  instead, and the starter goes to `AGENTS.md`. Rules you wrote in `CLAUDE.md`
+  stay where they are, and then `AGENTS.md` gets no second, empty starter.
+  `syn remove` knows the old and the new files, and still deletes only what
+  Synthra wrote.
+- The `/init` tip is gone from the starter: `/init` writes `CLAUDE.md`, not
+  `AGENTS.md`.
+
 ---
 
 ## [0.34.0] (2026-10-02)

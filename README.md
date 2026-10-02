@@ -57,6 +57,7 @@ Ran it in the wrong folder? `syn remove` takes everything out again (see [Comman
 - Both load at the start of every session, and both have a size limit (3,500 and 2,000 characters), so they stay short and current. Claude edits them with the `memory` tool and gets a reminder every 10 replies.
 - **Session notes** per git branch: the current task, next steps, decisions and facts. A note comes back by itself when you touch its file, with a warning if the file changed since.
 - **Every AI can read it.** Synthra adds a short block to `AGENTS.md` that points other tools at the same files.
+- **One set of rules for every AI.** A new project's `AGENTS.md` starts with a short rules starter (Build & test, Conventions, Key decisions, Gotchas) for the rules your team agrees on. Codex, Cursor, Copilot and Gemini CLI read it directly. Claude Code reads it through an `@AGENTS.md` line in Synthra's `CLAUDE.md` block, so the rules work even though the project also has a `CLAUDE.md`. Rules you already keep in `CLAUDE.md` stay there.
 
 ### Claude learns
 
@@ -240,8 +241,8 @@ Each prompt is scored against every installed agent and skill, your project's la
 your-project/
 ├── .gitignore                   # adds .synthra-graph/ and .mcp.json (with comments)
 ├── .mcp.json                    # the 'synthra' MCP entry, so the IDE sees it (gitignored by default)
-├── CLAUDE.md                    # a block between <!-- synthra-policy v10 BEGIN/END --> markers
-├── AGENTS.md                    # a block between <!-- synthra-agents v1 BEGIN/END --> markers
+├── CLAUDE.md                    # a block between <!-- synthra-policy v11 BEGIN/END --> markers; it imports AGENTS.md
+├── AGENTS.md                    # the project's rules (a starter in a new project), then a block between <!-- synthra-agents v1 BEGIN/END -->
 ├── .claude/
 │   ├── settings.local.json      # the 5 hooks
 │   ├── hooks/                   # synthra-prime, -pre-tool-use, -pre-compact, -stop, -route

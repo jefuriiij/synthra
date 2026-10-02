@@ -1,14 +1,15 @@
 // Project bootstrap: creates .synthra-graph/, .synthra/ (with an empty
 // MEMORY.md), updates .gitignore, patches CLAUDE.md with the versioned policy
-// block and AGENTS.md with the block other AI tools read.
+// block (which imports AGENTS.md) and AGENTS.md with the rules starter and the
+// block other AI tools read.
 
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 
 import { updateTextFile } from "../shared/json-store.js";
 import { basename } from "node:path";
 
-import { patchAgentsMd } from "../hooks/agents-md.js";
-import { patchClaudeMd } from "../hooks/claude-md.js";
+import { AGENTS_TITLE, patchAgentsMd, stripAgentsBlock } from "../hooks/agents-md.js";
+import { isSynthraOnlyClaudeMd, patchClaudeMd } from "../hooks/claude-md.js";
 import { ensureProjectKnowledge } from "../memory/knowledge.js";
 import { loadConfig } from "../shared/config.js";
 import type { SynthraPaths } from "../shared/paths.js";
@@ -21,6 +22,8 @@ export interface BootstrapResult {
   claudeMdCreated: boolean;
   agentsMdUpdated: boolean;
   agentsMdCreated: boolean;
+  /** AGENTS.md gained the rules starter on this run. */
+  agentsMdScaffolded: boolean;
   memoryMdCreated: boolean;
 }
 
@@ -83,9 +86,21 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
   const contextCreated = await ensureDir(paths.contextDir);
   const gitignoreUpdated = await patchGitignore(paths.gitignore);
 
-  const claudeMdExistedBefore = await exists(paths.claudeMd);
-  const patch = await patchClaudeMd(paths.claudeMd, basename(paths.projectRoot));
-  const agents = await patchAgentsMd(paths.agentsMd);
+  const name = basename(paths.projectRoot);
+  const read = (p: string) => readFile(p, "utf8").catch(() => null);
+  const [claudeBefore, agentsBefore] = await Promise.all([
+    read(paths.claudeMd),
+    read(paths.agentsMd),
+  ]);
+  // The rules starter goes into AGENTS.md unless the user already keeps rules
+  // in CLAUDE.md: those stay where they are, and a second, empty set would
+  // only confuse.
+  const scaffold = claudeBefore === null || isSynthraOnlyClaudeMd(claudeBefore, name);
+  const agentsRest = agentsBefore === null ? "" : stripAgentsBlock(agentsBefore).trim();
+  const willScaffold = scaffold && (agentsRest === "" || agentsRest === AGENTS_TITLE);
+
+  const patch = await patchClaudeMd(paths.claudeMd, name);
+  const agents = await patchAgentsMd(paths.agentsMd, { projectName: name, scaffold });
   // Claude Code hot-reloads skills, but only in skills folders that existed
   // when the session started: make the project's now, so the first skill
   // Synthra writes here shows up without a /reload-skills.
@@ -97,9 +112,10 @@ export async function bootstrap(paths: SynthraPaths): Promise<BootstrapResult> {
     contextCreated,
     gitignoreUpdated,
     claudeMdUpdated: patch.updated,
-    claudeMdCreated: patch.created && !claudeMdExistedBefore,
+    claudeMdCreated: patch.created && claudeBefore === null,
     agentsMdUpdated: agents.updated,
     agentsMdCreated: agents.created,
+    agentsMdScaffolded: willScaffold && (agents.created || agents.updated),
     memoryMdCreated,
   };
 }

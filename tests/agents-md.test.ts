@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { lstat, mkdtemp, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { ActivityStore } from "../src/activity/activity-log.js";
 import { bootstrap } from "../src/cli/bootstrap.js";
@@ -15,9 +15,10 @@ import {
   AGENTS_TITLE,
   agentsBlock,
   patchAgentsMd,
+  rulesSkeleton,
   stripAgentsBlock,
 } from "../src/hooks/agents-md.js";
-import { patchClaudeMd } from "../src/hooks/claude-md.js";
+import { claudeStub, legacyOnboardingSkeleton, patchClaudeMd } from "../src/hooks/claude-md.js";
 import type { ServerContext } from "../src/server/context.js";
 import { handleMcpRequest } from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
@@ -86,6 +87,100 @@ describe("patchAgentsMd", () => {
     const text = await readFile(join(dir, "AGENTS.md"), "utf8");
     expect(text).toContain("synthra-policy v");
     expect(text).toContain("synthra-agents v");
+    // One file: an @AGENTS.md import in it would import itself.
+    expect(text).not.toContain("@AGENTS.md");
+  });
+});
+
+describe("patchAgentsMd with the rules starter", () => {
+  it("starts a new file with the starter, then Synthra's block, and stays put", async () => {
+    const path = join(await tmp("syn-agents-"), "AGENTS.md");
+    const r = await patchAgentsMd(path, { projectName: "shop", scaffold: true });
+    expect(r.created).toBe(true);
+    const text = await readFile(path, "utf8");
+    expect(text.startsWith(rulesSkeleton("shop").trimEnd())).toBe(true);
+    expect(text.indexOf("## Gotchas")).toBeLessThan(text.indexOf(AGENTS_BEGIN));
+    expect(text).toContain(".synthra/MEMORY.md");
+    expect((await patchAgentsMd(path, { projectName: "shop", scaffold: true })).skipped).toBe(true);
+  });
+
+  // 0.33 and 0.34 wrote only a title and the block.
+  it("adds the starter to a file that holds only Synthra's title and block", async () => {
+    const path = join(await tmp("syn-agents-"), "AGENTS.md");
+    await patchAgentsMd(path);
+    expect((await patchAgentsMd(path, { projectName: "shop", scaffold: true })).updated).toBe(true);
+    const text = await readFile(path, "utf8");
+    expect(text.startsWith("# shop\n")).toBe(true);
+    expect(text).not.toContain(AGENTS_TITLE);
+  });
+
+  it("never adds the starter to a file with the user's own rules", async () => {
+    const path = join(await tmp("syn-agents-"), "AGENTS.md");
+    await writeFile(path, "# Our rules\n\nUse tabs.\n", "utf8");
+    await patchAgentsMd(path, { projectName: "shop", scaffold: true });
+    const text = await readFile(path, "utf8");
+    expect(text.startsWith("# Our rules\n\nUse tabs.\n\n")).toBe(true);
+    expect(text).not.toContain("## Build & test");
+  });
+});
+
+describe("syn . puts the rules in AGENTS.md", () => {
+  it("a new project: rules starter in AGENTS.md, CLAUDE.md imports it", async () => {
+    const root = await tmp("syn-rules-new-");
+    const paths = resolvePaths(root);
+    const r = await bootstrap(paths);
+    expect(r).toMatchObject({
+      claudeMdCreated: true,
+      agentsMdCreated: true,
+      agentsMdScaffolded: true,
+    });
+
+    const agents = await readFile(paths.agentsMd, "utf8");
+    expect(agents).toContain("## Build & test");
+    const claude = await readFile(paths.claudeMd, "utf8");
+    expect(claude).toContain("\n@AGENTS.md\n");
+    expect(claude).not.toContain("## Build & test");
+
+    const again = await bootstrap(paths);
+    expect(again).toMatchObject({ agentsMdUpdated: false, agentsMdScaffolded: false });
+  });
+
+  // A 0.34 project: the old starter in CLAUDE.md, a title-only AGENTS.md.
+  it("moves an untouched old starter from CLAUDE.md to AGENTS.md", async () => {
+    const root = await tmp("syn-rules-old-");
+    const paths = resolvePaths(root);
+    const name = basename(root);
+    await writeFile(paths.claudeMd, `${legacyOnboardingSkeleton(name)}\n`, "utf8");
+    await patchAgentsMd(paths.agentsMd);
+
+    const r = await bootstrap(paths);
+    expect(r.agentsMdScaffolded).toBe(true);
+    expect(await readFile(paths.agentsMd, "utf8")).toContain("## Key decisions");
+    const claude = await readFile(paths.claudeMd, "utf8");
+    expect(claude.startsWith(claudeStub(name).trimEnd())).toBe(true);
+    expect(claude).not.toContain("TODO");
+  });
+
+  it("leaves rules the user keeps in CLAUDE.md where they are", async () => {
+    const root = await tmp("syn-rules-own-");
+    const paths = resolvePaths(root);
+    await writeFile(paths.claudeMd, "# Our rules\n\nRun `make dev`.\n", "utf8");
+
+    const r = await bootstrap(paths);
+    expect(r.agentsMdScaffolded).toBe(false);
+    expect(await readFile(paths.agentsMd, "utf8")).not.toContain("## Build & test");
+    const claude = await readFile(paths.claudeMd, "utf8");
+    expect(claude.startsWith("# Our rules\n\nRun `make dev`.\n\n")).toBe(true);
+    expect(claude).toContain("\n@AGENTS.md\n");
+  });
+
+  it("syn remove deletes both files when they hold only Synthra's text", async () => {
+    const root = await tmp("syn-rules-rm-");
+    await bootstrap(resolvePaths(root));
+    const r = await removeSynthra(root);
+    expect(await exists(join(root, "AGENTS.md"))).toBe(false);
+    expect(await exists(join(root, "CLAUDE.md"))).toBe(false);
+    expect(r.removed).toContain("CLAUDE.md (was synthra-generated)");
   });
 });
 

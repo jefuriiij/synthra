@@ -92,15 +92,17 @@ export async function scanProject(
     if (boot.contextCreated) log.info("  created .synthra/");
     if (boot.gitignoreUpdated) log.info("  updated .gitignore");
     if (boot.claudeMdCreated) {
-      log.info("  created CLAUDE.md — onboarding skeleton for the agent");
-      log.info(
-        "    ↳ fill in Build / Conventions / Decisions (or run /init in Claude to auto-draft)",
-      );
+      log.info("  created CLAUDE.md: loads AGENTS.md for Claude Code");
     } else if (boot.claudeMdUpdated) {
       log.info("  updated CLAUDE.md");
     }
-    if (boot.agentsMdCreated) {
-      log.info("  created AGENTS.md — points other AI tools at the project's knowledge");
+    if (boot.agentsMdScaffolded) {
+      log.info(
+        `  ${boot.agentsMdCreated ? "created" : "updated"} AGENTS.md: the project's rules for every AI tool`,
+      );
+      log.info("    ↳ fill in Build & test / Conventions / Key decisions / Gotchas");
+    } else if (boot.agentsMdCreated) {
+      log.info("  created AGENTS.md: points other AI tools at the project's knowledge");
     } else if (boot.agentsMdUpdated) {
       log.info("  updated AGENTS.md");
     }
