@@ -5,6 +5,15 @@ export type {
   ProjectStats,
   RecentTurn,
 } from "../../delta.js";
+export type {
+  CostCard,
+  Finding,
+  KnowledgeCard,
+  LearningCard,
+  MemoryCard,
+  OverviewData,
+  ProjectHealth,
+} from "../../overview.js";
 export type { DoctorCheck } from "../../../cli/doctor-command.js";
 
 import type { DoctorCheck as Check } from "../../../cli/doctor-command.js";

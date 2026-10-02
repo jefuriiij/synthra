@@ -57,7 +57,9 @@ A second, independent Hono process (`src/dashboard/server.ts`) — outside the M
 | `GET` | `/favicon.svg` | Dashboard favicon. |
 | `GET` | `/health` | `{ ok: true }` — simple liveness only. |
 | `GET` | `/report` | Runs `syn doctor`'s checks server-side; returns them plus a copy-pasteable redacted markdown diagnostic. |
-| `GET` | `/data` | Polled every 10s: the token/gate/tool aggregate per project and overall, plus the recent replies the UI renders. |
+| `GET` | `/overview?days=7\|30` | The page's data, polled every 15s: per-project health (heartbeat, hook scripts current or not, a problem in plain words), how Claude found code, skills, memory and cost. Memoized for 10s. |
+| `POST` | `/repair` | "Fix hooks": `{ path }` of the dashboard's own project or a registered one; rewrites its hooks with `installHooks`. Same-origin JSON only (`origin-guard.ts`). |
+| `GET` | `/data` | The raw token/gate/tool aggregate per project and overall, plus the recent replies. The page no longer reads it. |
 
 9 routes total (verified against `src/dashboard/server.ts`, 2026-08-09).
 

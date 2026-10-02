@@ -20,6 +20,8 @@ import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
 import { computeDashboardData } from "./delta.js";
+import { type OverviewData, computeOverview } from "./overview.js";
+import { handleRepair } from "./repair.js";
 
 // The dashboard UI is built by Vite (svelte + tailwind) into a single
 // self-contained HTML (JS+CSS inlined) at ./built/index.html; tsup text-inlines
@@ -28,6 +30,7 @@ import indexHtml from "./built/index.html";
 import faviconSvg from "./public/favicon.svg";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
+const OVERVIEW_TTL_MS = 10_000;
 const VERSION = (pkgJson as { version: string }).version;
 // The turn-history depth lives in delta.ts (RECENT_TURNS_N); undefined here
 // keeps that default unless SYN_DASHBOARD_RECENT_N overrides it.
@@ -88,6 +91,33 @@ export async function startDashboard(
       claudeBin: loadConfig().claudeBin,
     };
     return c.json({ ...info, checks, markdown: buildDiagnosticReport(checks, info) });
+  });
+
+  // The report card. Reads a few dozen small files per project, so it is
+  // memoized briefly: two tabs, or a poll and a click, share one read.
+  const overviewMemo = new Map<number, { at: number; data: OverviewData }>();
+  app.get("/overview", async (c) => {
+    const days = c.req.query("days") === "30" ? 30 : 7;
+    const hit = overviewMemo.get(days);
+    if (hit && Date.now() - hit.at < OVERVIEW_TTL_MS) return c.json(hit.data);
+    const data = await computeOverview(paths, { days, version: VERSION });
+    overviewMemo.set(days, { at: Date.now(), data });
+    return c.json(data);
+  });
+
+  // "Fix hooks" (repair.ts): rewrite one known project's hooks.
+  app.post("/repair", async (c) => {
+    const r = await handleRepair(
+      {
+        contentType: c.req.header("content-type"),
+        origin: c.req.header("origin"),
+        body: await c.req.json().catch(() => null),
+      },
+      paths,
+      port,
+    );
+    if (r.status === 200) overviewMemo.clear();
+    return c.json(r.body, r.status);
   });
 
   app.get("/data", async (c) => {

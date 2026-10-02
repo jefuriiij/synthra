@@ -48,18 +48,32 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ### Changed
 
-- **The dashboard is one page about cost and savings.** The extension now shows
-  skills, agents and tools, so the dashboard's Arsenal and Commands pages are
-  gone, with the Arsenal's favorites. So are the cards that only made sense to
-  Synthra's own developers: the number strip, the Moat, the Dispatcher and hot
-  files. What is left says it in plain words: what the work cost at API prices
-  (and that a Claude plan is billed differently), models, projects, the
-  Synthra tools Claude used, and every reply. The "Saved by Synthra" card now
-  shows only once a search was actually stopped: Claude mostly searches
-  through Bash, which Synthra watches but never stops, so it used to sit at
-  $0. The `/data` payload
-  no longer carries the gate, Bash and route feeds, and the dashboard server no
-  longer has the `/arsenal`, `/arsenal/item` and `/favorites` routes.
+- **The dashboard is a report card.** One page, for this week or this month,
+  that answers five questions in plain words:
+  - *Is it working?* When each hook last ran in each project, and whether its
+    hook scripts are current. A stopped hook gets a reason and a **Fix hooks**
+    button, which rewrites that project's hooks (`POST /repair`, only for a
+    project this machine already runs Synthra in).
+  - *Is it helping?* How Claude found code (Synthra's map, whole files, or a
+    search), week by week, and the terminal searches the map could have
+    answered.
+  - *Learning:* skills live, waiting, stale and archived, the most and never
+    used, and reminders against the skills that followed.
+  - *Memory:* how full MEMORY.md and USER.md are, out-of-date session notes,
+    and reminders against the saves that followed.
+  - *Cost:* spend at API prices against the last period, the model mix, the
+    most expensive replies.
+
+  Gone: the Arsenal and Commands pages (the extension shows skills, agents and
+  tools) with the Arsenal's favorites, the side bar, and the cards only
+  Synthra's developers could read (the number strip, the Moat, the Dispatcher,
+  hot files, the savings estimate, the full replies table). The dashboard
+  server drops `/arsenal`, `/arsenal/item` and `/favorites`, and adds
+  `/overview` and `/repair`.
+- **New records for the report card.** Each project's server notes when each
+  hook last reached it (`.synthra-graph/heartbeat.json`, written at most every
+  30 seconds) and logs each reminder (`nudge_log.jsonl`). The Stop hook sends
+  the reply's Read calls with its token counts.
 - **The README is rewritten** for how Synthra is used now: the editor extension
   first, then the terminal; the Learning, Memory and Settings features; Linux
   tested like Windows; and an honest note that search stopping rarely fires

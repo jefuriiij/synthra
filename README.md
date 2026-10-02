@@ -105,7 +105,16 @@ The status bar item shows whether Synthra runs. Click it to open the dashboard. 
 
 Live at **http://127.0.0.1:8901** (or the next free port up to 8910). In the extension, click the Synthra item in the status bar.
 
-- **Overview:** what the work cost at API prices, models, projects, the Synthra tools Claude used, and every reply. On a Claude plan you pay the plan, not this; it shows what the same work would cost on the API. A **Saved by Synthra** card joins them once Synthra has stopped a search (see [Search stopping](#search-stopping)).
+One page that answers five questions, for this week or this month:
+
+- **Is it working?** When each hook last ran in each project, and whether its hook scripts are current. A hook that stops quietly shows up here, with a plain-words reason and a **Fix hooks** button (it rewrites that project's hooks, the same step `syn .` runs).
+- **Is it helping?** How Claude found code: from Synthra's map, by reading whole files, or with a search, week by week. Plus the terminal searches the map could have answered: the place to improve Synthra next.
+- **Learning:** skills Claude wrote (live, waiting for your OK, stale, archived), the most used and the never used, and how often a skill reminder led to a skill.
+- **Memory:** how full `MEMORY.md` and `USER.md` are, session notes whose file changed since, and how often a memory reminder led to a save.
+- **Cost:** spend at API prices against the last period, the model mix and the most expensive replies. On a Claude plan you pay the plan, not this.
+
+And two dialogs:
+
 - **Report:** runs the doctor checks and shows the result (often that alone is the fix). One click copies a redacted diagnostic (home paths become `~`), and two buttons open GitHub's bug and feature forms. Nothing is sent anywhere by itself.
 - **FAQ:** what the numbers mean.
 
@@ -239,7 +248,8 @@ your-project/
 │   └── skills/                  # project skills Claude wrote (after your OK)
 ├── .synthra-graph/              # GITIGNORED: machine-local state
 │   ├── info_graph.json · symbol_index.json
-│   ├── token_log.jsonl · gate_log.jsonl · route_log.jsonl · activity.jsonl
+│   ├── token_log.jsonl · gate_log.jsonl · route_log.jsonl · nudge_log.jsonl · activity.jsonl
+│   ├── heartbeat.json           # when each hook last ran, for the dashboard
 │   └── mcp_port
 └── .synthra/                    # IN GIT: the team's shared memory
     ├── MEMORY.md                # what every AI should know about the project
@@ -285,7 +295,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_NO_BASH_OBSERVE` | _(unset)_ | `1` stops watching Bash searches |
 | `SYN_NO_UPDATE_CHECK` | `0` | `1` skips the daily update check |
 | `SYN_DASHBOARD_DEDUPE` | `1` | `0` shows every raw token-log entry |
-| `SYN_DASHBOARD_RECENT_N` | _(unset)_ | Replies in the dashboard's history table (500 when unset) |
+| `SYN_DASHBOARD_RECENT_N` | _(unset)_ | Recent replies in the dashboard's raw `/data` payload (500 when unset) |
 | `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Size cap for `activity.jsonl`; `0` removes the cap |
 
 More tuning knobs (read budgets, cache times, hint size) are in `src/shared/config.ts`.

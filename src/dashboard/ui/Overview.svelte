@@ -1,46 +1,52 @@
 <script lang="ts">
-  import Savings from "./Savings.svelte";
-  import CostHero from "./CostHero.svelte";
-  import Donut from "./Donut.svelte";
-  import Projects from "./Projects.svelte";
-  import ToolUsage from "./ToolUsage.svelte";
-  import RecentTurns from "./RecentTurns.svelte";
+  import StatusBanner from "./StatusBanner.svelte";
+  import Section from "./Section.svelte";
+  import HealthTable from "./HealthTable.svelte";
+  import FindingCode from "./FindingCode.svelte";
+  import LearningCard from "./LearningCard.svelte";
+  import MemoryCard from "./MemoryCard.svelte";
+  import CostCard from "./CostCard.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import { store } from "$lib/store.svelte";
-
-  // Saving is counted only from Grep/Glob searches the gate stopped. Claude
-  // mostly searches through Bash now, which Synthra only watches, so a $0 card
-  // would tell the wrong story. It shows once something was actually saved.
-  const saved = $derived((store.data?.global?.blocked_count ?? 0) > 0);
 </script>
 
 <!--
-  One page: what the work cost. Spend · models (and savings, once there are
-  any) across the top, projects beside the Synthra tools Claude used, then
-  every reply. Before the first /data poll lands, a skeleton grid holds the
-  layout.
+  The report card: is Synthra working, is it helping, what it learned and
+  remembers, and what the work cost. Before the first poll lands, a skeleton
+  holds the layout.
 -->
-{#if store.data === null}
-  <div class="grid grid-cols-1 gap-4 p-5 lg:grid-cols-3">
-    <Skeleton class="h-44" />
-    <Skeleton class="h-44" />
-    <Skeleton class="h-44" />
-    <Skeleton class="h-40 lg:col-span-3" />
-    <Skeleton class="h-36 lg:col-span-3" />
-  </div>
-{:else}
-  <div class="syn-overview flex flex-col gap-4 p-5 duration-500 animate-in fade-in">
-    <div class={"grid grid-cols-1 gap-4 " + (saved ? "lg:grid-cols-3" : "lg:grid-cols-2")}>
-      {#if saved}<Savings />{/if}
-      <CostHero />
-      <Donut />
+<div class="mx-auto max-w-[1120px] px-7 pb-16 pt-6">
+  {#if store.overview === null}
+    <div class="flex flex-col gap-4">
+      <Skeleton class="h-20" />
+      <Skeleton class="h-48" />
+      <Skeleton class="h-56" />
+      <Skeleton class="h-72" />
     </div>
+  {:else}
+    <div class="duration-500 animate-in fade-in">
+      <StatusBanner />
 
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Projects />
-      <ToolUsage />
+      <Section title="Is it working?" sub="When each part of Synthra last ran" why="A part that stops quietly is the worst kind of bug. This catches it.">
+        <HealthTable />
+      </Section>
+
+      <Section title="Is it helping?" sub="How Claude found code" why="The more Claude uses the map, the fewer tokens it spends reading. This is the number to push up.">
+        <FindingCode />
+      </Section>
+
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Section title="Learning" sub={`Skills Claude wrote · ${store.overview.project.name} and global`} why="Are skills written, kept and actually used?">
+          <LearningCard />
+        </Section>
+        <Section title="Memory" sub={`What Claude keeps in mind · ${store.overview.project.name}`} why="Is memory kept short, current and used?">
+          <MemoryCard />
+        </Section>
+      </div>
+
+      <Section title="Cost" sub="At API prices, all projects">
+        <CostCard />
+      </Section>
     </div>
-
-    <RecentTurns />
-  </div>
-{/if}
+  {/if}
+</div>

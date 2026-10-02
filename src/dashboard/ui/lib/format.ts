@@ -75,3 +75,18 @@ export function projColor(name: string): string {
   const hue = PROJECT_HUES[h % PROJECT_HUES.length];
   return `oklch(72% 0.15 ${hue})`;
 }
+
+/** How long ago, in plain words: "just now", "5 min ago", "3 h ago",
+ *  "yesterday", "18 days ago". "never" for a missing time. */
+export function fmtAgo(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return "never";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "never";
+  const min = Math.max(0, Math.round((now - t) / 60_000));
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "yesterday" : `${d} days ago`;
+}

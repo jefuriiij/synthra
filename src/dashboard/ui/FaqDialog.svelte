@@ -5,23 +5,27 @@
   const faqs: { q: string; a: string }[] = [
     {
       q: "Where do these numbers come from?",
-      a: "After each Claude reply, Synthra reads Claude Code's own record of the chat and writes the token counts to .synthra-graph/token_log.jsonl in your project. The dashboard only reads those files. Nothing leaves your computer.",
+      a: "From small files Synthra writes in each project's .synthra-graph folder: one line per reply, per search, per Synthra tool call and per reminder, plus the time each hook last ran. The page only reads them. Nothing leaves your computer.",
     },
     {
-      q: "Why does Spend look so high? I pay a monthly plan.",
-      a: "Spend is the token count times Anthropic's public API prices. On a Claude plan you pay the plan price, not this. The number shows what the same work would cost on the API, so you can compare chats and projects.",
+      q: "What does \"Is it working?\" check?",
+      a: "Each part of Synthra that runs inside Claude Code (a hook) notes when it last ran. When one stops while the others go on, or a project still has hook scripts from an older Synthra, the page says so. Old hooks can stop working without any sign, as the 0.33 hooks did once Claude moved into a subfolder.",
     },
     {
-      q: "How is \"Saved by Synthra\" counted?",
-      a: "When Claude uses its Grep or Glob tool to look for something Synthra already has in its map, Synthra stops the search and gives Claude the answer. Each stopped search counts as 500 tokens at $3 per million, a low estimate on purpose. The card appears only once a search was stopped: Claude often searches through the terminal instead, which Synthra watches but never stops.",
+      q: "What does Fix hooks do?",
+      a: "It writes that project's hook scripts in .claude/hooks again and registers them in .claude/settings.local.json, the same step syn . runs. Your own hooks and permissions stay. The new hooks work from the next Claude session on.",
     },
     {
-      q: "Why does a project show no replies?",
-      a: "Synthra must run in that project while you chat. Open the folder in VS Code with the Synthra extension, or run syn . in a terminal there. Replies from before Synthra started are not counted.",
+      q: "How is \"How Claude found code\" counted?",
+      a: "Synthra map: Claude used one of Synthra's lookup tools, or Synthra answered a Grep or Glob search from its map. Whole files: the Read tool, or a terminal command like cat. Search: terminal searches like grep and rg, and Grep or Glob searches that ran. Missed chances are terminal commands that asked for code the map already knew.",
     },
     {
-      q: "Where are my skills, memory and agents?",
-      a: "In the Synthra extension for VS Code and other editors. Its sidebar and large panel show Learning, Memory, Capabilities, Agents and Settings.",
+      q: "Why does Cost look so high? I pay a monthly plan.",
+      a: "Cost is the token count times Anthropic's public API prices. On a Claude plan you pay the plan price, not this. The number shows what the same work would cost on the API, so you can compare weeks and projects.",
+    },
+    {
+      q: "Where can I see and change my skills and memory?",
+      a: "In the Synthra extension for VS Code and other editors. Its Learning, Memory and Settings tabs list every skill and note, and let you approve, pin, restore and change them.",
     },
   ];
 </script>

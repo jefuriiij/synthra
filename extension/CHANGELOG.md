@@ -11,10 +11,11 @@ These come with the next update of the Synthra engine.
   moved into a subfolder of your project, Synthra stopped counting replies on
   the dashboard and stopped its memory and skill reminders. It now always finds
   your project. Reopen the folder once after the update.
-- **A simpler dashboard.** The page you open from the status bar now shows one
-  thing: what the work cost, by model, by project and by reply, in plain words.
-  Skills, agents and tools live in this extension, so the dashboard no longer
-  repeats them.
+- **A new dashboard.** The page you open from the status bar is now a report
+  card. It shows whether Synthra works in each project (with a **Fix hooks**
+  button when it doesn't), how Claude found code, how skills and memory are
+  used, and what the work cost. Skills, agents and tools live in this
+  extension, so the dashboard no longer lists them.
 
 ## 0.33.1 (2026-10-02)
 

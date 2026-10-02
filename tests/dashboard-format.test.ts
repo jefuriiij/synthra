@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   fmt,
+  fmtAgo,
   fmtBytes,
   fmtCost,
   fmtTs,
@@ -74,5 +75,19 @@ describe("shortenPath", () => {
     expect(shortenPath("src/dashboard/ui/App.svelte")).toBe("…/ui/App.svelte");
     expect(shortenPath("a/b")).toBe("a/b");
     expect(shortenPath("solo.ts")).toBe("solo.ts");
+  });
+});
+
+describe("fmtAgo", () => {
+  const now = Date.parse("2026-10-02T12:00:00.000Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  it("says it in plain words", () => {
+    expect(fmtAgo(undefined, now)).toBe("never");
+    expect(fmtAgo("nonsense", now)).toBe("never");
+    expect(fmtAgo(ago(10_000), now)).toBe("just now");
+    expect(fmtAgo(ago(5 * 60_000), now)).toBe("5 min ago");
+    expect(fmtAgo(ago(3 * 3_600_000), now)).toBe("3 h ago");
+    expect(fmtAgo(ago(26 * 3_600_000), now)).toBe("yesterday");
+    expect(fmtAgo(ago(18 * 86_400_000), now)).toBe("18 days ago");
   });
 });

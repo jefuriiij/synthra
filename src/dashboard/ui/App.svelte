@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store.svelte";
-  import Sidebar from "./Sidebar.svelte";
+  import TopBar from "./TopBar.svelte";
   import Overview from "./Overview.svelte";
   import FaqDialog from "./FaqDialog.svelte";
   import ReportDialog from "./ReportDialog.svelte";
@@ -15,9 +15,9 @@
   });
 </script>
 
-<div class="syn-app flex h-screen w-screen overflow-hidden">
-  <Sidebar onFaq={() => (faqOpen = true)} onReport={() => (reportOpen = true)} />
-  <main class="syn-main min-w-0 flex-1 overflow-y-auto">
+<div class="syn-app min-h-screen">
+  <TopBar onFaq={() => (faqOpen = true)} onReport={() => (reportOpen = true)} />
+  <main class="syn-main">
     <Overview />
   </main>
 </div>

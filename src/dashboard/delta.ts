@@ -24,6 +24,8 @@ export interface TokenLogEntry {
   model: string;
   description?: string;
   project: string;
+  /** Read tool calls in the reply (Stop hook 0.34+). */
+  read_calls?: number;
 }
 
 export interface GateLogEntry {
@@ -320,7 +322,7 @@ function basename(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
-interface ProjectFiles {
+export interface ProjectFiles {
   path: string;
   name: string;
   last_seen: string | null;
@@ -391,7 +393,7 @@ function dedupeEnabled(): boolean {
   return v !== "0" && v !== "off" && v !== "false";
 }
 
-async function loadProjectFiles(
+export async function loadProjectFiles(
   path: string,
   name: string,
   lastSeen: string | null,
