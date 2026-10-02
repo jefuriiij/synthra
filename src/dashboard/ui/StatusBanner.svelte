@@ -5,7 +5,8 @@
     const health = store.overview?.health ?? [];
     const bad = health.filter((h) => h.problem);
     const fixable = bad.filter((h) => h.fix === "hooks");
-    return { total: health.length, bad, first: bad[0], fixable };
+    const waiting = health.filter((h) => h.note);
+    return { total: health.length, bad, first: bad[0], fixable, waiting };
   });
 </script>
 
@@ -14,6 +15,12 @@
     {#if s.total === 0}
       <div class="font-serif text-[26px] leading-tight">No project has run Synthra yet.</div>
       <p class="mt-0.5 text-muted-foreground">Open a project in your editor with the Synthra extension, or run <code class="font-mono">syn .</code> in it.</p>
+    {:else if !s.first && s.waiting.length > 0}
+      <div class="font-serif text-[26px] leading-tight">
+        Hooks fixed in {s.waiting.length === 1 ? (s.waiting[0]?.name ?? "1 project") : `${s.waiting.length} projects`}.
+        <span class="italic text-muted-foreground">Waiting for a reply to confirm.</span>
+      </div>
+      <p class="mt-0.5 text-muted-foreground">Chat with Claude there as usual. The next reply shows here.</p>
     {:else if !s.first}
       <div class="font-serif text-[26px] leading-tight">
         Synthra works in {s.total === 1 ? "your project" : `all ${s.total} projects`}.

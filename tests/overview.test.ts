@@ -71,6 +71,17 @@ describe("diagnose", () => {
     );
   });
 
+  // After Fix hooks the logs still look stalled: only the next reply can tell.
+  it("waits for the next reply after a fix, instead of asking for it again", () => {
+    const h = { hooks: { start: ago(1), reply: ago(30) }, hooks_state: "current" as const };
+    expect(diagnose(h, undefined, NOW, ago(0.5))).toEqual({
+      note: expect.stringContaining("next reply here will confirm"),
+    });
+    // Hooks written by the start itself (seconds later) are no fix.
+    const bySelf = new Date(Date.parse(ago(1)) + 3000).toISOString();
+    expect(diagnose(h, undefined, NOW, bySelf).problem).toMatch(/no reply was logged since/);
+  });
+
   it("says nothing about a healthy project, or one nobody used lately", () => {
     const fresh = { hooks: { start: ago(0), reply: ago(0) }, hooks_state: "current" as const };
     expect(diagnose(fresh, undefined, NOW)).toEqual({});

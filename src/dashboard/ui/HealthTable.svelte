@@ -84,6 +84,12 @@
       </div>
     {/each}
 
+    {#each (store.overview?.health ?? []).filter((h) => h.note) as h (h.path)}
+      <div class="mt-3 rounded-lg border border-border bg-secondary/40 px-3.5 py-3 text-[13.5px] text-muted-foreground">
+        <b class="text-foreground">{h.name}:</b> {h.note}
+      </div>
+    {/each}
+
     {#if store.fixed}
       <p class={"mt-3 text-[13px] " + (store.fixed.ok ? "text-money" : "text-destructive")}>{store.fixed.text}</p>
     {/if}

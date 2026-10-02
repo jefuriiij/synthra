@@ -46,6 +46,10 @@ export const LOOKUP_TOOLS = new Set([
 const STALL_MS = 2 * DAY;
 /** ...but only for a project in use lately. */
 const RECENT_MS = 14 * DAY;
+/** Hooks written this long after the last start were fixed on purpose (Fix
+ *  hooks, or `syn .` by hand), not by the start itself, which writes them
+ *  within seconds. */
+const FIXED_AFTER_MS = 5 * 60 * 1000;
 
 export type Fix = "hooks";
 
@@ -64,6 +68,8 @@ export interface ProjectHealth {
   /** Plain words, when something needs a look. */
   problem?: string;
   fix?: Fix;
+  /** Plain words, when nothing is wrong but something is still to be seen. */
+  note?: string;
 }
 
 export interface FindingWeek {
@@ -181,7 +187,9 @@ export function diagnose(
   h: Pick<ProjectHealth, "hooks" | "hooks_state">,
   lastSeen: string | undefined,
   now: number,
-): Pick<ProjectHealth, "problem" | "fix"> {
+  /** When the hook scripts were last written. */
+  hooksAt?: string,
+): Pick<ProjectHealth, "problem" | "fix" | "note"> {
   if (h.hooks_state === "missing") {
     return { problem: "The hooks are missing, so Synthra can't see the chats here.", fix: "hooks" };
   }
@@ -196,6 +204,13 @@ export function diagnose(
   const s = at(started);
   if (Number.isFinite(s) && now - s < RECENT_MS) {
     const r = at(replied);
+    const stalled = !Number.isFinite(r) || s - r > STALL_MS;
+    // Fixed since the last start: only the next reply can tell.
+    if (stalled && at(hooksAt) - s > FIXED_AFTER_MS) {
+      return {
+        note: `Hooks fixed ${fmtDay(hooksAt as string)}. The next reply here will confirm they work.`,
+      };
+    }
     if (!Number.isFinite(r)) {
       return {
         problem: `Synthra started here on ${fmtDay(started as string)}, but no reply was ever logged.`,
@@ -223,9 +238,15 @@ async function projectHealth(
   // A project Synthra was removed from (or never scanned) has nothing to show.
   if (!(await mtime(paths.graphDir))) return null;
 
-  const [beat, state, mapAt, replyLog, gateLog, bashLog, routeLog] = await Promise.all([
+  const [beat, state, hooksAt, mapAt, replyLog, gateLog, bashLog, routeLog] = await Promise.all([
     readHeartbeat(paths.heartbeat),
     hooksState(paths),
+    mtime(
+      join(
+        paths.claudeHooksDir,
+        process.platform === "win32" ? "synthra-stop.ps1" : "synthra-stop.sh",
+      ),
+    ),
     mtime(paths.infoGraph),
     mtime(paths.tokenLog),
     mtime(paths.gateLog),
@@ -249,7 +270,7 @@ async function projectHealth(
     hooks_state,
     ...(mapAt ? { map_built_at: mapAt } : {}),
   };
-  return { ...health, ...diagnose(health, lastSeen, now) };
+  return { ...health, ...diagnose(health, lastSeen, now, hooksAt) };
 }
 
 /** How Claude found code across these projects. Pure, for tests. */
