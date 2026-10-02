@@ -1,6 +1,6 @@
-// Guard for the dashboard's mutating routes.
+// Guard for the local server's mutating (POST) routes.
 //
-// WHY THIS EXISTS (don't delete it as ceremony): the dashboard binds
+// WHY THIS EXISTS (don't delete it as ceremony): the server binds
 // 127.0.0.1 with no auth, so any page the user happens to be browsing can aim a
 // cross-origin POST at it. Such a request skips the CORS preflight entirely if
 // it uses a "simple" content type (text/plain, form-encoded, multipart) or an
@@ -15,7 +15,7 @@
 //
 // Rejecting a foreign Origin is the belt to that braces. A MISSING Origin is
 // allowed: curl and other non-browser clients omit it, and any local process
-// could write ~/.synthra/favorites.json directly anyway.
+// could write Synthra's files directly anyway.
 
 export type PostGuardResult = { ok: true } | { ok: false; status: 415 | 403; error: string };
 

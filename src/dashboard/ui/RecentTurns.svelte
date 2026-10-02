@@ -16,7 +16,7 @@
   const to = $derived(Math.min(page * PER, turns.length));
 </script>
 
-<Card title="Recent turns" meta={`showing ${from}–${to} of ${turns.length}`} class="syn-card-turns">
+<Card title="Recent replies" meta={`showing ${from}–${to} of ${turns.length}`} class="syn-card-turns">
   <div class="min-h-0 flex-1 overflow-x-auto">
     <table class="w-full border-collapse font-mono text-sm">
       <thead>
@@ -47,7 +47,7 @@
             <td class="py-1.5 text-right tabular-nums text-[var(--money)]">{fmtCost(t.cost_usd)}</td>
           </tr>
         {:else}
-          <tr><td colspan="7" class="py-6 text-center text-muted-foreground">No turns recorded yet — finish a Claude Code turn and it lands here.</td></tr>
+          <tr><td colspan="7" class="py-6 text-center text-muted-foreground">No replies yet. Finish a reply in Claude Code and it shows here.</td></tr>
         {/each}
       </tbody>
     </table>

@@ -12,7 +12,7 @@
   const total = $derived(store.data?.global?.total_tool_calls ?? 0);
 </script>
 
-<Card title="Graph tools used" meta="all projects" class="syn-card-tools">
+<Card title="Synthra tools Claude used" meta="all projects" class="syn-card-tools">
   <div class="font-mono text-2xl text-foreground">{fmt(total)} <span class="text-sm text-muted-foreground">calls</span></div>
   <div class="flex flex-col gap-1.5">
     {#each rows as [name, n] (name)}
@@ -21,7 +21,7 @@
         <span class="tabular-nums text-foreground">{n}</span>
       </div>
     {:else}
-      <div class="text-sm text-muted-foreground">No graph-tool calls yet — counts appear as the agent uses Synthra's tools.</div>
+      <div class="text-sm text-muted-foreground">None yet. The count grows as Claude uses Synthra's map and memory.</div>
     {/each}
   </div>
 </Card>

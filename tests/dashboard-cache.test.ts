@@ -132,7 +132,7 @@ describe("computeDashboardData caching", () => {
 
   it("does not serve a payload built for a different row budget", async () => {
     const paths = await project();
-    const wide = await computeDashboardData(paths, 500);
+    const wide = await computeDashboardData(paths, 100);
     const narrow = await computeDashboardData(paths);
     expect(narrow).not.toBe(wide);
   });

@@ -6,8 +6,6 @@
 import { readFile, stat } from "node:fs/promises";
 
 import { tokenizeQuery } from "../graph/rank.js";
-import { readLearnStore } from "../learn/store.js";
-import { effectiveScores, emptyStore, type LearnStore } from "../learn/usage.js";
 import { resolvePaths, sameRoot, type SynthraPaths } from "../shared/paths.js";
 import { estimateCostUsd } from "../shared/pricing.js";
 import { listProjects } from "../shared/project-registry.js";
@@ -186,21 +184,6 @@ export function countToolCalls(entries: ToolLogEntry[]): Record<string, number> 
   return out;
 }
 
-export interface HotFile {
-  path: string;
-  score: number;
-}
-
-/** Top files by current (decayed-to-now) usage weight — surfaces what the
- *  usage-learning layer has learned this repo leans on. Ranked by effective
- *  score so recency matters; score rounded for display. */
-export function topHotFiles(store: LearnStore, nowMs: number, limit = 8): HotFile[] {
-  return [...effectiveScores(store, nowMs).entries()]
-    .map(([path, score]) => ({ path, score: Math.round(score * 10) / 10 }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-}
-
 export interface ProjectStats {
   path: string;
   name: string;
@@ -232,8 +215,6 @@ export interface ProjectStats {
   routes_followed_agent: number;
   /** Moat blocks bypassed via a terminal search soon after (v0.20). */
   blocks_bypassed: number;
-  hot_files: HotFile[];
-  hot_files_total: number;
   models: Record<string, number>;
 }
 
@@ -247,37 +228,6 @@ export interface RecentTurn {
   cache_create: number;
   model: string;
   cost_usd: number;
-}
-
-export interface RecentGate {
-  ts: string;
-  project_name: string;
-  project_path: string;
-  tool: string;
-  decision: "allow" | "block";
-  query: string | null;
-}
-
-export interface RecentBash {
-  ts: string;
-  project_name: string;
-  project_path: string;
-  kind: "search" | "read" | "list";
-  tool: string;
-  query: string | null;
-  confidence: "low" | "medium" | "high" | null;
-  avoidable: boolean;
-}
-
-export interface RecentRoute {
-  ts: string;
-  project_name: string;
-  project_path: string;
-  prompt: string;
-  routed: boolean;
-  difficulty: "standard" | "complex";
-  agent?: string;
-  model?: string;
 }
 
 export interface DashboardData {
@@ -314,9 +264,6 @@ export interface DashboardData {
   };
   projects: ProjectStats[];
   recent_turns: RecentTurn[];
-  recent_gates: RecentGate[];
-  recent_bash: RecentBash[];
-  recent_routes: RecentRoute[];
 }
 
 /**
@@ -383,7 +330,6 @@ interface ProjectFiles {
   bash: BashLogEntry[];
   routes: RouteLogEntry[];
   delegations: DelegationLogEntry[];
-  learn: LearnStore;
 }
 
 function summarize(p: ProjectFiles): ProjectStats {
@@ -408,7 +354,6 @@ function summarize(p: ProjectFiles): ProjectStats {
   const routes = summarizeRoutes(p.routes);
   const follows = correlateFollows(p.routes, p.delegations);
   const bypass = countBypassedBlocks(p.gates, p.bash);
-  const now = Date.now();
 
   return {
     path: p.path,
@@ -434,8 +379,6 @@ function summarize(p: ProjectFiles): ProjectStats {
     routes_followed: follows.followed,
     routes_followed_agent: follows.followed_agent,
     blocks_bypassed: bypass.bypassed,
-    hot_files: topHotFiles(p.learn, now),
-    hot_files_total: effectiveScores(p.learn, now).size,
     models,
   };
 }
@@ -454,14 +397,13 @@ async function loadProjectFiles(
   lastSeen: string | null,
 ): Promise<ProjectFiles> {
   const paths = resolvePaths(path);
-  const [rawTokens, gates, tools, bash, routes, delegations, learn] = await Promise.all([
+  const [rawTokens, gates, tools, bash, routes, delegations] = await Promise.all([
     readJsonl<TokenLogEntry>(paths.tokenLog),
     readJsonl<GateLogEntry>(paths.gateLog),
     readJsonl<ToolLogEntry>(paths.toolLog),
     readJsonl<BashLogEntry>(paths.bashLog),
     readJsonl<RouteLogEntry>(paths.routeLog),
     readJsonl<DelegationLogEntry>(paths.delegationLog),
-    readLearnStore(paths.learnStore),
   ]);
   const tokens = dedupeEnabled() ? dedupeTokens(rawTokens) : rawTokens;
   return {
@@ -474,7 +416,6 @@ async function loadProjectFiles(
     bash,
     routes,
     delegations,
-    learn,
   };
 }
 
@@ -534,26 +475,10 @@ function dedupeTokens(entries: TokenLogEntry[]): TokenLogEntry[] {
 }
 
 /**
- * How many rows of each recent_* feed the /data payload carries.
- *
- * These are deliberately different numbers, because the two kinds of list are
- * consumed differently:
- *
- * - recent_turns is PAGINATED by RecentTurns.svelte (25/page), so every row is
- *   reachable by the user. Depth here is a feature.
- * - recent_gates / recent_bash / recent_routes are hard-sliced on arrival —
- *   Moat.svelte takes 50 and 12, Dispatcher.svelte takes 50. Anything past that
- *   is serialized, transferred, and dropped.
- *
- * Both were 500, which made the four arrays ~96% of a 483 KB payload re-sent
- * every 10 seconds; roughly 440 KB of that was the unreachable tail of the
- * three capped feeds. Trimming those to 60 (headroom over the largest 50-row
- * slice) is a pure win, while turns keep their full history.
- *
- * SYN_DASHBOARD_RECENT_N overrides both, preserving the old single-knob
- * behaviour for anyone who set it.
+ * How many recent turns the /data payload carries. RecentTurns.svelte pages
+ * over them (25 per page), so every row is reachable and depth is a feature.
+ * SYN_DASHBOARD_RECENT_N overrides it.
  */
-export const RECENT_FEED_N = 60;
 export const RECENT_TURNS_N = 500;
 
 /**
@@ -563,7 +488,7 @@ export const RECENT_TURNS_N = 500;
  * fingerprint AND the requested row budgets, so a caller asking for a different
  * depth never receives another caller's slice.
  */
-let payloadCache: { key: string; feedN: number; turnsN: number; data: DashboardData } | null = null;
+let payloadCache: { key: string; turnsN: number; data: DashboardData } | null = null;
 
 /** Drop the memoized payload. Tests use this to assert recomputation; nothing
  *  in the server needs it, since the fingerprint handles real invalidation. */
@@ -575,7 +500,6 @@ export async function computeDashboardData(
   activePaths: SynthraPaths,
   recentN?: number,
 ): Promise<DashboardData> {
-  const feedN = recentN ?? RECENT_FEED_N;
   const turnsN = recentN ?? RECENT_TURNS_N;
   const registered = await listProjects();
 
@@ -589,19 +513,18 @@ export async function computeDashboardData(
   }
   const key = await logsFingerprint(fingerprintPaths);
   const hit = payloadCache;
-  if (hit && hit.key === key && hit.feedN === feedN && hit.turnsN === turnsN) {
+  if (hit && hit.key === key && hit.turnsN === turnsN) {
     return hit.data;
   }
 
-  const data = await computeDashboardDataUncached(activePaths, registered, feedN, turnsN);
-  payloadCache = { key, feedN, turnsN, data };
+  const data = await computeDashboardDataUncached(activePaths, registered, turnsN);
+  payloadCache = { key, turnsN, data };
   return data;
 }
 
 async function computeDashboardDataUncached(
   activePaths: SynthraPaths,
   registered: Awaited<ReturnType<typeof listProjects>>,
-  feedN: number,
   turnsN: number,
 ): Promise<DashboardData> {
   // Always include the active project, even if not yet in the registry.
@@ -643,7 +566,6 @@ async function computeDashboardDataUncached(
     bash: [],
     routes: [],
     delegations: [],
-    learn: emptyStore(),
   };
   const activeStats = summarize(activeFiles);
 
@@ -698,36 +620,9 @@ async function computeDashboardDataUncached(
   const g_used = g_in + g_out + g_cc;
   const g_saved_pct = g_used + g_saved > 0 ? (g_saved / (g_used + g_saved)) * 100 : 0;
 
-  // Recent turns + gates + bash hunts across all projects, sorted by ts descending
+  // Recent turns across all projects, newest first
   const allTurns: RecentTurn[] = [];
-  const allGates: RecentGate[] = [];
-  const allBash: RecentBash[] = [];
-  const allRoutes: RecentRoute[] = [];
   for (const p of loaded) {
-    for (const r of p.routes) {
-      allRoutes.push({
-        ts: r.ts,
-        project_name: p.name,
-        project_path: p.path,
-        prompt: r.prompt,
-        routed: r.routed,
-        difficulty: r.difficulty,
-        ...(r.agent ? { agent: r.agent } : {}),
-        ...(r.model ? { model: r.model } : {}),
-      });
-    }
-    for (const b of p.bash) {
-      allBash.push({
-        ts: b.ts,
-        project_name: p.name,
-        project_path: p.path,
-        kind: b.kind,
-        tool: b.tool,
-        query: b.query,
-        confidence: b.confidence,
-        avoidable: b.avoidable,
-      });
-    }
     for (const t of p.tokens) {
       allTurns.push({
         // Fall back to written_at — the Stop hook today posts entries without
@@ -743,21 +638,8 @@ async function computeDashboardDataUncached(
         cost_usd: Math.round(estimateCostUsd(t) * 1000) / 1000,
       });
     }
-    for (const gate of p.gates) {
-      allGates.push({
-        ts: gate.ts,
-        project_name: p.name,
-        project_path: p.path,
-        tool: gate.tool,
-        decision: gate.decision,
-        query: gate.query,
-      });
-    }
   }
   allTurns.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-  allGates.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-  allBash.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-  allRoutes.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
 
   return {
     active: {
@@ -792,9 +674,6 @@ async function computeDashboardDataUncached(
     },
     projects,
     recent_turns: allTurns.slice(0, turnsN),
-    recent_gates: allGates.slice(0, feedN),
-    recent_bash: allBash.slice(0, feedN),
-    recent_routes: allRoutes.slice(0, feedN),
   };
 }
 

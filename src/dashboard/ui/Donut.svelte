@@ -26,7 +26,7 @@
   });
 </script>
 
-<Card title="Model usage" meta="by turns" class="syn-card-models">
+<Card title="Model usage" meta="by replies" class="syn-card-models">
   <div class="flex items-center gap-4">
     {#if view.total > 0}
       <div class="size-[130px] shrink-0">
@@ -50,7 +50,7 @@
               dy={2}
             />
             <Text
-              value="TURNS"
+              value="REPLIES"
               textAnchor="middle"
               verticalAnchor="middle"
               class="fill-muted-foreground font-mono text-[9px]! tracking-[0.14em]"
@@ -83,7 +83,7 @@
           <span class="w-9 text-right tabular-nums text-muted-foreground">{s.pct}%</span>
         </div>
       {:else}
-        <div class="text-sm text-muted-foreground">No turns yet — model usage lands here after your first Claude turn.</div>
+        <div class="text-sm text-muted-foreground">No replies yet. Models show here after your first reply.</div>
       {/each}
     </div>
   </div>

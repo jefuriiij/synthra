@@ -19,10 +19,7 @@ import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
 import { findFreePort } from "../server/port.js";
-import { parseFavoriteRequest, readFavorites, setFavorite } from "../shared/favorites.js";
-import { computeArsenal, computeArsenalDetail, isArsenalKind, isArsenalScope } from "./arsenal.js";
 import { computeDashboardData } from "./delta.js";
-import { checkLocalJsonPost } from "./origin-guard.js";
 
 // The dashboard UI is built by Vite (svelte + tailwind) into a single
 // self-contained HTML (JS+CSS inlined) at ./built/index.html; tsup text-inlines
@@ -32,9 +29,8 @@ import faviconSvg from "./public/favicon.svg";
 
 const FALLBACK_RANGE = 9; // try preferredPort + [0..9]
 const VERSION = (pkgJson as { version: string }).version;
-// Per-feed payload budgets live in delta.ts next to the slicing they control
-// (see RECENT_FEED_N / RECENT_TURNS_N). Left undefined here so each feed gets
-// its own default; SYN_DASHBOARD_RECENT_N still overrides both at once.
+// The turn-history depth lives in delta.ts (RECENT_TURNS_N); undefined here
+// keeps that default unless SYN_DASHBOARD_RECENT_N overrides it.
 const RECENT_N = Number(process.env.SYN_DASHBOARD_RECENT_N) || undefined;
 
 export interface DashboardServerHandle {
@@ -58,7 +54,7 @@ export async function startDashboard(
   // Same guard as the MCP server, for the same reason: binding 127.0.0.1 does
   // not stop a page in the user's browser from being tricked into relaying for
   // a remote attacker (DNS rebinding — see shared/host-guard.ts). This server
-  // hands out /report, /data and any skill's file body via /arsenal/item.
+  // hands out /report and /data.
   const allowedHosts = loadConfig().allowedHosts;
   app.use("*", async (c, next) => {
     const host = c.req.header("host");
@@ -78,54 +74,6 @@ export async function startDashboard(
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
-
-  // Installed skills / agents / MCP servers (project · personal · plugin).
-  // Fetched lazily when the Arsenal drawer opens — not on the /data poll.
-  app.get("/arsenal", async (c) => c.json(await computeArsenal(paths.projectRoot)));
-
-  // Full source for ONE arsenal item — backs the detail modal. The client sends
-  // only the identity it already holds from /arsenal, never a filesystem path;
-  // the server re-resolves name → file through its own scan index, so there is
-  // no traversal surface here. Query params (not path segments) because item
-  // names legitimately contain ":" and spaces.
-  app.get("/arsenal/item", async (c) => {
-    const kind = c.req.query("kind");
-    const scope = c.req.query("scope");
-    const name = c.req.query("name") ?? "";
-    const source = c.req.query("source") || undefined;
-    if (!isArsenalKind(kind) || !isArsenalScope(scope) || !name) {
-      return c.json({ error: "kind, scope and name are required" }, 400);
-    }
-    const detail = await computeArsenalDetail(paths.projectRoot, { kind, scope, name, source });
-    return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
-  });
-
-  // Favorited skills/agents, machine-wide (~/.synthra/favorites.json). Browsing
-  // only — nothing in the routing path reads these, so a favorite can never
-  // change which agent Claude gets pointed at.
-  app.get("/favorites", async (c) => c.json({ favorites: (await readFavorites()).favorites }));
-
-  // The dashboard's only mutating route. `favorite` is an explicit boolean
-  // rather than a toggle, so a double-clicked heart is idempotent instead of a
-  // coin flip. Responds with the full list so the client reconciles against the
-  // server rather than guessing — which also heals two tabs drifting apart.
-  app.post("/favorites", async (c) => {
-    const guard = checkLocalJsonPost(c.req.header("content-type"), c.req.header("origin"), port);
-    if (!guard.ok) return c.json({ error: guard.error }, guard.status);
-
-    const parsed = parseFavoriteRequest(await c.req.json().catch(() => null));
-    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-
-    try {
-      return c.json({ ok: true, ...(await setFavorite(parsed.id, parsed.favorite)) });
-    } catch (err) {
-      // Deliberately NOT the house best-effort swallow: the user clicked a heart
-      // and is watching it, so a silent failure would leave the UI lying.
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn(`favorites write failed: ${message}`);
-      return c.json({ ok: false, error: message }, 500);
-    }
-  });
 
   // Diagnostic for the Report dialog: runs the doctor checks and prebuilds the
   // redacted markdown so the UI copies exactly what `syn doctor --report` emits.

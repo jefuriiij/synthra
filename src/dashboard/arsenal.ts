@@ -59,55 +59,11 @@ export interface ArsenalData {
   scanned_at: string;
 }
 
-/** One item's full source — the payload behind the detail modal. */
-export interface ArsenalDetail {
-  kind: ArsenalKind;
-  name: string;
-  scope: ArsenalScope;
-  source?: string;
-  enabled?: boolean;
-  pack?: string;
-  pack_command?: string;
-  /** Unclipped — the DESC_MAX clip on list items is lossy. "" when none. */
-  description: string;
-  /** Home-collapsed display path (`~/.claude/skills/impeccable/SKILL.md`).
-   *  Absent for MCP items, which are config entries with no file of their own. */
-  path?: string;
-  /** Every frontmatter key, nested ones dotted. Absent for MCP items and for
-   *  files with no frontmatter block. */
-  frontmatter?: Record<string, string>;
-  /** Raw markdown below the frontmatter, capped at BODY_MAX. Absent for MCP
-   *  items and when the file vanished between scan and request. */
-  body?: string;
-  /** Full pre-cap length of `body`. */
-  body_chars?: number;
-  truncated: boolean;
-  meta?: Record<string, string>;
-}
-
-export interface ArsenalDetailQuery {
-  kind: ArsenalKind;
-  scope: ArsenalScope;
-  name: string;
-  source?: string;
-}
-
-export function isArsenalKind(v: unknown): v is ArsenalKind {
-  return v === "skills" || v === "agents" || v === "mcp";
-}
-
-export function isArsenalScope(v: unknown): v is ArsenalScope {
-  return v === "project" || v === "personal" || v === "plugin";
-}
-
 const DESC_MAX = 300;
 const TOOLS_MAX = 200;
 /** Frontmatter blocks longer than this are truncated — a bound, not a limit
  *  anyone should hit (the longest real SKILL.md frontmatter is ~30 lines). */
 const FM_MAX_LINES = 200;
-/** Detail bodies are capped here. Generous on purpose: the largest real skill
- *  file (framer-code-components) is ~64 KB, and this is a localhost payload. */
-const BODY_MAX = 200_000;
 
 interface PackSpec {
   /** Skill-relative JSON manifest: `{ "<command>": { description, argumentHint } }`. */
@@ -773,76 +729,11 @@ export function clearArsenalCache(): void {
 
 /**
  * The absolute path an item was scanned from, out of the last scan's index.
- * For the IDE extension, which opens the file in the editor. The dashboard
- * never gets this (see ArsenalSource), and like computeArsenalDetail it builds
- * no path from its input. Call it right after computeArsenal, in the same tick:
- * a later scan replaces the index.
+ * For the IDE extension, which opens the file in the editor. It builds no path
+ * from its input. Call it right after computeArsenal, in the same tick: a later
+ * scan replaces the index.
  */
 export function arsenalItemFile(kind: ArsenalKind, item: ArsenalItem): string | undefined {
   if (kind === "mcp") return undefined;
   return cache?.sources.get(itemKey(kind, item.scope, item.source, item.name))?.file;
-}
-
-/** `C:\Users\Jeff\.claude\…` → `~/.claude/…` for display. */
-function collapseHome(path: string, homeDir: string): string {
-  const normal = path.replace(/\\/g, "/");
-  const home = homeDir.replace(/\\/g, "/").replace(/\/$/, "");
-  return normal.startsWith(`${home}/`) ? `~${normal.slice(home.length)}` : normal;
-}
-
-/**
- * Everything about ONE item, including the full file body — the payload behind
- * the detail modal.
- *
- * Security invariant: this function performs NO path construction from `query`.
- * Every path it reads comes out of the scan's own `sources` index, so a caller
- * cannot steer it at a file the scanner didn't already walk. MCP items are
- * never indexed, which is why `.mcp.json` / `~/.claude.json` / `settings.json`
- * (the files most likely to sit next to auth tokens) are unreachable here.
- */
-export async function computeArsenalDetail(
-  projectRoot: string,
-  query: ArsenalDetailQuery,
-  homeDir = homedir(),
-): Promise<ArsenalDetail | null> {
-  // Always go through computeArsenal: on a hit we reuse the memo's index, on a
-  // miss we build both. There is no "index not populated yet" state to handle.
-  const data = await computeArsenal(projectRoot, homeDir);
-  const item = data[query.kind].find(
-    (i) =>
-      i.name === query.name && i.scope === query.scope && (i.source ?? "") === (query.source ?? ""),
-  );
-  if (!item) return null;
-
-  const base: ArsenalDetail = {
-    kind: query.kind,
-    name: item.name,
-    scope: item.scope,
-    ...(item.source ? { source: item.source } : {}),
-    ...(item.enabled !== undefined ? { enabled: item.enabled } : {}),
-    ...(item.pack ? { pack: item.pack } : {}),
-    ...(item.pack_command ? { pack_command: item.pack_command } : {}),
-    description: item.description,
-    truncated: false,
-    ...(item.meta ? { meta: item.meta } : {}),
-  };
-  // MCP entries are config, not files — nothing more to read.
-  if (query.kind === "mcp") return base;
-
-  const src = cache?.sources.get(itemKey(query.kind, item.scope, item.source, item.name));
-  if (!src) return base;
-  base.path = collapseHome(src.file, homeDir);
-  base.description = src.description.trim();
-
-  const text = await readText(src.file);
-  // Resolved but unreadable (moved since the scan): a half-populated modal
-  // beats a 404 that reads like a bug.
-  if (text === null) return base;
-
-  const { fm, body } = readFrontmatter(text);
-  if (Object.keys(fm).length) base.frontmatter = fm;
-  base.body_chars = body.length;
-  base.body = body.slice(0, BODY_MAX);
-  base.truncated = body.length > BODY_MAX;
-  return base;
 }

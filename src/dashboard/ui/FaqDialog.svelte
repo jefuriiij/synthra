@@ -5,39 +5,23 @@
   const faqs: { q: string; a: string }[] = [
     {
       q: "Where do these numbers come from?",
-      a: "Synthra's Stop hook reads Claude Code's transcript JSONL after each turn and logs token usage to .synthra-graph/token_log.jsonl. The gate logs to gate_log.jsonl, tool calls to tool_log.jsonl. The dashboard reads those — it never feeds back into retrieval.",
+      a: "After each Claude reply, Synthra reads Claude Code's own record of the chat and writes the token counts to .synthra-graph/token_log.jsonl in your project. The dashboard only reads those files. Nothing leaves your computer.",
     },
     {
-      q: "How is cost calculated?",
-      a: "Token counts × Anthropic's published per-model rates (in src/shared/pricing.ts), summed across input, output, cache-read and cache-write. These are API-equivalent estimates, not your plan billing — useful for comparing sessions.",
+      q: "Why does Spend look so high? I pay a monthly plan.",
+      a: "Spend is the token count times Anthropic's public API prices. On a Claude plan you pay the plan price, not this. The number shows what the same work would cost on the API, so you can compare chats and projects.",
     },
     {
-      q: "What is the savings floor?",
-      a: "Each time the Moat blocks an exploratory Grep/Glob, we credit a deliberately conservative 500 tokens × $3/M input rate. Real savings are usually higher (it ignores cache thrash and follow-up reads the block also prevents). It's a floor, not a guess.",
+      q: "How is \"Saved by Synthra\" counted?",
+      a: "When Claude uses its Grep or Glob tool to look for something Synthra already has in its map, Synthra stops the search and gives Claude the answer. Each stopped search counts as 500 tokens at $3 per million, a low estimate on purpose. The card appears only once a search was stopped: Claude often searches through the terminal instead, which Synthra watches but never stops.",
     },
     {
-      q: "What is the Moat?",
-      a: "A PreToolUse hook that intercepts Grep/Glob and, when the graph has confident context, blocks them and hands back the exact graph_read targets + signatures — so the agent reads ~50-token slices instead of whole files.",
+      q: "Why does a project show no replies?",
+      a: "Synthra must run in that project while you chat. Open the folder in VS Code with the Synthra extension, or run syn . in a terminal there. Replies from before Synthra started are not counted.",
     },
     {
-      q: "What is the Dispatcher?",
-      a: "A UserPromptSubmit hook that scores each prompt against every installed agent and skill (plus the project's language fingerprint) and picks a best-fit agent, model, and skill. Since v0.21 it runs in shadow mode by default: it records what it would have recommended but injects nothing, because the first field window measured a 1.2% follow-rate on injected hints — they have to earn the right to speak again. The card shows both numbers ('would have hinted' vs actually followed). Set SYN_ROUTE_HINTS=1 to re-enable injection; route_task(task) always answers on demand.",
-    },
-    {
-      q: "What is the Arsenal view?",
-      a: "A scan of every skill, subagent, and MCP server available to you — project, personal (~/.claude), and plugin — with descriptions, so you never have to drop to the CLI to recall what's installed. MCP entries show name/type/url only; auth tokens are never read.",
-    },
-    {
-      q: "What's the codebase graph?",
-      a: "tree-sitter parses your project into a symbol graph (files, symbols, imports, call edges). graph_read returns a symbol's source plus its dependency surface; graph_continue packs a context bundle.",
-    },
-    {
-      q: "Where is everything stored?",
-      a: ".synthra-graph/ (machine-local, gitignored) holds the graph + logs; .synthra/ (git-tracked) holds branch-aware memory. Nothing leaves your machine.",
-    },
-    {
-      q: "Why is my bill not lower already?",
-      a: "Savings land only when the agent actually uses the cheap path. v0.4–0.6 push the answer to the point of use (block payloads, edit recipes, dependency footers); a real dogfood session on the latest version is the true test.",
+      q: "Where are my skills, memory and agents?",
+      a: "In the Synthra extension for VS Code and other editors. Its sidebar and large panel show Learning, Memory, Capabilities, Agents and Settings.",
     },
   ];
 </script>
@@ -49,7 +33,7 @@
       class="fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[min(640px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border bg-card p-6 text-card-foreground shadow-2xl"
     >
       <Dialog.Title class="font-serif text-2xl">FAQ</Dialog.Title>
-      <Dialog.Description class="text-xs text-muted-foreground">Where every number on this dashboard comes from.</Dialog.Description>
+      <Dialog.Description class="text-xs text-muted-foreground">What the numbers on this page mean.</Dialog.Description>
       <div class="mt-4 flex flex-col gap-2">
         {#each faqs as f (f.q)}
           <details class="rounded-lg border bg-card/50 p-3">

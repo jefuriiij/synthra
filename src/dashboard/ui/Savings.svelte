@@ -26,11 +26,13 @@
   $effect(() => moneyCounter.set(s.money));
 </script>
 
-<Card title="Synthra savings" meta={`${s.pct.toFixed(1)}% off · floor`} class="syn-card-savings">
+<Card title="Saved by Synthra" meta="estimate" class="syn-card-savings">
   <div class="flex flex-col gap-3">
     <div>
       <div class="font-mono text-3xl text-[var(--money)]">{fmtCost(moneyCounter.value)}</div>
-      <div class="font-mono text-sm text-muted-foreground">{fmt(s.tokens)} tokens avoided</div>
+      <div class="text-sm text-muted-foreground">
+        {fmt(s.blocks)} repeat searches stopped · {fmt(s.tokens)} tokens · {s.pct.toFixed(1)}% less
+      </div>
     </div>
     <div class="flex h-2 overflow-hidden rounded-full bg-border">
       <div class="h-full bg-muted-foreground/40" style={`width:${s.paidWidth}%`}></div>
@@ -38,10 +40,10 @@
     </div>
     <div class="flex justify-between font-mono text-xs text-muted-foreground">
       <span>you paid <b class="text-foreground">{fmtCost(s.paid)}</b></span>
-      <span>baseline <b class="text-foreground">{fmtCost(s.baseline)}</b></span>
+      <span>without Synthra <b class="text-foreground">{fmtCost(s.baseline)}</b></span>
     </div>
-    <div class="rounded-md border border-dashed border-border px-3 py-2 text-center font-mono text-xs text-muted-foreground">
-      <b class="text-foreground">{s.blocks}</b> blocks × <b class="text-foreground">500</b> tokens × <b class="text-foreground">$3</b>/M = <b class="text-[var(--money)]">{fmtCost(s.money)}</b>
+    <div class="text-xs text-muted-foreground">
+      Each stopped search counts as 500 tokens at $3 per million, so the real saving is usually higher.
     </div>
   </div>
 </Card>

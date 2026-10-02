@@ -19,18 +19,18 @@
   function cells(p: ProjectStats): [string, string][] {
     return [
       ["Cost", fmtCost(p.estimated_cost_usd)],
-      ["Turns", fmt(p.total_turns)],
+      ["Replies", fmt(p.total_turns)],
       ["Input", fmt(p.total_input_tokens)],
       ["Output", fmt(p.total_output_tokens)],
       ["Cache R", fmt(p.total_cache_read)],
       ["Cache W", fmt(p.total_cache_create)],
-      ["Blocks", fmt(p.blocked_count)],
+      ["Searches stopped", fmt(p.blocked_count)],
       ["Last active", lastActive(p)],
     ];
   }
 </script>
 
-<Card title="Projects" meta="by turns" class="syn-card-projects">
+<Card title="Projects" meta="by replies" class="syn-card-projects">
   <div class="flex max-h-[260px] flex-col gap-2 overflow-y-auto pr-1">
     {#each projects as p (p.path)}
       <button onclick={() => { sel = p; open = true; }} class="flex flex-col gap-1 text-left">

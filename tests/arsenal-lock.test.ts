@@ -14,8 +14,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { computeArsenal, type ArsenalItem } from "../src/dashboard/arsenal.js";
-import { skillInvocation, detailSubtitle } from "../src/dashboard/ui/lib/arsenal-detail.js";
-import { buildGroups } from "../src/dashboard/ui/lib/arsenal-groups.js";
 
 async function write(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -74,7 +72,7 @@ describe("skill lock → pack", () => {
     expect(own?.pack).toBeUndefined();
   });
 
-  it("keeps the invoke string as /<name> — it is a standalone skill, not a pack member", async () => {
+  it("leaves pack_command unset — it is a standalone skill, not a pack member", async () => {
     const { home, project } = await fixture();
     await write(
       join(home, ".agents", ".skill-lock.json"),
@@ -82,7 +80,7 @@ describe("skill lock → pack", () => {
     );
     const data = await computeArsenal(project, home);
     const sonner = byName(data.skills, "ask-sonner") as ArsenalItem;
-    expect(skillInvocation(sonner, "skills")).toBe("/ask-sonner");
+    expect(sonner.pack_command).toBeUndefined();
   });
 
   it("lets the hard-coded PACKS table win over the lock", async () => {
@@ -128,25 +126,5 @@ describe("skill lock → pack", () => {
     const proj = data.skills.find((s) => s.name === "ask-sonner" && s.scope === "project");
     expect(proj?.pack).toBe("emilkowalski/skills");
     expect(personal?.pack).toBeUndefined();
-  });
-});
-
-describe("repo-slug labels", () => {
-  const sonner: ArsenalItem = {
-    name: "ask-sonner",
-    description: "",
-    scope: "personal",
-    pack: "emilkowalski/skills",
-  };
-
-  it("shows the slug as-is in the group panel instead of title-casing it", () => {
-    const groups = buildGroups([sonner], {});
-    const row = groups.find((g) => g.key === "pack:emilkowalski/skills");
-    expect(row?.label).toBe("emilkowalski/skills");
-    expect(row?.scope).toBe("pack"); // sorts with packs: after personal, before plugins
-  });
-
-  it("reads as a place in the detail subtitle", () => {
-    expect(detailSubtitle(sonner)).toBe("installed from emilkowalski/skills");
   });
 });

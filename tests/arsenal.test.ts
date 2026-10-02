@@ -3,13 +3,13 @@
 // injectable homeDir so we can point it at a temp fake-home.
 
 import { describe, it, expect } from "vitest";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  arsenalItemFile,
   computeArsenal,
-  computeArsenalDetail,
   parseFrontmatter,
   readFrontmatter,
 } from "../src/dashboard/arsenal.js";
@@ -297,16 +297,14 @@ describe("claude.ai synced skills", () => {
     expect(a.skills.filter((s) => s.scope === "personal").map((s) => s.name)).toEqual(["mine"]);
   });
 
-  it("opens their real file in the detail view", async () => {
+  it("points the editor at their real file", async () => {
     const { home, proj } = await syncedFixture();
-    await computeArsenal(proj, home);
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "plugin", source: "anthropic-skills", name: "docs" },
-      home,
+    const a = await computeArsenal(proj, home);
+    const docs = a.skills.find((s) => s.name === "docs" && s.source === "anthropic-skills");
+    expect(docs).toBeDefined();
+    expect(arsenalItemFile("skills", docs!)).toBe(
+      join(home, ".claude", "skills", "synced", "org_user", "docs", "SKILL.md"),
     );
-    expect(d?.path).toBe("~/.claude/skills/synced/org_user/docs/SKILL.md");
-    expect(d?.body).toContain("# docs");
   });
 
   it("leaves a personal skill that is itself named `synced` alone", async () => {
@@ -452,14 +450,12 @@ describe("pinned pack shortcuts", () => {
     expect(orphan?.pack).toBeUndefined(); // no pack to belong to
   });
 
-  it("serves an orphan pin's own file from the detail endpoint", async () => {
+  it("points the editor at an orphan pin's own file", async () => {
     const { home, proj } = await pinFixture();
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "personal", name: "orphan" },
-      home,
-    );
-    expect(d?.body).toContain("nosuchpack-pinned-skill");
+    const a = await computeArsenal(proj, home);
+    const orphan = a.skills.find((s) => s.name === "orphan" && s.scope === "personal");
+    const file = arsenalItemFile("skills", orphan!);
+    expect(await readFile(file!, "utf8")).toContain("nosuchpack-pinned-skill");
   });
 
   it("counts a merged pin once, not twice", async () => {
@@ -493,150 +489,5 @@ describe("pinned pack shortcuts", () => {
     expect(doc).toBeDefined();
     expect(doc?.pack).toBeUndefined();
     expect(doc?.pinned_as).toBeUndefined();
-  });
-});
-
-describe("computeArsenalDetail", () => {
-  async function detailFixture(): Promise<{ home: string; proj: string }> {
-    const home = await mkdtemp(join(tmpdir(), "syn-detail-home-"));
-    const proj = await mkdtemp(join(tmpdir(), "syn-detail-proj-"));
-    await write(
-      join(home, ".claude", "skills", "long", "SKILL.md"),
-      `---\nname: long-skill\ndescription: |\n  ${"d".repeat(500)}\nmetadata:\n  version: "1.2.3"\n---\n# Long\n\nThe body.\n`,
-    );
-    await write(
-      join(proj, ".claude", "agents", "rel.md"),
-      `---\nname: release-manager\ndescription: Ship it.\ntools: ${"T".repeat(400)}\n---\nAgent body.\n`,
-    );
-    await write(
-      join(proj, ".mcp.json"),
-      JSON.stringify({
-        mcpServers: {
-          myserver: {
-            type: "http",
-            url: "https://x.example/mcp?token=abc",
-            headers: { Authorization: "Bearer SECRETTOKEN123" },
-          },
-        },
-      }),
-    );
-    const packDir = join(home, ".claude", "skills", "impeccable");
-    await write(join(packDir, "SKILL.md"), "---\nname: impeccable\ndescription: Design.\n---\nB\n");
-    await write(
-      join(packDir, "scripts", "command-metadata.json"),
-      JSON.stringify({ polish: { description: "Final quality pass." } }),
-    );
-    await write(join(packDir, "reference", "polish.md"), "# Polish\n\nAlignment work.\n");
-    return { home, proj };
-  }
-
-  it("returns unclipped description, dotted frontmatter, and the body", async () => {
-    const { home, proj } = await detailFixture();
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "personal", name: "long-skill" },
-      home,
-    );
-    expect(d?.description).toHaveLength(500); // list item was clipped to 300
-    expect(d?.frontmatter?.["metadata.version"]).toBe("1.2.3");
-    expect(d?.body).toBe("# Long\n\nThe body.\n");
-    expect(d?.truncated).toBe(false);
-    expect(d?.path).toContain("~/.claude/skills/long/SKILL.md");
-  });
-
-  it("serves a pack member's reference file as its body", async () => {
-    const { home, proj } = await detailFixture();
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "personal", name: "impeccable polish" },
-      home,
-    );
-    expect(d?.pack_command).toBe("polish");
-    expect(d?.body).toBe("# Polish\n\nAlignment work.\n");
-    expect(d?.frontmatter).toBeUndefined(); // reference files carry none
-    expect(d?.description).toBe("Final quality pass.");
-  });
-
-  it("returns unclipped agent tools", async () => {
-    const { home, proj } = await detailFixture();
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "agents", scope: "project", name: "release-manager" },
-      home,
-    );
-    expect(d?.frontmatter?.tools).toHaveLength(400);
-    expect(d?.meta?.tools).toHaveLength(200); // the list item stays clipped
-  });
-
-  it("returns null for an unknown identity", async () => {
-    const { home, proj } = await detailFixture();
-    const wrongName = { kind: "skills", scope: "personal", name: "nope" } as const;
-    const wrongScope = { kind: "skills", scope: "project", name: "long-skill" } as const;
-    const wrongSource = {
-      kind: "skills",
-      scope: "personal",
-      name: "long-skill",
-      source: "someplugin",
-    } as const;
-    expect(await computeArsenalDetail(proj, wrongName, home)).toBeNull();
-    expect(await computeArsenalDetail(proj, wrongScope, home)).toBeNull();
-    expect(await computeArsenalDetail(proj, wrongSource, home)).toBeNull();
-  });
-
-  it("never resolves a caller-supplied path", async () => {
-    const { home, proj } = await detailFixture();
-    for (const name of ["../../../../etc/passwd", "../../.claude.json", "../SKILL.md"]) {
-      expect(
-        await computeArsenalDetail(proj, { kind: "skills", scope: "personal", name }, home),
-      ).toBeNull();
-    }
-  });
-
-  it("gives MCP items no body and leaks no secret", async () => {
-    const { home, proj } = await detailFixture();
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "mcp", scope: "project", name: "myserver" },
-      home,
-    );
-    expect(d?.body).toBeUndefined();
-    expect(d?.path).toBeUndefined();
-    expect(d?.meta?.url).toBe("https://x.example/mcp");
-    const blob = JSON.stringify(d);
-    expect(blob).not.toContain("SECRETTOKEN123");
-    expect(blob).not.toContain("Bearer");
-    expect(blob).not.toContain("token=abc");
-  });
-
-  it("caps an oversized body and reports the true length", async () => {
-    const home = await mkdtemp(join(tmpdir(), "syn-detail-big-"));
-    const proj = await mkdtemp(join(tmpdir(), "syn-detail-bigp-"));
-    const body = "y".repeat(250_000);
-    await write(join(home, ".claude", "skills", "big", "SKILL.md"), `---\nname: big\n---\n${body}`);
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "personal", name: "big" },
-      home,
-    );
-    expect(d?.body).toHaveLength(200_000);
-    expect(d?.body_chars).toBe(250_000);
-    expect(d?.truncated).toBe(true);
-  });
-
-  // Regression guard: the path index is built by computeArsenal, so a detail
-  // request arriving before any /arsenal call must still resolve.
-  it("resolves on a cold start with no prior computeArsenal call", async () => {
-    const home = await mkdtemp(join(tmpdir(), "syn-detail-cold-"));
-    const proj = await mkdtemp(join(tmpdir(), "syn-detail-coldp-"));
-    await write(
-      join(home, ".claude", "skills", "cold", "SKILL.md"),
-      "---\nname: cold\ndescription: First call is the detail one.\n---\nCold body.\n",
-    );
-    const d = await computeArsenalDetail(
-      proj,
-      { kind: "skills", scope: "personal", name: "cold" },
-      home,
-    );
-    expect(d?.body).toBe("Cold body.\n");
   });
 });
