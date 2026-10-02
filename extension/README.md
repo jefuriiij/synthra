@@ -127,20 +127,15 @@ Safe. Synthra enforces one server per project itself (v0.26 ownership records) �
 
 ## Install
 
-**From a `.vsix`:**
+Search for **Synthra** in the Extensions view, or:
 
 ```bash
-# VS Code
-code --install-extension synthra-vscode-0.31.0.vsix
-
-# Antigravity (note: NOT the `code` command)
-antigravity --install-extension synthra-vscode-0.31.0.vsix
-
-# Cursor
-cursor --install-extension synthra-vscode-0.31.0.vsix
+code --install-extension jefuriiij.synthra-vscode
 ```
 
-Or: Command Palette → **Extensions: Install from VSIX…**
+- **VS Code:** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=jefuriiij.synthra-vscode).
+- **Cursor, Antigravity, Windsurf, VSCodium:** from [Open VSX](https://open-vsx.org/extension/jefuriiij/synthra-vscode), which these editors install from.
+- **Offline:** download `synthra-vscode-<version>.vsix` from the [GitHub releases](https://github.com/jefuriiij/synthra/releases), then Command Palette → **Extensions: Install from VSIX…**
 
 ## Building it yourself
 

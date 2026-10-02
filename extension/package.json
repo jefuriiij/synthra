@@ -4,6 +4,11 @@
   "description": "Starts Synthra's context engine automatically when you open a project, and shows what it knows in the sidebar: memory, skills and tools, and the helper agents Claude used. Works in VS Code, Antigravity, Cursor, and other VS Code-compatible editors.",
   "version": "0.33.0",
   "publisher": "jefuriiij",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#04081A",
+    "theme": "dark"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,6 +19,7 @@
     "vscode": "^1.75.0"
   },
   "categories": [
+    "AI",
     "Other"
   ],
   "keywords": [
@@ -294,6 +300,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run compile",
     "compile": "npm run compile:host && npm run compile:webview",
     "compile:host": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
     "compile:webview": "vite build --logLevel warn",
