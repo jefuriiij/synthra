@@ -61,10 +61,11 @@ Ran it in the wrong folder? `syn remove` takes everything out again (see [Comman
 
 ### Claude learns
 
-- **Skills Claude writes.** When Claude works out something worth repeating (a release, a fix for an error that keeps coming back, your way of doing a task), it saves it as a Claude Code skill with `skill_manage`: for this project (`.claude/skills/`) or for every project (`~/.claude/skills/`).
-- **You decide.** A new or changed skill waits in the extension's **Learning** tab. See the change, then Approve or Reject.
-- **A gentle reminder.** After a long stretch of work, Synthra asks Claude whether the work was worth a skill.
-- **The Curator** keeps skills tidy. Once a week it marks skills Synthra wrote that nobody used for 14 days, and offers to archive the ones unused for 30. Nothing is deleted: pin a skill to keep it, or restore it any time.
+- **Broad skills, not one per task.** When Claude learns something worth keeping, it takes the first step that fits: improve the skill it used, improve an existing skill for the same kind of work, add a topical side file (`references/<topic>.md`) to that skill, and only then write a new skill, named for the kind of work. A skill is a folder: `SKILL.md` holds the rules every task needs, and `references/`, `templates/` and `scripts/` hold the detail. Skills live in this project (`.claude/skills/`) or in every project (`~/.claude/skills/`).
+- **Your own skills too.** Claude may improve skills you wrote by hand, with a patch or a side file. It never rewrites them and never claims them as Synthra's, and every such change waits for your OK. Skills an installer put there (`npx skills`) stay read-only.
+- **You decide.** A new or changed skill waits in the extension's **Learning** tab. See the change, then Approve or Reject. A merge comes as one card with Approve all.
+- **A gentle reminder.** After a long stretch of work (25 tool calls), Synthra asks Claude whether the work taught something a skill should hold. "No skill to save" is a normal answer.
+- **The Curator** keeps skills tidy. Once a week it marks skills Synthra wrote that nobody used for 14 days, and offers to archive the ones unused for 30. Nothing is deleted: add a skill to your favorites to keep it, or restore it any time.
 
 ### Claude writes safer code
 
@@ -92,9 +93,9 @@ Savings depend on the work. A refactor leans on the graph much more than a marku
 
 | Tab | What you see |
 |---|---|
-| **Learning** | Skills waiting for your OK, with why Claude wants them and the change. The Curator's stale and archived skills, with Pin and Restore. |
+| **Learning** | Skills waiting for your OK, with why Claude wants them and the change (a merge comes as one card). The Curator's stale and archived skills, with Add to favorites and Restore. |
 | **Memory** | The project memory, the notes about you, and the session notes for this branch. |
-| **Capabilities** | Every skill, agent, connected tool (MCP server) and plugin Claude Code can use, grouped by where it comes from. Click one to open it. |
+| **Capabilities** | Every skill, agent, connected tool (MCP server) and plugin Claude Code can use, grouped by where it comes from, plus **Made by Synthra** and **Favorites**. Each skill shows how often it was used and its side files. Its ⋯ menu opens, edits, stars, merges or deletes it (a delete moves it to the archive, so Restore brings it back). |
 | **Agents** | The helper agents Claude started this week, and the task it gave each one. |
 | **Settings** | The memory and skill reminders, the memory size limits, skill approval and the Curator. |
 
@@ -170,7 +171,7 @@ Fifteen tools over HTTP MCP (named `mcp__synthra__*`). Claude calls them instead
 | `context_remember(text, kind)` | Saves a decision, task, next step, fact or blocker for this git branch, in `.synthra/`. |
 | `context_recall(kind?)` | Reads the saved notes (this branch by default). |
 | `memory(target, action \| operations)` | Reads or changes the knowledge files: `project` is `.synthra/MEMORY.md`, `user` is `~/.synthra/USER.md`. Refuses past the size limit and anything that looks like a secret. |
-| `skill_manage(action, …)` | Writes and improves skills: `list`, `view`, `create` (scope `project` or `global`), `patch`, `edit`. Changes only skills Synthra wrote, only after a `view`. By default each change waits for your OK. |
+| `skill_manage(action, …)` | Keeps skills broad: `list`, `view` (with `file_path` for a side file), `patch`, `write_file` / `remove_file` (side files under `references/`, `templates/`, `scripts/`), `edit`, `create` (only for a new kind of work, with a reason), `archive` (after a merge, with `absorbed_into`). Synthra's skills take any change, your own take patches and side files only, installed ones are read-only. Always after a `view`. By default each change waits for your OK. |
 | `recent_activity(since_ms?)` | What you just saved, switched or changed. |
 | `count_tokens(text)` | A rough token count (characters / 4). |
 | `blast_radius(target, depth?)` | What a change can break: dependent files, or the callers and tests of a `file::symbol`. |
@@ -257,14 +258,14 @@ your-project/
     ├── context-store.json       # session notes (default branch)
     ├── CONTEXT.md               # a readable summary the Stop hook writes
     ├── branches/<name>/         # session notes for other branches
-    └── skills-archive/          # project skills the Curator archived
+    └── skills-archive/          # project skills archived (the Curator, a merge, or a delete)
 ```
 
 In your home folder, outside every repo:
 
 - `~/.synthra/USER.md`: the notes about you.
 - `~/.synthra/settings.json`: the Settings tab.
-- `~/.synthra/skills/`: skill proposals waiting for your OK, the history of every skill change, and the Curator's counts, pins and archive.
+- `~/.synthra/skills/`: skill proposals waiting for your OK, the history of every skill change, use counts, your favorites, and the archive.
 - `~/.synthra/projects.json`: every project Synthra ran in, for the dashboard.
 - `~/.claude/skills/`: skills for every project that Claude wrote (after your OK).
 
@@ -287,7 +288,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_USER_MEMORY` | `~/.synthra/USER.md` | Where USER.md lives |
 | `SYN_MEMORY_NUDGE_EVERY` | `10` | Remind Claude to save what it learned after this many replies; `0` turns it off |
 | `SYN_SKILL_APPROVAL` | `1` | `0` lets new and changed skills go live at once, without your OK |
-| `SYN_SKILL_NUDGE_EVERY` | `15` | Ask Claude whether its work was worth a skill after this many tool calls; `0` turns it off |
+| `SYN_SKILL_NUDGE_EVERY` | `25` | Ask Claude whether its work taught something a skill should hold after this many tool calls; `0` turns it off |
 | `SYN_CURATOR` | `1` | `0` turns the weekly Curator off ("Run now" still works) |
 | `SYN_ROUTE_HINTS` | _(unset)_ | `1` lets the Dispatcher add suggestions to the chat again |
 | `SYN_ROUTE_MIN_SCORE` | `5` | How sure the Dispatcher must be (higher is quieter) |

@@ -365,6 +365,36 @@ export class SynthraPanels implements vscode.Disposable {
     return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");
   }
 
+  /**
+   * Delete a skill: the server moves it to the archive (Restore in the
+   * Learning tab brings it back). The caller has asked the user first.
+   * Resolves to "" on success, or the reason it didn't happen.
+   */
+  async deleteSkill(path: string): Promise<string> {
+    return this.skillPost("/skills/delete", { path }, "delete skills");
+  }
+
+  /** Approve or reject every change of one merge, in order, as one answer. */
+  async answerGroup(group: string, verdict: "approve" | "reject"): Promise<string> {
+    return this.skillPost("/skills/answer-group", { group, verdict }, "answer a merge at once");
+  }
+
+  private async skillPost(route: string, body: unknown, what: string): Promise<string> {
+    const port = this.deps.port();
+    if (port === null) return "Synthra is not running.";
+    const r = await this.deps.postJson<{ ok?: boolean; error?: string }>(
+      `http://127.0.0.1:${port}${route}`,
+      body,
+      30_000,
+    );
+    this.refresh({ fresh: true });
+    if (r.status === 404)
+      return `This version of Synthra can't ${what}. Update Synthra to 0.36 or later.`;
+    if (r.status !== 200 || !r.body)
+      return "Synthra did not answer. See the log (Synthra: Show log).";
+    return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");
+  }
+
   private async fromTree(
     n: PanelNode | undefined,
     prefix: string,
@@ -418,7 +448,11 @@ export class SynthraPanels implements vscode.Disposable {
         if (first === undefined) break;
         this.diffTexts.delete(first);
       }
-      return vscode.Uri.from({ scheme: DIFF_SCHEME, path: `/${t.name}/SKILL.md`, query: k });
+      return vscode.Uri.from({
+        scheme: DIFF_SCHEME,
+        path: `/${t.name}/${t.file ?? "SKILL.md"}`,
+        query: k,
+      });
     };
     await vscode.commands.executeCommand("vscode.diff", key("before"), key("after"), t.title, {
       preview: true,
@@ -432,7 +466,7 @@ export class SynthraPanels implements vscode.Disposable {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(t.path));
       const pos = t.line ? new vscode.Position(Math.max(0, t.line - 1), 0) : undefined;
       await vscode.window.showTextDocument(doc, {
-        preview: true,
+        preview: t.preview ?? true,
         ...(pos ? { selection: new vscode.Range(pos, pos) } : {}),
       });
     } catch {

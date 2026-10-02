@@ -40,6 +40,19 @@ export interface PanelItem {
   file?: string;
   commands?: number;
   meta?: Record<string, string>;
+  // Skills, Synthra 0.36+ (see src/server/routes/panels.ts):
+  synthra?: true;
+  third_party?: string;
+  linked_to?: string;
+  /** A favorite. */
+  pinned?: true;
+  stale_days?: number;
+  uses?: number;
+  last_used?: string;
+  files?: string[];
+  files_more?: number;
+  editable?: true;
+  deletable?: true;
 }
 
 export interface PanelDelegation {
@@ -96,10 +109,18 @@ export interface PanelLearning {
   pending: {
     id: string;
     ts: string;
-    action: "create" | "patch" | "edit" | "archive";
+    action: "create" | "patch" | "edit" | "remove" | "archive";
     scope: SkillScope;
     name: string;
     path: string;
+    /** A support file, relative to the skill's folder (0.36+). */
+    file?: string;
+    owner?: "user";
+    linkedTo?: string;
+    /** A merge: the skill this one goes into. */
+    absorbedInto?: string;
+    /** Changes of one merge share it. */
+    group?: string;
     description: string;
     reason?: string;
     before: string | null;
@@ -109,12 +130,15 @@ export interface PanelLearning {
   recent: {
     id: string;
     ts: string;
-    action: "create" | "patch" | "edit" | "reject" | "archive" | "restore";
+    action: "create" | "patch" | "edit" | "remove" | "reject" | "archive" | "restore";
     actor: "agent" | "user" | "curator";
     approved?: boolean;
     scope: SkillScope;
     name: string;
     path: string;
+    file?: string;
+    owner?: "user";
+    absorbedInto?: string;
     reason?: string;
     beforeSha?: string;
     afterSha?: string;
@@ -173,9 +197,11 @@ export interface PanelSetting {
 export type DiffSide = { text: string } | { sha: string } | null;
 
 export type PanelTarget =
-  | { kind: "file"; path: string; line?: number }
-  /** A skill change, shown with VS Code's diff editor. */
-  | { kind: "diff"; title: string; name: string; before: DiffSide; after: DiffSide };
+  /** preview false: a kept tab, for editing. */
+  | { kind: "file"; path: string; line?: number; preview?: boolean }
+  /** A skill change, shown with VS Code's diff editor. `file`: the support
+   *  file it is about (its name picks the diff's language). */
+  | { kind: "diff"; title: string; name: string; file?: string; before: DiffSide; after: DiffSide };
 
 export interface PanelNode {
   id: string;
@@ -428,6 +454,9 @@ const SCOPES: { scope: ItemScope; label: string; icon: string }[] = [
 function itemNode(kind: string, i: PanelItem): PanelNode {
   const off = i.enabled === false;
   const description = [
+    i.synthra ? "by Synthra" : "",
+    i.pinned ? "favorite" : "",
+    i.stale_days !== undefined ? `unused ${i.stale_days} days` : "",
     i.commands ? plural(i.commands, "command") : "",
     kind === "agents" ? (i.meta?.model ?? "") : "",
     kind === "mcp" ? (i.meta?.type ?? "") : "",
@@ -442,7 +471,11 @@ function itemNode(kind: string, i: PanelItem): PanelNode {
     tooltip: [clip(i.description, 600), i.file ? "Click to open its file." : ""]
       .filter(Boolean)
       .join("\n\n"),
-    icon: off ? { id: "circle-slash" } : { id: kind === "mcp" ? "plug" : "circle-small" },
+    icon: off
+      ? { id: "circle-slash" }
+      : i.synthra
+        ? { id: "sparkle" }
+        : { id: kind === "mcp" ? "plug" : i.pinned ? "star-full" : "circle-small" },
     ...(i.file ? { open: { kind: "file", path: i.file } as const } : {}),
   };
 }
@@ -568,10 +601,23 @@ export const ACTION_LABEL: Record<string, string> = {
   create: "New skill",
   patch: "Improved",
   edit: "Rewrote",
+  remove: "Removed",
   reject: "Rejected",
   archive: "Archive",
   restore: "Restored",
 };
+
+/** What a waiting change is, in a few words: "New file references/x.md in",
+ *  "Change to your skill", "Merge into y:" (the skill's name follows). */
+export function proposalTitle(p: PanelLearning["pending"][number]): string {
+  if (p.action === "archive") return p.absorbedInto ? `Merge into ${p.absorbedInto}:` : "Archive";
+  if (p.file) {
+    const verb = p.action === "create" ? "New file" : p.action === "remove" ? "Remove" : "Changed";
+    return `${verb} ${p.file} in`;
+  }
+  if (p.owner === "user") return "Change to your skill";
+  return ACTION_LABEL[p.action] ?? p.action;
+}
 
 /** "2 days ago · 1 stale", for the Curator's last run. */
 export function curatorSummary(c: PanelCurator, now: number): string {
@@ -587,12 +633,14 @@ export function curatorSummary(c: PanelCurator, now: number): string {
 
 /** A pending proposal's diff: its own before/after text. */
 export function proposalDiff(p: PanelLearning["pending"][number]): PanelTarget {
+  const what = p.file ? `${p.name}/${p.file}` : p.name;
   return {
     kind: "diff",
-    title: `${p.name}: ${ACTION_LABEL[p.action]?.toLowerCase()} (waiting for your OK)`,
+    title: `${what}: ${(ACTION_LABEL[p.action] ?? p.action).toLowerCase()} (waiting for your OK)`,
     name: p.name,
+    ...(p.file ? { file: p.file } : {}),
     before: p.before === null ? null : { text: p.before },
-    after: { text: p.after },
+    after: { text: p.action === "remove" ? "" : p.after },
   };
 }
 
@@ -606,11 +654,27 @@ export function eventTarget(
   if (e.action === "archive") {
     return e.archivePath ? { kind: "file", path: `${e.archivePath}/SKILL.md` } : undefined;
   }
+  const what = e.file ? `${e.name}/${e.file}` : e.name;
+  const title = `${what}: ${(ACTION_LABEL[e.action] ?? e.action).toLowerCase()} ${relativeTime(e.ts, now)}`;
+  // A removed support file: what it held, against nothing.
+  if (e.action === "remove") {
+    return e.beforeSha
+      ? {
+          kind: "diff",
+          title,
+          name: e.name,
+          ...(e.file ? { file: e.file } : {}),
+          before: { sha: e.beforeSha },
+          after: { text: "" },
+        }
+      : undefined;
+  }
   if (e.action === "restore" || !e.afterSha) return { kind: "file", path: e.path };
   return {
     kind: "diff",
-    title: `${e.name}: ${ACTION_LABEL[e.action]?.toLowerCase()} ${relativeTime(e.ts, now)}`,
+    title,
     name: e.name,
+    ...(e.file ? { file: e.file } : {}),
     before: e.beforeSha ? { sha: e.beforeSha } : null,
     after: { sha: e.afterSha },
   };
@@ -638,7 +702,7 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
         id: `learn:pending:${x.id}`,
         label: x.name,
         description: [
-          ACTION_LABEL[x.action],
+          proposalTitle(x).replace(/ in$/, "").replace(/:$/, ""),
           SCOPE_LABEL[x.scope],
           x.stale ? "file changed since — reject it" : relativeTime(x.ts, now),
         ].join(" · "),
@@ -713,7 +777,7 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
       description: c.enabled
         ? `on · weekly · ${c.lastRun ? `last run ${curatorSummary(c, now)}` : "not run yet"}`
         : "off",
-      tooltip: `Tidies the skills Synthra wrote: unused ${c.staleDays} days → stale, unused ${c.archiveDays} days → archived. Nothing is deleted; pinned skills are never touched. Turn it on or off in Settings.`,
+      tooltip: `Tidies the skills Synthra wrote: unused ${c.staleDays} days → stale, unused ${c.archiveDays} days → archived. Nothing is deleted; favorites are never touched. Turn it on or off in Settings.`,
       icon: { id: "wand" },
       expanded: c.stale.length > 0,
       contextValue: "synthraCurator",
@@ -722,7 +786,8 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
           id: `learn:stale:${s.path}`,
           label: s.name,
           description: `stale · unused ${s.daysUnused} days · ${SCOPE_LABEL[s.scope]}`,
-          tooltip: "Not used for a while. Pin it to keep it, or let the Curator archive it later.",
+          tooltip:
+            "Not used for a while. Add it to your favorites to keep it, or let the Curator archive it later.",
           icon: { id: "watch" },
           open: { kind: "file", path: s.path } as const,
           contextValue: "synthraStaleSkill",
@@ -739,8 +804,8 @@ export function learningView(p: PanelsPayload, now: number): PanelView {
         ...c.pinned.map((p) => ({
           id: `learn:pinned:${p.path}`,
           label: p.name,
-          description: `pinned · ${SCOPE_LABEL[p.scope]}`,
-          icon: { id: "pinned" },
+          description: `favorite · ${SCOPE_LABEL[p.scope]}`,
+          icon: { id: "star-full" },
           open: { kind: "file", path: p.path } as const,
           contextValue: "synthraPinnedSkill",
         })),

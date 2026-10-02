@@ -9,6 +9,55 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Changed
+
+- **Broad skills: update first, create last.** Synthra wrote one narrow skill
+  per hard task ("rail-travelling-light", "holographic-tilt-badge") because its
+  reminder asked whether the work took "several steps or tries". The skill
+  reminder, the `skill_manage` description and the CLAUDE.md block (policy
+  v12) now give the order Hermes Agent uses: patch the skill used for the
+  task, then an existing skill for the same kind of work, then add a topical
+  `references/<topic>.md` to it, and only then create a skill named for the
+  kind of work. Lessons, not stories; a short list of what not to save; facts
+  about one client go to `.synthra/MEMORY.md`, never a global skill. A create
+  must say which skills were checked. The reminder now comes after 25 tool
+  calls, not 15, and "No skill to save" is a normal answer.
+
+### Added
+
+- **Skills are folders.** `skill_manage` writes and removes support files
+  under `references/`, `templates/` and `scripts/` (text only, 40,000
+  characters each, 30 per skill, never out of the skill's folder), and `view`
+  and `patch` take `file_path`. A change to a script always waits for your OK.
+- **Claude may improve your own skills.** A patch or a support file, never a
+  rewrite; written byte for byte, never marked as Synthra's; and every change
+  waits for your OK, even with approval off. Skills listed in an
+  `npx skills` lock file stay read-only.
+- **One waiting change per file.** A second change to a file folds into the
+  one that waits, and one that undoes it drops it.
+- **Delete a skill from the IDE** (`POST /skills/delete`): it moves to the
+  archive at once, so Restore brings it back. A linked skill moves as a link
+  and never empties the folder it points at.
+- **Merge narrow skills into one.** `skill_manage` action `archive` with
+  `absorbed_into` archives a skill once a broader one holds it, and
+  `POST /skills/answer-group` approves or rejects a whole merge: the umbrella
+  first, then its files, then the archives, and nothing at all if any part
+  changed meanwhile.
+- **Favorites** take the place of pins: any skill can be one, plugin skills
+  too, and a favorite Synthra wrote is never archived by the Curator. Your
+  pins carry over as favorites.
+- `/panels` skill rows say who wrote a skill, whether it is installed,
+  linked, a favorite or unused, how often it was used, and its support files.
+  Uses are now counted for your own skills too.
+
+### Fixed
+
+- **The activity watcher watched the folders it meant to skip.** Its ignore
+  list was glob patterns, which chokidar 4 and later no longer read, so it
+  watched `.git`, `.claude`, `.synthra` and `node_modules` too. On Windows a
+  watched folder can't be renamed, so archiving a project skill failed with
+  EPERM while Synthra ran. It now checks each folder name.
+
 ---
 
 ## [0.35.0] (2026-10-02)

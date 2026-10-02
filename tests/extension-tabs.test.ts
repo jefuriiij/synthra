@@ -6,8 +6,8 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 
 import { buildCsp, buildHtml } from "../extension/src/html.js";
-import { buildTabs, messageTabs, tildify } from "../extension/src/panelTabs.js";
-import type { PanelsPayload } from "../extension/src/panelTrees.js";
+import { buildTabs, mergePrompt, messageTabs, tildify } from "../extension/src/panelTabs.js";
+import { type PanelsPayload, proposalTitle } from "../extension/src/panelTrees.js";
 
 const ROOT = "/work/aster";
 
@@ -200,6 +200,97 @@ describe("Capabilities tab", () => {
     ]);
   });
 
+  // The row menu: what may be done to each skill comes from the engine.
+  it("offers favorite, edit, delete and merge only where the engine allows them", () => {
+    const { view, targets } = buildTabs(
+      ROOT,
+      payload({
+        capabilities: {
+          ...payload().capabilities,
+          skills: [
+            {
+              name: "rail-light",
+              description: "",
+              scope: "personal",
+              file: "/home/me/.claude/skills/rail-light/SKILL.md",
+              synthra: true,
+              pinned: true,
+              stale_days: 16,
+              uses: 3,
+              last_used: "2026-10-01T00:00:00.000Z",
+              files: ["references/timing.md"],
+              files_more: 2,
+              editable: true,
+              deletable: true,
+            },
+            {
+              name: "ask-sonner",
+              description: "",
+              scope: "personal",
+              file: "/home/me/.claude/skills/ask-sonner/SKILL.md",
+              third_party: "emilkowalski/skills",
+              linked_to: "/home/me/.agents/skills/ask-sonner",
+              editable: true,
+            },
+            {
+              name: "docs",
+              description: "",
+              scope: "plugin",
+              source: "x",
+              file: "/p/docs/SKILL.md",
+            },
+            // An engine older than 0.36 sends no facts: no actions then.
+            {
+              name: "old",
+              description: "",
+              scope: "project",
+              file: `${ROOT}/.claude/skills/old/SKILL.md`,
+            },
+          ],
+        },
+      }),
+    );
+    const [rail, sonner, docs, old] = view.capabilities!.skills;
+    expect(rail).toMatchObject({
+      synthra: true,
+      favorite: true,
+      staleDays: 16,
+      uses: 3,
+      lastUsed: Date.parse("2026-10-01T00:00:00.000Z"),
+      filesMore: 2,
+      canFavorite: true,
+      canDelete: true,
+      canMerge: true,
+    });
+    expect(targets.get(rail!.edit!)).toEqual({
+      kind: "file",
+      path: "/home/me/.claude/skills/rail-light/SKILL.md",
+      preview: false,
+    });
+    expect(targets.get(rail!.files![0]!.key)?.path).toBe(
+      join("/home/me/.claude/skills/rail-light", "references", "timing.md"),
+    );
+    expect(sonner).toMatchObject({ thirdParty: "emilkowalski/skills", canFavorite: true });
+    expect(sonner?.canDelete).toBeUndefined();
+    expect(sonner?.canMerge).toBeUndefined();
+    expect(docs).toMatchObject({ canFavorite: true });
+    expect(docs?.edit).toBeUndefined();
+    expect(old?.canFavorite).toBeUndefined();
+    expect(old?.canDelete).toBeUndefined();
+  });
+
+  it("writes a merge request that names every skill and how to archive them", () => {
+    const text = mergePrompt([
+      { name: "rail-light", path: "/a/SKILL.md" },
+      { name: "tilt-badge", path: "/b/SKILL.md" },
+    ]);
+    expect(text).toContain("- rail-light (/a/SKILL.md)");
+    expect(text).toContain("- tilt-badge (/b/SKILL.md)");
+    expect(text).toContain("absorbed_into");
+    expect(text).toContain("references/<topic>.md");
+    expect(text).not.toContain(String.fromCharCode(0x2014));
+  });
+
   it("passes a scan error through", () => {
     const { view } = buildTabs(
       ROOT,
@@ -322,5 +413,36 @@ describe("panel HTML", () => {
     expect(html).toContain('nonce="a&quot;b"');
     expect(html).toContain("x.js?a=1&amp;b=2");
     expect(html).not.toContain('nonce="a"b"');
+  });
+});
+
+describe("what a waiting change is called", () => {
+  const base = {
+    id: "x-000000",
+    ts: "2026-10-02T00:00:00.000Z",
+    scope: "global" as const,
+    name: "css-motion",
+    path: "/s/SKILL.md",
+    description: "",
+    before: null,
+    after: "",
+    stale: false,
+  };
+  it("names support files, the user's own skills, and merges", () => {
+    expect(proposalTitle({ ...base, action: "create" })).toBe("New skill");
+    expect(proposalTitle({ ...base, action: "create", file: "references/a.md" })).toBe(
+      "New file references/a.md in",
+    );
+    expect(proposalTitle({ ...base, action: "patch", file: "references/a.md" })).toBe(
+      "Changed references/a.md in",
+    );
+    expect(proposalTitle({ ...base, action: "remove", file: "references/a.md" })).toBe(
+      "Remove references/a.md in",
+    );
+    expect(proposalTitle({ ...base, action: "patch", owner: "user" })).toBe("Change to your skill");
+    expect(proposalTitle({ ...base, action: "archive", absorbedInto: "css-motion" })).toBe(
+      "Merge into css-motion:",
+    );
+    expect(proposalTitle({ ...base, action: "archive" })).toBe("Archive");
   });
 });

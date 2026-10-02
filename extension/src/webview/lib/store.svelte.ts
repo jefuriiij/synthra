@@ -18,6 +18,12 @@ class Store {
    *  an archive path, or "run"). */
   curatorBusy = $state<Record<string, boolean>>({});
   curatorErrors = $state<Record<string, string>>({});
+  /** Favorite and delete from Capabilities, by the skill's path. */
+  skillBusy = $state<Record<string, boolean>>({});
+  skillErrors = $state<Record<string, string>>({});
+  /** Why the last merge request couldn't be made ("" = it is on the clipboard). */
+  mergeError = $state("");
+  merging = $state(false);
 
   apply(msg: HostToWebview): void {
     if (msg.type === "view") this.view = msg.view;
@@ -29,6 +35,12 @@ class Store {
     } else if (msg.type === "curatorResult") {
       this.curatorBusy = { ...this.curatorBusy, [msg.target]: false };
       this.curatorErrors = { ...this.curatorErrors, [msg.target]: msg.error };
+    } else if (msg.type === "skillResult") {
+      this.skillBusy = { ...this.skillBusy, [msg.target]: false };
+      this.skillErrors = { ...this.skillErrors, [msg.target]: msg.error };
+    } else if (msg.type === "mergeResult") {
+      this.merging = false;
+      this.mergeError = msg.error;
     } else if (msg.type === "settingResult") {
       this.saving = { ...this.saving, [msg.key]: false };
       this.settingErrors = { ...this.settingErrors, [msg.key]: msg.error };
@@ -53,6 +65,29 @@ class Store {
     this.curatorBusy = { ...this.curatorBusy, [target]: true };
     this.curatorErrors = { ...this.curatorErrors, [target]: "" };
     post(a);
+  }
+
+  /** Approve or reject every change of one merge. */
+  answerGroup(group: string, verdict: "approve" | "reject"): void {
+    this.answering = { ...this.answering, [group]: true };
+    this.answerErrors = { ...this.answerErrors, [group]: "" };
+    post({ type: "answerGroup", group, verdict });
+  }
+
+  /** Capabilities: star or unstar, or delete (the host asks first). */
+  skill(
+    a: { type: "favorite"; path: string; on: boolean } | { type: "deleteSkill"; path: string },
+  ): void {
+    this.skillBusy = { ...this.skillBusy, [a.path]: true };
+    this.skillErrors = { ...this.skillErrors, [a.path]: "" };
+    post(a);
+  }
+
+  /** Put a merge request for these skills on the clipboard. */
+  merge(paths: string[]): void {
+    this.merging = true;
+    this.mergeError = "";
+    post({ type: "mergeSkills", paths });
   }
 
   /** Change a setting; null = back to its default. */

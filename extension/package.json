@@ -155,15 +155,15 @@
       },
       {
         "command": "synthra.skills.pin",
-        "title": "Pin (keep it)",
+        "title": "Add to favorites (the Curator keeps it)",
         "category": "Synthra",
-        "icon": "$(pin)"
+        "icon": "$(star-empty)"
       },
       {
         "command": "synthra.skills.unpin",
-        "title": "Unpin",
+        "title": "Remove from favorites",
         "category": "Synthra",
-        "icon": "$(pinned)"
+        "icon": "$(star-full)"
       },
       {
         "command": "synthra.skills.restore",

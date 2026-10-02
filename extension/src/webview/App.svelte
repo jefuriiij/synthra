@@ -114,7 +114,7 @@
       {:else if store.tab === "memory" && view.memory}
         <MemoryTab memory={view.memory} {now} />
       {:else if store.tab === "capabilities" && view.capabilities}
-        <CapabilitiesTab capabilities={view.capabilities} />
+        <CapabilitiesTab capabilities={view.capabilities} {now} />
       {:else if store.tab === "agents" && view.agents}
         <AgentsTab agents={view.agents} {now} />
       {:else if store.tab === "settings"}

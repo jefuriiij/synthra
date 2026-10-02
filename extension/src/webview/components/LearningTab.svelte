@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LearningTab } from "../../shared/tabs";
+  import type { LearningTab, ProposalRow } from "../../shared/tabs";
   import { plural, relativeTime } from "../../shared/time";
   import { store } from "../lib/store.svelte";
   import Icon from "./Icon.svelte";
@@ -11,6 +11,7 @@
     create: "New skill",
     patch: "Improved",
     edit: "Rewrote",
+    remove: "Removed",
     reject: "Rejected",
     archive: "Archive",
     restore: "Restored",
@@ -18,6 +19,14 @@
   const BY = { agent: "", user: " · by you", curator: " · by the Curator" } as const;
 
   const c = $derived(l.curator);
+
+  // The changes of one merge come as one card; everything else one by one.
+  const singles = $derived(l.pending.filter((p) => !p.group));
+  const groups = $derived.by(() => {
+    const m = new Map<string, ProposalRow[]>();
+    for (const p of l.pending) if (p.group) m.set(p.group, [...(m.get(p.group) ?? []), p]);
+    return [...m.entries()];
+  });
   const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
   const headline = $derived.by(() => {
@@ -48,17 +57,57 @@
 {#if l.pending.length}
   <h2 class="section-label">Waiting for your OK <span class="aside">· {l.pending.length}</span></h2>
   <div class="card">
-    {#each l.pending as p (p.id)}
-      <div class="row">
-        <Icon name={p.stale ? "warning" : p.action === "create" ? "sparkle" : p.action === "archive" ? "history" : "pencil"} size={16} class={p.stale ? "warn icon" : "syn icon"} />
+    {#each groups as [group, members] (group)}
+      {@const umbrella = members.find((m) => m.action !== "archive")?.name ?? members[0]?.name}
+      <div class="row group-head">
+        <Icon name="merge" size={16} class="syn icon" />
         <div class="stack">
           <span class="name-line">
-            <span class="headline-sm">{VERB[p.action]}</span>
+            <span class="headline-sm">Merge into</span>
+            <span class="mono">{umbrella}</span>
+            <span class="small muted">· {plural(members.length, "change")}</span>
+          </span>
+          <span class="small muted">Approve all applies them in order: the skill first, then its files, then the skills it absorbed go to the archive.</span>
+          {#if members.some((m) => m.stale)}
+            <span class="stale">Something changed since this merge was proposed. Reject it, and ask the AI again.</span>
+          {/if}
+          {#if store.answerErrors[group]}<span class="stale">{store.answerErrors[group]}</span>{/if}
+          <span class="actions">
+            <button type="button" class="btn primary" disabled={members.some((m) => m.stale) || store.answering[group]} onclick={() => store.answerGroup(group, "approve")}>
+              <Icon name="check" size={13} /> Approve all
+            </button>
+            <button type="button" class="btn" disabled={store.answering[group]} onclick={() => store.answerGroup(group, "reject")}>
+              <Icon name="cross" size={13} /> Reject all
+            </button>
+          </span>
+        </div>
+      </div>
+      {#each members as p (p.id)}
+        <div class="row sub">
+          <span class="stack">
+            <span class="name-line small">
+              <span class="headline-sm">{p.action === "archive" ? "Goes to the archive:" : p.title}</span>
+              <span class="mono">{p.name}</span>
+              <button type="button" class="link-btn" onclick={() => store.open(p.diff)}>see the change</button>
+            </span>
+            {#if p.reason}<span class="small muted">Why: {p.reason}</span>{/if}
+          </span>
+        </div>
+      {/each}
+    {/each}
+    {#each singles as p (p.id)}
+      <div class="row">
+        <Icon name={p.stale ? "warning" : p.action === "create" ? "sparkle" : p.action === "archive" ? "history" : p.yours ? "person" : "pencil"} size={16} class={p.stale ? "warn icon" : "syn icon"} />
+        <div class="stack">
+          <span class="name-line">
+            <span class="headline-sm">{p.title}</span>
             <span class="mono">{p.name}</span>
+            {#if p.yours}<span class="tag">yours</span>{/if}
             <span class="tag">{SCOPE[p.scope]}</span>
           </span>
           {#if p.description}<span class="small muted clamp2">{p.description}</span>{/if}
           {#if p.reason}<span class="small">Why: {p.reason}</span>{/if}
+          {#if p.linkedTo}<span class="small muted">Saved in {p.linkedTo}</span>{/if}
           {#if p.stale}
             <span class="stale">The skill changed since this was proposed, so it can't be applied safely. Reject it, and ask the AI again.</span>
           {/if}
@@ -82,7 +131,7 @@
 <h2 class="section-label">Recent changes <span class="aside">· last 30 days</span></h2>
 {#if l.recent.length === 0}
   <p class="empty">
-    No skill changes yet. When Claude works out a repeatable workflow, it saves it as a skill{l.approval ? ", and it waits here for your OK" : ""}.
+    No skill changes yet. When Claude learns something worth keeping, it improves a skill (or, for a new kind of work, writes one){l.approval ? ", and the change waits here for your OK" : ""}.
   </p>
 {:else}
   <div class="card">
@@ -91,7 +140,7 @@
         <Icon name={e.action === "reject" ? "cross" : e.action === "create" ? "sparkle" : "pencil"} size={15} class={e.action === "create" ? "syn icon" : "muted icon"} />
         <div class="stack">
           <span class="name-line">
-            <span class="headline-sm">{VERB[e.action]}</span>
+            <span class="headline-sm">{e.action === "archive" && e.actor === "user" ? "Deleted" : VERB[e.action]}{e.file ? ` ${e.file} in` : ""}</span>
             <span class="mono">{e.name}</span>
             <span class="tag">{SCOPE[e.scope]}</span>
           </span>
@@ -149,7 +198,7 @@
           {/if}
         </span>
         <span class="small muted">
-          Unused {c.staleDays} days → stale. Unused {c.archiveDays} days → archived{l.approval ? ", after your OK" : ""}. Nothing is deleted; pinned skills are never touched.
+          Unused {c.staleDays} days → stale. Unused {c.archiveDays} days → archived{l.approval ? ", after your OK" : ""}. Nothing is deleted; favorites are never touched.
         </span>
         {#if store.curatorErrors.run}<span class="stale">{store.curatorErrors.run}</span>{/if}
       </div>
@@ -168,7 +217,7 @@
           </span>
           {#if store.curatorErrors[s.path]}<span class="stale">{store.curatorErrors[s.path]}</span>{/if}
         </div>
-        <button type="button" class="btn" disabled={store.curatorBusy[s.path]} onclick={() => store.curator({ type: "pin", path: s.path, on: true })}>Pin</button>
+        <button type="button" class="btn" disabled={store.curatorBusy[s.path]} onclick={() => store.curator({ type: "pin", path: s.path, on: true })}><Icon name="star" size={13} /> Add to favorites</button>
       </div>
     {/each}
     {#each c.archived as a (a.archivePath)}
@@ -187,15 +236,15 @@
     {/each}
     {#each c.pinned as p (p.path)}
       <div class="row">
-        <Icon name="check" size={15} class="muted icon" />
+        <Icon name="star-full" size={15} class="fav icon" />
         <div class="stack">
           <span class="name-line">
             <button type="button" class="link-btn mono" onclick={() => store.open(p.key)}>{p.name}</button>
             <span class="tag">{SCOPE[p.scope]}</span>
-            <span class="small muted">pinned — the Curator leaves it alone</span>
+            <span class="small muted">favorite: the Curator leaves it alone</span>
           </span>
         </div>
-        <button type="button" class="link-btn small" disabled={store.curatorBusy[p.path]} onclick={() => store.curator({ type: "pin", path: p.path, on: false })}>Unpin</button>
+        <button type="button" class="link-btn small" disabled={store.curatorBusy[p.path]} onclick={() => store.curator({ type: "pin", path: p.path, on: false })}>Remove from favorites</button>
       </div>
     {/each}
   </div>
@@ -235,34 +284,17 @@
     gap: 8px 12px;
     margin-top: 6px;
   }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    height: 24px;
-    padding: 0 10px;
-    border: 1px solid var(--vscode-button-border, var(--input-border));
-    border-radius: 3px;
-    background: var(--vscode-button-secondaryBackground, transparent);
-    color: var(--vscode-button-secondaryForeground, var(--fg));
-    cursor: pointer;
-  }
-  .btn:hover {
-    background: var(--vscode-button-secondaryHoverBackground, var(--hover));
-  }
-  .btn.primary {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-  }
-  .btn.primary:hover {
-    background: var(--vscode-button-hoverBackground);
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
   .link {
     color: var(--link);
+  }
+  .group-head {
+    background: var(--syn-tint);
+  }
+  .row.sub {
+    padding-left: 38px;
+  }
+  .row :global(.fav) {
+    color: var(--vscode-charts-yellow, #d7ba7d);
   }
   .curator-head {
     align-items: flex-start;

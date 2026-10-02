@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { CapabilitiesTab, CapabilityKind, CapabilityRow } from "../../shared/tabs";
-  import { plural } from "../../shared/time";
+  import { plural, relativeTime } from "../../shared/time";
   import { store } from "../lib/store.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
+  import Menu, { type MenuItem } from "./Menu.svelte";
 
-  let { capabilities: c }: { capabilities: CapabilitiesTab } = $props();
+  let { capabilities: c, now }: { capabilities: CapabilitiesTab; now: number } = $props();
 
   type Kind = CapabilityKind | "plugins";
   const KINDS: { id: Kind; label: string }[] = [
@@ -14,6 +15,10 @@
     { id: "plugins", label: "Plugins" },
   ];
   const size = (k: Kind) => (k === "plugins" ? c.plugins.length : c[k].length);
+
+  // Two chips that cut across where a skill lives.
+  const SYNTHRA = " synthra";
+  const FAVORITES = " favorites";
 
   let kind = $state<Kind>("skills");
   let group = $state("all");
@@ -32,10 +37,14 @@
       return a < b ? -1 : a > b ? 1 : 0;
     });
   });
+  const mine = $derived(rows.filter((r) => r.synthra).length);
+  const favorites = $derived(rows.filter((r) => r.favorite).length);
+  const inGroup = (r: CapabilityRow, g: string) =>
+    g === "all" || (g === SYNTHRA ? r.synthra === true : g === FAVORITES ? r.favorite === true : r.group === g);
   const shown = $derived(
     rows.filter(
       (r) =>
-        (group === "all" || r.group === group) &&
+        inGroup(r, group) &&
         (!needle ||
           r.name.toLowerCase().includes(needle) ||
           r.description.toLowerCase().includes(needle) ||
@@ -52,10 +61,94 @@
     kind = k;
     group = "all";
     all = false;
+    stopMerge();
+  }
+  function chip(g: string): void {
+    group = g;
+    all = false;
   }
 
   const icon = (r: CapabilityRow): IconName =>
-    kind === "mcp" ? "plug" : r.scope === "project" ? "repo" : r.scope === "personal" ? "person" : "package";
+    kind === "mcp"
+      ? "plug"
+      : r.synthra
+        ? "sparkle"
+        : r.scope === "project"
+          ? "repo"
+          : r.scope === "personal"
+            ? "person"
+            : "package";
+
+  // ─── support files ───
+  let openFiles = $state<Record<string, boolean>>({});
+  const toggleFiles = (id: string) => (openFiles = { ...openFiles, [id]: !openFiles[id] });
+
+  // ─── merge ───
+  let merging = $state(false);
+  let picked = $state<string[]>([]);
+  const mergeable = $derived(rows.filter((r) => r.canMerge && r.path));
+  function startMerge(first?: string): void {
+    merging = true;
+    picked = first ? [first] : [];
+    store.mergeError = "";
+  }
+  function stopMerge(): void {
+    merging = false;
+    picked = [];
+  }
+  function togglePick(path: string): void {
+    picked = picked.includes(path) ? picked.filter((p) => p !== path) : [...picked, path];
+  }
+  // The request is on the clipboard: leave merge mode.
+  let asked = $state(false);
+  $effect(() => {
+    if (asked && !store.merging) {
+      asked = false;
+      if (!store.mergeError) stopMerge();
+    }
+  });
+  function merge(): void {
+    asked = true;
+    store.merge(picked);
+  }
+
+  function menu(r: CapabilityRow): MenuItem[] {
+    const path = r.path ?? "";
+    const items: MenuItem[] = [];
+    if (r.key) items.push({ label: "Open", icon: "file", hint: "click the name", run: () => store.open(r.key) });
+    if (r.edit) items.push({ label: "Edit", icon: "pencil", run: () => store.open(r.edit) });
+    if (r.canFavorite) {
+      items.push({
+        label: r.favorite ? "Remove from favorites" : "Add to favorites",
+        icon: r.favorite ? "star-full" : "star",
+        ...(r.synthra ? { hint: "the Curator keeps it" } : {}),
+        disabled: store.skillBusy[path],
+        run: () => store.skill({ type: "favorite", path, on: !r.favorite }),
+      });
+    }
+    if (r.canMerge) {
+      items.push({ label: "Merge with others...", icon: "merge", sep: true, run: () => startMerge(path) });
+    }
+    if (r.canDelete) {
+      items.push({
+        label: "Delete...",
+        icon: "trash",
+        danger: true,
+        sep: true,
+        disabled: store.skillBusy[path],
+        run: () => store.skill({ type: "deleteSkill", path }),
+      });
+    } else if (r.thirdParty) {
+      items.push({
+        label: `Installed from ${r.thirdParty}`,
+        icon: "package",
+        sep: true,
+        disabled: true,
+        run: () => {},
+      });
+    }
+    return items;
+  }
 </script>
 
 <div class="hero">
@@ -65,7 +158,9 @@
       Claude can use {plural(c.skills.length, "skill")}, {plural(c.agents.length, "agent")} and {plural(c.mcp.length, "connected tool")}
     </span>
     <span class="small muted">
-      From this project, from you, and from {plural(c.plugins.length, "plugin")}. Click one to open its file.
+      From this project, from you, and from {plural(c.plugins.length, "plugin")}{c.skills.some((r) => r.synthra)
+        ? ` · ${c.skills.filter((r) => r.synthra).length} made by Synthra`
+        : ""}. Click a name to open it.
     </span>
   </div>
 </div>
@@ -125,23 +220,106 @@
       <input id="cap-filter" bind:value={query} type="text" placeholder="Filter {rows.length} {KINDS.find((k) => k.id === kind)?.label.toLowerCase()}" />
     </div>
 
-    {#if groups.length > 1}
-      <div class="chips" role="group" aria-label="Where they come from">
-        {#each ["all", ...groups] as g (g)}
-          <button type="button" class="chip" aria-pressed={group === g} onclick={() => { group = g; all = false; }}>
-            {g === "all" ? "All" : g}
-            <span class="n">{g === "all" ? rows.length : rows.filter((r) => r.group === g).length}</span>
+    {#if groups.length > 1 || mine || favorites}
+      <div class="chips" role="group" aria-label="Which ones to show">
+        <button type="button" class="chip" aria-pressed={group === "all"} onclick={() => chip("all")}>
+          All <span class="n">{rows.length}</span>
+        </button>
+        {#if mine}
+          <button type="button" class="chip" aria-pressed={group === SYNTHRA} onclick={() => chip(SYNTHRA)}>
+            <Icon name="sparkle" size={11} class="syn" /> Made by Synthra <span class="n">{mine}</span>
           </button>
-        {/each}
+        {/if}
+        {#if favorites}
+          <button type="button" class="chip" aria-pressed={group === FAVORITES} onclick={() => chip(FAVORITES)}>
+            <Icon name="star-full" size={11} class="fav" /> Favorites <span class="n">{favorites}</span>
+          </button>
+        {/if}
+        {#if groups.length > 1}
+          {#each groups as g (g)}
+            <button type="button" class="chip" aria-pressed={group === g} onclick={() => chip(g)}>
+              {g}
+              <span class="n">{rows.filter((r) => r.group === g).length}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    {/if}
+
+    {#if merging}
+      <div class="mergebar">
+        <Icon name="merge" size={16} class="syn" />
+        <div class="stack">
+          <strong>{picked.length < 2 ? "Pick the skills to merge" : `Merge ${picked.length} skills`}</strong>
+          <span class="small muted">
+            Pick skills that are one kind of work. Claude proposes one skill that holds them all, and every change waits for your OK.
+          </span>
+          {#if store.mergeError}<span class="stale">{store.mergeError}</span>{/if}
+        </div>
+        <button type="button" class="btn primary" disabled={picked.length < 2 || store.merging} onclick={merge}>
+          Merge {picked.length >= 2 ? picked.length : ""} skills
+        </button>
+        <button type="button" class="btn" onclick={stopMerge}>Cancel</button>
       </div>
     {/if}
 
     {#if shown.length === 0}
-      <p class="empty">Nothing matches “{query.trim()}”.</p>
+      <p class="empty">
+        {needle ? `Nothing matches "${query.trim()}".` : "None here yet."}
+      </p>
     {:else}
       <div class="card">
         {#each visible as r (r.id)}
-          {#if r.key}
+          {#if kind === "skills" && r.path}
+            {@const path = r.path}
+            <div class="row" class:dim={merging && !r.canMerge}>
+              {#if merging}
+                <input
+                  type="checkbox"
+                  class="pick"
+                  aria-label="Merge {r.name}"
+                  disabled={!r.canMerge}
+                  checked={picked.includes(path)}
+                  onchange={() => togglePick(path)}
+                />
+              {/if}
+              <Icon name={icon(r)} size={15} class={r.synthra ? "syn icon" : "muted icon"} />
+              <span class="stack">
+                <span class="name-line">
+                  {#if r.key}
+                    <button type="button" class="link-btn mono name" title="Open its SKILL.md" onclick={() => store.open(r.key)}>{r.name}</button>
+                  {:else}
+                    <span class="mono name">{r.name}</span>
+                  {/if}
+                  {@render tags(r)}
+                </span>
+                {#if r.description}<span class="small muted clamp2">{r.description}</span>{/if}
+                {#if r.uses || r.files?.length}
+                  <span class="meta small muted">
+                    {#if r.uses}
+                      <span>used {plural(r.uses, "time")}{r.lastUsed !== undefined ? ` · last used ${relativeTime(r.lastUsed, now)}` : ""}</span>
+                    {/if}
+                    {#if r.files?.length}
+                      <button type="button" class="link-btn files-toggle" aria-expanded={openFiles[r.id] === true} onclick={() => toggleFiles(r.id)}>
+                        <span class="chev" class:open={openFiles[r.id]}><Icon name="chevron" size={10} /></span>
+                        {plural(r.files.length + (r.filesMore ?? 0), "file")}
+                      </button>
+                    {/if}
+                  </span>
+                {/if}
+                {#if openFiles[r.id] && r.files}
+                  <span class="files">
+                    {#each r.files as f (f.path)}
+                      <button type="button" class="link-btn mono small" onclick={() => store.open(f.key)}>{f.path}</button>
+                    {/each}
+                    {#if r.filesMore}<span class="small muted">and {r.filesMore} more</span>{/if}
+                  </span>
+                {/if}
+                {#if store.skillErrors[path]}<span class="stale">{store.skillErrors[path]}</span>{/if}
+              </span>
+              {#if !merging}<Menu items={menu(r)} label="Actions for {r.name}" />{/if}
+            </div>
+          {:else if r.key}
             <button type="button" class="row-btn" title="Open its file" onclick={() => store.open(r.key)}>
               {@render body(r)}
             </button>
@@ -156,25 +334,45 @@
         {/if}
       </div>
     {/if}
+    {#if kind === "skills" && !merging && mergeable.length >= 2}
+      <p class="empty">
+        Too many narrow skills? <button type="button" class="link-btn" onclick={() => startMerge()}>Merge some into one</button>.
+      </p>
+    {/if}
   {/if}
 {/if}
+
+{#snippet tags(r: CapabilityRow)}
+  {#if r.synthra}<span class="tag syn-tag"><Icon name="sparkle" size={10} /> Synthra</span>{/if}
+  {#if r.thirdParty}<span class="tag">from {r.thirdParty}</span>{/if}
+  {#if r.linkedTo}<span class="tag" title="A link to {r.linkedTo}"><Icon name="link" size={11} /> linked</span>{/if}
+  {#if r.favorite}<span class="tag"><Icon name="star-full" size={10} class="fav" /> favorite</span>{/if}
+  {#if r.staleDays !== undefined}<span class="tag warn-tag">unused {r.staleDays} days</span>{/if}
+  {#if r.extra}<span class="small muted">{r.extra}</span>{/if}
+  {#if r.off}<span class="tag">off</span>{/if}
+  {#if group === "all" && groups.length > 1}<span class="tag">{r.group}</span>{/if}
+{/snippet}
 
 {#snippet body(r: CapabilityRow)}
   <Icon name={icon(r)} size={15} class="muted icon" />
   <span class="stack">
     <span class="name-line">
       <span class="mono name">{r.name}</span>
-      {#if r.extra}<span class="small muted">{r.extra}</span>{/if}
-      {#if r.off}<span class="tag">off</span>{/if}
-      {#if group === "all" && groups.length > 1}<span class="tag">{r.group}</span>{/if}
+      {@render tags(r)}
     </span>
     {#if r.description}<span class="small muted clamp2">{r.description}</span>{/if}
   </span>
 {/snippet}
 
 <style>
-  .hero :global(.syn) {
+  .hero :global(.syn),
+  .row :global(.syn),
+  .chip :global(.syn),
+  .mergebar :global(.syn) {
     color: var(--syn);
+  }
+  :global(.fav) {
+    color: var(--vscode-charts-yellow, #d7ba7d);
   }
   .bar {
     display: flex;
@@ -185,6 +383,12 @@
   .row-btn :global(.icon) {
     margin-top: 2px;
   }
+  .row {
+    align-items: flex-start;
+  }
+  .row.dim {
+    opacity: 0.5;
+  }
   .name-line {
     display: flex;
     flex-wrap: wrap;
@@ -194,6 +398,70 @@
   }
   .name {
     overflow-wrap: anywhere;
+  }
+  .link-btn.name {
+    color: var(--fg);
+  }
+  .link-btn.name:hover {
+    color: var(--link);
+  }
+  .tag {
+    gap: 4px;
+  }
+  .syn-tag {
+    border-color: var(--syn-edge);
+    color: var(--syn);
+  }
+  .warn-tag {
+    border-color: transparent;
+    background: var(--warn-tint);
+    color: var(--warning);
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 10px;
+  }
+  .files-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--link);
+  }
+  .chev {
+    display: inline-flex;
+  }
+  .chev.open {
+    transform: rotate(90deg);
+  }
+  .files {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin-top: 2px;
+  }
+  .files .link-btn {
+    color: var(--link);
+  }
+  .pick {
+    margin: 3px 0 0;
+    flex-shrink: 0;
+    accent-color: var(--vscode-button-background);
+  }
+  .mergebar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--syn-edge);
+    border-radius: 8px;
+    background: var(--syn-tint);
+  }
+  .mergebar .stack {
+    min-width: 200px;
   }
   .state {
     display: inline-flex;

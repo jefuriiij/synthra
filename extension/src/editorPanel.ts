@@ -10,10 +10,10 @@ import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
 import { buildHtml } from "./html";
-import { buildTabs, messageTabs } from "./panelTabs";
+import { buildTabs, mergePrompt, messageTabs, tildify } from "./panelTabs";
 import type { PanelTarget } from "./panelTrees";
 import type { PanelsState, SynthraPanels } from "./panels";
-import type { HostToWebview, Tab, WebviewToHost } from "./shared/tabs";
+import type { CapabilityRow, HostToWebview, Tab, WebviewToHost } from "./shared/tabs";
 
 export const PANEL_VIEW_TYPE = "synthra.panel";
 
@@ -24,6 +24,11 @@ export class SynthraEditorPanel implements vscode.Disposable {
   /** The Curator paths the last view offered: only these can be pinned or
    *  restored from the page. */
   private curatorPaths = new Set<string>();
+  /** The skill rows the last view's Capabilities tab offered actions on, by
+   *  path: only these can be starred, deleted or merged from the page. */
+  private skillRows = new Map<string, CapabilityRow>();
+  /** The merge groups the last view's Learning tab showed. */
+  private groups = new Set<string>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -150,6 +155,62 @@ export class SynthraEditorPanel implements vscode.Disposable {
           .then((error) => this.post({ type: "curatorResult", target, error }));
         return;
       }
+      case "favorite": {
+        const row = typeof msg.path === "string" ? this.skillRows.get(msg.path) : undefined;
+        if (!row?.canFavorite) {
+          this.log("[ext] ignored a favorite the current view does not offer");
+          return;
+        }
+        void this.source
+          .curatorAction({ pin: msg.path, on: msg.on === true })
+          .then((error) => this.post({ type: "skillResult", target: msg.path, error }));
+        return;
+      }
+      case "deleteSkill": {
+        const row = typeof msg.path === "string" ? this.skillRows.get(msg.path) : undefined;
+        if (!row?.canDelete) {
+          this.log("[ext] ignored a delete the current view does not offer");
+          return;
+        }
+        void this.confirmDelete(row).then(async (yes) => {
+          const error = yes ? await this.source.deleteSkill(msg.path) : "";
+          this.post({ type: "skillResult", target: msg.path, error });
+        });
+        return;
+      }
+      case "mergeSkills": {
+        const rows = Array.isArray(msg.paths)
+          ? msg.paths.flatMap((p) => {
+              const r = typeof p === "string" ? this.skillRows.get(p) : undefined;
+              return r?.canMerge && r.path ? [{ name: r.name, path: r.path }] : [];
+            })
+          : [];
+        if (rows.length < 2) {
+          this.post({ type: "mergeResult", error: "Pick at least two skills to merge." });
+          return;
+        }
+        void vscode.env.clipboard.writeText(mergePrompt(rows)).then(() => {
+          void vscode.window.showInformationMessage(
+            `Synthra: the request to merge ${rows.length} skills is on your clipboard. Paste it in Claude Code; every change waits for your OK in the Learning tab.`,
+          );
+          this.post({ type: "mergeResult", error: "" });
+        });
+        return;
+      }
+      case "answerGroup": {
+        if (
+          typeof msg.group !== "string" ||
+          !this.groups.has(msg.group) ||
+          (msg.verdict !== "approve" && msg.verdict !== "reject")
+        ) {
+          this.log("[ext] ignored a merge answer the current view does not offer");
+          return;
+        }
+        void this.source
+          .answerGroup(msg.group, msg.verdict)
+          .then((error) => this.post({ type: "answerResult", id: msg.group, error }));
+        return;
+      }
       case "setSetting": {
         if (typeof msg.key !== "string") return;
         const value =
@@ -183,8 +244,38 @@ export class SynthraEditorPanel implements vscode.Disposable {
       ...(c?.pinned.map((x) => x.path) ?? []),
       ...(c?.archived.map((x) => x.archivePath) ?? []),
     ]);
+    this.skillRows = new Map(
+      (built.view.capabilities?.skills ?? []).flatMap((r) =>
+        r.path ? [[r.path, r] as const] : [],
+      ),
+    );
+    this.groups = new Set(
+      (built.view.learning?.pending ?? []).flatMap((p) => (p.group ? [p.group] : [])),
+    );
     this.post({ type: "view", view: built.view });
     this.post({ type: "refreshing", on: false });
+  }
+
+  /** VS Code's own dialog, so a delete is never one stray click. */
+  private async confirmDelete(row: CapabilityRow): Promise<boolean> {
+    const archive =
+      row.scope === "project"
+        ? `.synthra/skills-archive/${row.name} in this project`
+        : `~/.synthra/skills/archive/${row.name}`;
+    const detail = [
+      `It moves to ${archive}. You can restore it from the Learning tab.`,
+      row.linkedTo
+        ? `It is a link to ${tildify(row.linkedTo)}. Only the link moves; that folder is not touched.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const pick = await vscode.window.showWarningMessage(
+      `Delete the skill "${row.name}"?`,
+      { modal: true, detail },
+      "Delete",
+    );
+    return pick === "Delete";
   }
 
   private post(msg: HostToWebview): void {

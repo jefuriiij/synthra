@@ -36,9 +36,9 @@ The sidebar panels need **Synthra 0.33 or later**. With an older `syn` they say 
 
 Click the Synthra icon in the activity bar to see what Synthra knows about this project:
 
-- **Learning:** the skills Claude wrote or changed. By default each one **waits for your OK**: approve it or reject it with the ✓ and ✗ buttons, and click it to see the change as a diff. Below that: every change of the last 30 days, the skills Synthra wrote, and the **Curator** — once a week it marks the skills Synthra wrote that went unused for 14 days as stale and proposes archiving those unused for 30. Pin a skill to keep it, restore an archived one, or run the Curator now. The number on the Synthra icon counts what waits for you.
+- **Learning:** the skills Claude wrote or changed. By default each one **waits for your OK**: approve it or reject it with the ✓ and ✗ buttons, and click it to see the change as a diff. Below that: every change of the last 30 days, the skills Synthra wrote, and the **Curator**: once a week it marks the skills Synthra wrote that went unused for 14 days as stale and proposes archiving those unused for 30. Add a skill to your favorites to keep it, restore an archived one, or run the Curator now. A change to one of your own skills says so, a change to a support file names the file, and the changes of one merge come as one card with Approve all. The number on the Synthra icon counts what waits for you.
 - **Memory:** first the two files every session loads — **Project memory** (`.synthra/MEMORY.md`) and **About you** (`~/.synthra/USER.md`) — with how full each is. Then the notes Claude saved on this branch with `context_remember`, grouped as current task, blockers, next steps, decisions and facts. A ⚠ marks a note whose file changed since it was saved, so it may be out of date. Click a note to open the file it is about.
-- **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins). Click one to open its file.
+- **Capabilities:** the skills, agents, MCP servers and plugins Claude Code can use, grouped by where they come from (this project, yours, plugins), with **Made by Synthra** and **Favorites** chips. A skill shows its tags (Synthra, installed, linked, favorite, unused), how often it was used, and its support files. Its ⋯ menu: Open, Edit, Add to favorites, Merge with others, Delete. Delete asks first and moves the skill to the archive. Merge puts a ready request on the clipboard for Claude Code. Click a name to open its file.
 - **Agents:** the helper agents Claude started in the last 7 days, with the task it gave each one, and which ones it uses most.
 
 The panels refresh by themselves when the files behind them change. The ↻ button in each panel's title rescans now.
@@ -54,7 +54,7 @@ The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory pa
 - **Memory nudge:** on or off, and after how many Claude replies without new notes.
 - **Project memory limit** and **About-you limit:** the size limits of `.synthra/MEMORY.md` and `~/.synthra/USER.md`.
 - **New skills wait for my OK:** off lets the skills Claude writes go live at once (every change is still listed in Learning).
-- **Skill nudge:** after how many tool calls without a skill saved Claude is asked whether the work was worth one; 0 = off.
+- **Skill nudge:** after how many tool calls without a skill saved (25 by default) Claude is asked whether the work taught something a skill should hold; 0 = off.
 - **Curator:** the weekly tidy, on or off.
 - **Suggest agents in chat:** the Dispatcher's hint before Claude answers.
 

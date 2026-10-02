@@ -4,7 +4,7 @@
 // only those (see shared/tabs.ts).
 
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   curatorSummary,
@@ -14,6 +14,7 @@ import {
   type PanelsPayload,
   type PanelTarget,
   proposalDiff,
+  proposalTitle,
 } from "./panelTrees";
 import { plural } from "./shared/time";
 import type {
@@ -199,7 +200,7 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
         : kind === "agents"
           ? i.meta?.model
           : i.meta?.type;
-    return {
+    const base: CapabilityRow = {
       id: `${kind}:${i.scope}:${i.source ?? ""}:${i.name}`,
       name: i.name,
       description: i.description,
@@ -208,6 +209,30 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
       ...(extra ? { extra } : {}),
       off: i.enabled === false,
       ...(i.file ? { key: keys.open(i.file) } : {}),
+    };
+    if (kind !== "skills" || !i.file) return base;
+    const dir = dirname(i.file);
+    const lastUsed = i.last_used ? ms(i.last_used) : undefined;
+    // An older engine sends none of these: no actions are offered then.
+    const knows = i.editable === true || i.scope === "plugin";
+    return {
+      ...base,
+      path: i.file,
+      ...(i.synthra ? { synthra: true } : {}),
+      ...(i.third_party ? { thirdParty: i.third_party } : {}),
+      ...(i.linked_to ? { linkedTo: i.linked_to } : {}),
+      ...(i.pinned ? { favorite: true } : {}),
+      ...(i.stale_days !== undefined ? { staleDays: i.stale_days } : {}),
+      ...(i.uses ? { uses: i.uses } : {}),
+      ...(lastUsed !== undefined ? { lastUsed } : {}),
+      ...(i.files?.length
+        ? { files: i.files.map((f) => ({ path: f, key: keys.open(join(dir, ...f.split("/"))) })) }
+        : {}),
+      ...(i.files_more ? { filesMore: i.files_more } : {}),
+      ...(i.editable ? { edit: keys.target({ kind: "file", path: i.file, preview: false }) } : {}),
+      ...(knows ? { canFavorite: true } : {}),
+      ...(i.deletable ? { canDelete: true } : {}),
+      ...(i.deletable && !i.third_party ? { canMerge: true } : {}),
     };
   };
 
@@ -238,6 +263,27 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
     mcp: c.mcp.map((i) => row("mcp", i)),
     plugins: [...plugins.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
   };
+}
+
+/**
+ * The request "Merge..." puts on the clipboard for Claude Code. Synthra can't
+ * drive Claude, so the user pastes it; every change Claude then makes waits in
+ * the Learning tab, and the archives are tied to the umbrella they went into.
+ */
+export function mergePrompt(rows: { name: string; path: string }[]): string {
+  const list = rows.map((r) => `- ${r.name} (${r.path})`).join("\n");
+  return [
+    "Merge these skills into one broad skill, with mcp__synthra__skill_manage:",
+    "",
+    list,
+    "",
+    "1. View each one, and its support files (view with file_path).",
+    "2. Pick the umbrella: one of them if it already covers the whole kind of work, or a new skill named for that kind of work (never a name that fits only one of them).",
+    "3. Put the rules every task of this kind needs in its SKILL.md. Move detail that is only needed sometimes into references/<topic>.md with write_file, and point to each file from SKILL.md. Keep every rule that is still true; the same rule twice becomes one. Use scope global only if nothing in it is about this project.",
+    "4. Then archive each absorbed skill with action archive and absorbed_into set to the umbrella.",
+    "",
+    "Everything waits for my OK in Synthra's Learning tab. If these don't belong together, say so and stop.",
+  ].join("\n");
 }
 
 // ─── Agents ─────────────────────────────────────────────────────────────────
@@ -315,6 +361,10 @@ function learningTab(
     pending: l.pending.map((x) => ({
       id: x.id,
       action: x.action,
+      title: proposalTitle(x),
+      ...(x.owner === "user" ? { yours: true } : {}),
+      ...(x.linkedTo ? { linkedTo: tildify(x.linkedTo) } : {}),
+      ...(x.group ? { group: x.group } : {}),
       name: x.name,
       scope: x.scope,
       description: x.description,
@@ -328,6 +378,7 @@ function learningTab(
       return {
         id: `${e.id}:${e.action}`,
         action: e.action,
+        ...(e.file ? { file: e.file } : {}),
         actor: e.actor,
         name: e.name,
         scope: e.scope,

@@ -101,6 +101,29 @@ export interface CapabilityRow {
   off: boolean;
   /** Opens its file. */
   key?: string;
+  // Skills only (Synthra 0.36+; absent from an older engine):
+  /** The skill's SKILL.md: what favorite, delete and merge act on. */
+  path?: string;
+  /** Synthra wrote it. */
+  synthra?: boolean;
+  /** Installed from this repo (npx skills): read-only here. */
+  thirdParty?: string;
+  /** Its folder is a link to this folder. */
+  linkedTo?: string;
+  favorite?: boolean;
+  /** Synthra's skill, unused this many days (stale). */
+  staleDays?: number;
+  uses?: number;
+  lastUsed?: number;
+  /** Support files beside its SKILL.md, each with the key that opens it. */
+  files?: { path: string; key: string }[];
+  /** Support files not listed. */
+  filesMore?: number;
+  /** Opens SKILL.md to edit (a kept tab, not a preview). */
+  edit?: string;
+  canFavorite?: boolean;
+  canDelete?: boolean;
+  canMerge?: boolean;
 }
 
 export interface PluginRow {
@@ -169,7 +192,16 @@ export interface CuratorCard {
 
 export interface ProposalRow {
   id: string;
-  action: "create" | "patch" | "edit" | "archive";
+  action: "create" | "patch" | "edit" | "remove" | "archive";
+  /** "New skill", "Change to your skill", "New file references/x.md in",
+   *  "Merge into y:", "Archive". */
+  title: string;
+  /** A change to the user's own skill. */
+  yours?: boolean;
+  /** The skill's folder is a link: the change is saved in this folder. */
+  linkedTo?: string;
+  /** Changes of one merge share a group; the Learning tab shows them as one card. */
+  group?: string;
   name: string;
   scope: "project" | "global";
   description: string;
@@ -183,7 +215,9 @@ export interface ProposalRow {
 
 export interface ChangeRow {
   id: string;
-  action: "create" | "patch" | "edit" | "reject" | "archive" | "restore";
+  action: "create" | "patch" | "edit" | "remove" | "reject" | "archive" | "restore";
+  /** A support file the change was about ("references/x.md"). */
+  file?: string;
   /** Who did it: the AI, you, or the Curator. */
   actor: "agent" | "user" | "curator";
   name: string;
@@ -239,7 +273,11 @@ export type HostToWebview =
   /** How an approve/reject went; `error` is "" when it worked. */
   | { type: "answerResult"; id: string; error: string }
   /** How a Curator action (pin, restore, run now) went, by its target. */
-  | { type: "curatorResult"; target: string; error: string };
+  | { type: "curatorResult"; target: string; error: string }
+  /** How a favorite or a delete from Capabilities went, by the skill's path. */
+  | { type: "skillResult"; target: string; error: string }
+  /** The merge request is on the clipboard (error ""), or why not. */
+  | { type: "mergeResult"; error: string };
 
 export type WebviewToHost =
   | { type: "ready" }
@@ -251,4 +289,12 @@ export type WebviewToHost =
   /** Curator actions. `path` / `archivePath` come from the view the host sent. */
   | { type: "pin"; path: string; on: boolean }
   | { type: "restore"; archivePath: string }
-  | { type: "runCurator" };
+  | { type: "runCurator" }
+  /** Capabilities: star or unstar a skill (the server's "pin"). */
+  | { type: "favorite"; path: string; on: boolean }
+  /** Capabilities: delete a skill (the host asks first). */
+  | { type: "deleteSkill"; path: string }
+  /** Capabilities: put a merge request for these skills on the clipboard. */
+  | { type: "mergeSkills"; paths: string[] }
+  /** Learning: approve or reject every change of one merge. */
+  | { type: "answerGroup"; group: string; verdict: "approve" | "reject" };

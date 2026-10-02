@@ -3,6 +3,24 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+These need the next update of the Synthra engine.
+
+- **A menu on every skill.** In Capabilities, the ⋯ next to a skill opens,
+  edits, stars, merges or deletes it. Delete asks first and moves the skill to
+  the archive, so Restore in the Learning tab brings it back.
+- **Made by Synthra and Favorites.** Two new chips show the skills Synthra
+  wrote and the ones you starred. A favorite Synthra wrote is never archived.
+  This takes the place of Pin.
+- **More on each skill:** how often it was used, when last, whether it is
+  installed, linked or unused, and the files that come with it.
+- **Merge narrow skills.** Pick two or more and Synthra puts a ready request
+  on your clipboard for Claude Code. Claude writes one broader skill, and the
+  whole merge comes to the Learning tab as one card with Approve all.
+- **Clearer changes in Learning:** a change to one of your own skills says
+  so, and a new support file shows its path.
+
 ## 0.33.2 (2026-10-02)
 
 These come with Synthra 0.34.0. The extension offers the update, or run
