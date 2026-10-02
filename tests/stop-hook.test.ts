@@ -56,7 +56,13 @@ interface HookRun {
 async function runStopHook(
   command: string,
   args: string[],
-  opts: { nudge?: Record<string, unknown>; input?: Record<string, unknown> } = {},
+  opts: {
+    nudge?: Record<string, unknown>;
+    input?: Record<string, unknown>;
+    /** Run from a subfolder, with CLAUDE_PROJECT_DIR naming the project the way
+     *  Claude Code does after Claude cd's into it. */
+    fromSubfolder?: boolean;
+  } = {},
 ): Promise<HookRun> {
   const proj = await mkdtemp(join(tmpdir(), "syn-stop-e2e-"));
   await mkdir(join(proj, ".synthra-graph"), { recursive: true });
@@ -104,9 +110,19 @@ async function runStopHook(
   const user = { timestamp: "2026-07-15T10:01:00.000Z", message: { content: "hi" } };
   await writeFile(transcript, `${JSON.stringify(assistant)}\n${JSON.stringify(user)}\n`, "utf8");
 
+  // Never inherit the caller's CLAUDE_PROJECT_DIR: run inside Claude Code, it
+  // would point the hook at the real project instead of this one.
+  const { CLAUDE_PROJECT_DIR: _inherited, ...env } = process.env;
+  let cwd = proj;
+  if (opts.fromSubfolder) {
+    cwd = join(proj, "Website Overhaul", "pages");
+    await mkdir(cwd, { recursive: true });
+    env.CLAUDE_PROJECT_DIR = proj;
+  }
+
   let stdout = "";
   await new Promise<void>((resolve, reject) => {
-    const p = spawn(command, args, { cwd: proj, stdio: ["pipe", "pipe", "ignore"] });
+    const p = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "ignore"] });
     p.stdout?.on("data", (d: Buffer) => (stdout += d.toString()));
     p.on("error", reject);
     p.on("exit", () => resolve());
@@ -174,6 +190,10 @@ describe.runIf(process.platform === "win32")("stop.ps1 live e2e (Windows)", () =
   it("passes a memory nudge on to Claude Code", async () => {
     await expectNudge("powershell.exe", PS1);
   }, 30_000);
+
+  it("still logs when Claude has cd'd into a subfolder", async () => {
+    expectUsageAndDelegation(await runStopHook("powershell.exe", PS1, { fromSubfolder: true }));
+  }, 20_000);
 });
 
 describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
@@ -186,5 +206,10 @@ describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
     it("passes a memory nudge on to Claude Code", async () => {
       await expectNudge("bash", [join(SCRIPTS, "stop.sh")]);
     }, 30_000);
+
+    it("still logs when Claude has cd'd into a subfolder", async () => {
+      const run = await runStopHook("bash", [join(SCRIPTS, "stop.sh")], { fromSubfolder: true });
+      expectUsageAndDelegation(run);
+    }, 20_000);
   },
 );

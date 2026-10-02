@@ -16,7 +16,10 @@ try { $hookInput = $raw | ConvertFrom-Json -ErrorAction Stop } catch { exit 0 }
 $transcript = $hookInput.transcript_path
 if (-not $transcript -or -not (Test-Path $transcript)) { exit 0 }
 
-$portFile = Join-Path $PWD ".synthra-graph\mcp_port"
+# Claude Code runs hooks in the session's current folder, which moves when
+# Claude cd's into a subfolder. CLAUDE_PROJECT_DIR is the project root.
+$root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { $PWD.Path }
+$portFile = Join-Path $root ".synthra-graph\mcp_port"
 if (-not (Test-Path $portFile)) { exit 0 }
 $port = (Get-Content -Path $portFile -Raw).Trim()
 if (-not $port) { exit 0 }
@@ -78,7 +81,7 @@ $payloadMap = @{
     cache_read_input_tokens     = $cr
     model                       = $model
     description                 = "synthra-stop-hook"
-    project                     = $PWD.Path
+    project                     = $root
 }
 if ($delegations.Count -gt 0) { $payloadMap.delegations = $delegations }
 $payload = $payloadMap | ConvertTo-Json -Compress -Depth 5

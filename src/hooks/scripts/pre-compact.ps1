@@ -3,7 +3,10 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 
-$portFile = Join-Path $PWD ".synthra-graph\mcp_port"
+# Claude Code runs hooks in the session's current folder, which moves when
+# Claude cd's into a subfolder. CLAUDE_PROJECT_DIR is the project root.
+$root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { $PWD.Path }
+$portFile = Join-Path $root ".synthra-graph\mcp_port"
 if (-not (Test-Path $portFile)) { exit 0 }
 $port = (Get-Content -Path $portFile -Raw).Trim()
 if (-not $port) { exit 0 }

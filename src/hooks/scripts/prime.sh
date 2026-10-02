@@ -6,7 +6,10 @@
 
 set +e
 
-PORT_FILE="$PWD/.synthra-graph/mcp_port"
+# Claude Code runs hooks in the session's current folder, which moves when
+# Claude cd's into a subfolder. CLAUDE_PROJECT_DIR is the project root.
+ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+PORT_FILE="$ROOT/.synthra-graph/mcp_port"
 if [ ! -f "$PORT_FILE" ]; then exit 0; fi
 PORT=$(cat "$PORT_FILE" 2>/dev/null | tr -d '[:space:]')
 if [ -z "$PORT" ]; then exit 0; fi
