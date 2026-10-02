@@ -3,9 +3,10 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 0.33.2 (2026-10-02)
 
-These come with the next update of the Synthra engine.
+These come with Synthra 0.34.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
 
 - **Fixed: Synthra lost track of your project in subfolders.** When Claude
   moved into a subfolder of your project, Synthra stopped counting replies on
@@ -16,6 +17,7 @@ These come with the next update of the Synthra engine.
   button when it doesn't), how Claude found code, how skills and memory are
   used, and what the work cost. Skills, agents and tools live in this
   extension, so the dashboard no longer lists them.
+- **A Changelog tab** in VS Code and the stores: this list.
 
 ## 0.33.1 (2026-10-02)
 

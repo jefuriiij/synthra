@@ -9,25 +9,18 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
-### Added (extension 0.33.1)
+---
 
-- **Install Synthra in one click.** The extension is only the window (the
-  engine is the `syn` command from npm), so a new user used to hit "syn not
-  found" and had to install it by hand. Now a missing `syn` shows an
-  **Install Synthra** button (a popup, the sidebar, and the
-  **Synthra: Install Synthra** command). It runs the npm install with a
-  progress bar, then starts Synthra in a project that already uses it, or
-  offers to set up the open folder. Without Node.js it says so and links to
-  nodejs.org; a permissions error offers the command in a terminal.
-- **A store page for users**, with screenshots, written like a product page.
-  The technical notes moved to `docs/EXTENSION.md`.
-- **A Changelog tab.** The extension now ships `extension/CHANGELOG.md`, a
-  short list of changes in plain words, so VS Code, the Marketplace and Open
-  VSX show it next to Details.
+## [0.34.0] (2026-10-02)
 
-### Changed (extension 0.33.1)
-
-- The skill nudge has an on/off switch in Settings, like the memory nudge.
+Synthra checks on itself. The 0.33 hooks lost the project as soon as Claude
+moved into a subfolder, and nothing said so: no replies were logged, no
+search was stopped, no reminder came. That is fixed, two guards now make a
+hook loop impossible, and the dashboard is a report card that would have
+caught it on day one: is Synthra working in each project (with a **Fix hooks**
+button), is it helping, what Claude learned and remembers, and what the work
+cost. Run `syn .` once in each project, or reopen it in the editor, to get the
+new hooks.
 
 ### Fixed
 
@@ -79,9 +72,32 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   tested like Windows; and an honest note that search stopping rarely fires
   when Claude searches through Bash.
 
+### Added (extension 0.33.2)
+
+- **A Changelog tab.** The extension now ships `extension/CHANGELOG.md`, a
+  short list of changes in plain words, so VS Code, the Marketplace and Open
+  VSX show it next to Details.
+
+### Added (extension 0.33.1)
+
+- **Install Synthra in one click.** The extension is only the window (the
+  engine is the `syn` command from npm), so a new user used to hit "syn not
+  found" and had to install it by hand. Now a missing `syn` shows an
+  **Install Synthra** button (a popup, the sidebar, and the
+  **Synthra: Install Synthra** command). It runs the npm install with a
+  progress bar, then starts Synthra in a project that already uses it, or
+  offers to set up the open folder. Without Node.js it says so and links to
+  nodejs.org; a permissions error offers the command in a terminal.
+- **A store page for users**, with screenshots, written like a product page.
+  The technical notes moved to `docs/EXTENSION.md`.
+
+### Changed (extension 0.33.1)
+
+- The skill nudge has an on/off switch in Settings, like the memory nudge.
+
 ---
 
-## [0.33.0] — 2026-10-03
+## [0.33.0] — 2026-10-02
 
 Synthra learns. This release brings Hermes Agent's learning loop to Claude
 Code — without a chat, a model layer or a gateway; Claude stays the brain.
