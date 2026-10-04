@@ -7,7 +7,7 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.38.1] (2026-10-04)
 
 ### Fixed
 
