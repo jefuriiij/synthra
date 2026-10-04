@@ -7,6 +7,32 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Updates for installed skills.** **Check for updates** in the IDE's
+  Capabilities tab compares each skill installed with `npx skills` against its
+  GitHub repo, the way `npx skills check` does: one tree request per repo, the
+  folder hash in `~/.agents/.skill-lock.json` against GitHub's. **See changes**
+  opens VS Code's diff of your `SKILL.md` against the new one, names the other
+  files the update adds, changes or removes, and warns when you changed the
+  skill yourself (Windows line endings don't count as a change). **Update** runs
+  `npx -y skills update <names> -g -y` in a terminal, for one skill or a whole
+  repo, so the installer stays the only one that writes what it installed.
+  **Don't update** keeps a skill at its version. A skill whose folder moved in
+  its repo says so. Skills not in the lock file (yours, Synthra's, or copied by
+  hand) are never touched. New routes: `POST /skills/updates/check`,
+  `GET /skills/update-diff`, `POST /skills/hold`, `POST /skills/update-command`;
+  new `/panels` skill fields `updatable`, `update`, `held`, and
+  `capabilities.updates`.
+- **Skills grouped by the repo they came from.** In the Capabilities tab, each
+  GitHub repo you installed skills from is a section you can fold, with its
+  update count, a **GitHub** link and an **Update** button. The sidebar gets a
+  folder per repo too.
+
+---
+
 ## [0.37.0] (2026-10-04)
 
 Take your skills and notes to a new computer. One file holds what lives on

@@ -25,6 +25,12 @@ import { lstat, realpath } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { STALE_DAYS, type SkillAge, readPins, readUsage, skillAges } from "../../learn/curator.js";
 import { listSkills, listSupportFiles, skillLockPath } from "../../learn/skills.js";
+import {
+  type UpdateFacts,
+  type UpdateState,
+  readLockEntries,
+  updateFacts,
+} from "../../learn/skill-updates.js";
 import { pathKey } from "../../shared/paths.js";
 import { type DelegationLogEntry, readJsonl } from "../../dashboard/delta.js";
 import { type EntryKind, readStore } from "../../memory/context-store.js";
@@ -89,6 +95,14 @@ export interface PanelItem {
   editable?: true;
   /** May be deleted (moved to the archive) from the IDE. */
   deletable?: true;
+  /** Installed from GitHub (npx skills, for all projects): the last update
+   *  check found a newer version, or its folder gone from its repo. */
+  update?: UpdateState;
+  /** Installed from GitHub: set to "Don't update". */
+  held?: true;
+  /** Installed from GitHub: may be checked and updated here, under this
+   *  name (its name in the lock file). */
+  updatable?: string;
 }
 
 export interface PanelDelegation {
@@ -129,6 +143,8 @@ export interface PanelsPayload {
     mcp: PanelItem[];
     scanned_at: string;
     error?: string;
+    /** The last update check (0.38+). */
+    updates?: { checked_at: string; errors: string[] };
   };
   agents: {
     since: string;
@@ -223,17 +239,22 @@ interface SkillFacts {
   usage: Map<string, { lastUsed?: string; uses?: number }>;
   stale: Map<string, number>;
   locks: { project: Map<string, string>; personal: Map<string, string> };
+  updates: UpdateFacts;
+  /** Lock names that can be checked against GitHub (global lock only). */
+  updatable: Set<string>;
 }
 
 async function skillFacts(ctx: ServerContext, ages: Promise<SkillAge[]>): Promise<SkillFacts> {
   const state = ctx.paths.skillState;
-  const [skills, pins, usage, ageList, project, personal] = await Promise.all([
+  const [skills, pins, usage, ageList, project, personal, updates, entries] = await Promise.all([
     listSkills(ctx.paths),
     readPins(state),
     readUsage(state),
     ages,
     readSkillLock(skillLockPath(ctx.paths, "project")),
     readSkillLock(skillLockPath(ctx.paths, "global")),
+    updateFacts(ctx.paths),
+    readLockEntries(skillLockPath(ctx.paths, "global")),
   ]);
   return {
     learned: new Set(skills.filter((s) => s.learned).map((s) => pathKey(s.path))),
@@ -245,6 +266,8 @@ async function skillFacts(ctx: ServerContext, ages: Promise<SkillAge[]>): Promis
         .map((a) => [pathKey(a.skill.path), a.daysUnused]),
     ),
     locks: { project, personal },
+    updates,
+    updatable: new Set(entries.map((e) => e.name)),
   };
 }
 
@@ -288,9 +311,19 @@ async function withFacts(
   );
   const synthra = facts.learned.has(key);
   const lock = item.scope === "project" ? facts.locks.project : facts.locks.personal;
-  const third = synthra
+  const lockName = synthra
     ? undefined
-    : (lock.get(item.name) ?? (linked ? lock.get(basename(linked)) : undefined));
+    : lock.has(item.name)
+      ? item.name
+      : linked && lock.has(basename(linked))
+        ? basename(linked)
+        : undefined;
+  const third = lockName ? lock.get(lockName) : undefined;
+  // Updates are for the skills installed for all projects only.
+  const updatable =
+    item.scope === "personal" && lockName && facts.updatable.has(lockName) ? lockName : undefined;
+  const update = updatable ? facts.updates.state.get(updatable) : undefined;
+  const held = updatable ? facts.updates.held.has(updatable) : false;
   const u = facts.usage.get(key);
   const stale = facts.stale.get(key);
   const { files, more } = await supportFor(dir, scannedAt);
@@ -307,6 +340,9 @@ async function withFacts(
     ...(more ? { files_more: more } : {}),
     editable: true,
     ...(third ? {} : { deletable: true as const }),
+    ...(updatable ? { updatable } : {}),
+    ...(update && !held ? { update } : {}),
+    ...(held ? { held: true as const } : {}),
   };
 }
 
@@ -348,11 +384,13 @@ async function readCapabilities(
     const skills = toPanel("skills", data.skills);
     const agents = toPanel("agents", data.agents);
     const mcp = toPanel("mcp", data.mcp);
+    const u = facts.updates;
     return {
       skills: await Promise.all(skills.map((s) => withFacts(s, facts, data.scanned_at))),
       agents,
       mcp,
       scanned_at: data.scanned_at,
+      ...(u.checkedAt ? { updates: { checked_at: u.checkedAt, errors: u.errors } } : {}),
     };
   } catch (err) {
     return {

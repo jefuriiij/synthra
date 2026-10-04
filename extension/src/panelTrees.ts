@@ -53,6 +53,12 @@ export interface PanelItem {
   files_more?: number;
   editable?: true;
   deletable?: true;
+  /** Installed from GitHub (0.38+): a newer version, or gone from its repo. */
+  update?: "available" | "moved";
+  /** Installed from GitHub: set to "Don't update". */
+  held?: true;
+  /** Installed from GitHub: its name in the lock file, for updates. */
+  updatable?: string;
 }
 
 export interface PanelDelegation {
@@ -90,6 +96,8 @@ export interface PanelsPayload {
     mcp: PanelItem[];
     scanned_at: string;
     error?: string;
+    /** The last update check (0.38+). */
+    updates?: { checked_at: string; errors: string[] };
   };
   agents: {
     since: string;
@@ -457,6 +465,7 @@ function itemNode(kind: string, i: PanelItem): PanelNode {
     i.synthra ? "by Synthra" : "",
     i.pinned ? "favorite" : "",
     i.stale_days !== undefined ? `unused ${i.stale_days} days` : "",
+    i.update === "available" ? "update available" : i.update === "moved" ? "moved in its repo" : "",
     i.commands ? plural(i.commands, "command") : "",
     kind === "agents" ? (i.meta?.model ?? "") : "",
     kind === "mcp" ? (i.meta?.type ?? "") : "",
@@ -501,7 +510,29 @@ function scopeGroups(kind: string, items: PanelItem[]): PanelNode[] {
         };
       });
     } else {
-      children = list.map((i) => itemNode(kind, i));
+      // Installed skills (npx skills) get one more level, by the repo.
+      const own = list.filter((i) => !i.third_party);
+      const repos = [
+        ...new Set(list.flatMap((i) => (i.third_party ? [i.third_party] : []))),
+      ].sort();
+      children = [
+        ...own.map((i) => itemNode(kind, i)),
+        ...repos.map((repo): PanelNode => {
+          const from = list.filter((i) => i.third_party === repo);
+          const updates = from.filter((i) => i.update === "available").length;
+          return {
+            id: `cap:${kind}:${s.scope}:repo:${repo}`,
+            label: repo,
+            description: [String(from.length), updates ? plural(updates, "update") : ""]
+              .filter(Boolean)
+              .join(" · "),
+            tooltip: `Installed from github.com/${repo} with npx skills.`,
+            icon: { id: "github" },
+            expanded: false,
+            children: from.map((i) => itemNode(kind, i)),
+          };
+        }),
+      ];
     }
     groups.push({
       id: `cap:${kind}:${s.scope}`,

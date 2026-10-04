@@ -10,7 +10,14 @@ import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
 import { buildHtml } from "./html";
-import { buildTabs, mergePrompt, messageTabs, tildify } from "./panelTabs";
+import {
+  buildTabs,
+  mergePrompt,
+  messageTabs,
+  REPO_RE,
+  tildify,
+  UPDATE_COMMAND_RE,
+} from "./panelTabs";
 import type { PanelTarget } from "./panelTrees";
 import type { PanelsState, SynthraPanels } from "./panels";
 import type { CapabilityRow, HostToWebview, Tab, WebviewToHost } from "./shared/tabs";
@@ -31,6 +38,8 @@ export class SynthraEditorPanel implements vscode.Disposable {
   private groups = new Set<string>();
   /** The last restore's reinstall commands: the only ones "reinstall" runs. */
   private reinstall: string[] = [];
+  /** The installed skills the last view offered updates on, by lock name. */
+  private installed = new Map<string, CapabilityRow>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -249,6 +258,57 @@ export class SynthraEditorPanel implements vscode.Disposable {
         for (const c of this.reinstall) t.sendText(c);
         return;
       }
+      case "checkUpdates": {
+        void this.source
+          .checkUpdates()
+          .catch((e: Error) => ({ text: "", error: `The check failed: ${e.message}` }))
+          .then((r) => this.post({ type: "updatesResult", ...r }));
+        return;
+      }
+      case "skillChanges":
+      case "holdSkill": {
+        const row = typeof msg.name === "string" ? this.installed.get(msg.name) : undefined;
+        if (!row?.path) {
+          this.log("[ext] ignored an update action the current view does not offer");
+          return;
+        }
+        const target = row.path;
+        const run =
+          msg.type === "holdSkill"
+            ? this.source.holdSkill(msg.name, msg.on === true)
+            : this.source.showUpdateDiff(msg.name);
+        void run
+          .catch((e: Error) => e.message)
+          .then((error) => this.post({ type: "skillResult", target, error }));
+        return;
+      }
+      case "updateSkills": {
+        const rows = Array.isArray(msg.names)
+          ? msg.names.flatMap((n) => {
+              const r = typeof n === "string" ? this.installed.get(n) : undefined;
+              return r?.update && !r.held ? [r] : [];
+            })
+          : [];
+        const target = `update:${Array.isArray(msg.names) ? msg.names.join(" ") : ""}`;
+        if (rows.length === 0 || rows.length !== msg.names.length) {
+          this.log("[ext] ignored an update the current view does not offer");
+          this.post({ type: "skillResult", target, error: "" });
+          return;
+        }
+        void this.runUpdate(rows)
+          .catch((e: Error) => e.message)
+          .then((error) => this.post({ type: "skillResult", target, error }));
+        return;
+      }
+      case "openRepo": {
+        const known =
+          typeof msg.repo === "string" &&
+          REPO_RE.test(msg.repo) &&
+          [...this.installed.values()].some((r) => r.thirdParty === msg.repo);
+        if (known) void vscode.env.openExternal(vscode.Uri.parse(`https://github.com/${msg.repo}`));
+        else this.log("[ext] ignored a repo link the current view does not offer");
+        return;
+      }
       case "setSetting": {
         if (typeof msg.key !== "string") return;
         const value =
@@ -287,11 +347,66 @@ export class SynthraEditorPanel implements vscode.Disposable {
         r.path ? [[r.path, r] as const] : [],
       ),
     );
+    this.installed = new Map(
+      (built.view.capabilities?.skills ?? []).flatMap((r) =>
+        r.updatable ? [[r.updatable, r] as const] : [],
+      ),
+    );
     this.groups = new Set(
       (built.view.learning?.pending ?? []).flatMap((p) => (p.group ? [p.group] : [])),
     );
     this.post({ type: "view", view: built.view });
     this.post({ type: "refreshing", on: false });
+  }
+
+  /**
+   * Update installed skills: ask first (an update replaces the skill's files,
+   * edits made here too), then run the engine's command in a terminal. The
+   * official installer does the work, so its lock and every agent's copy stay
+   * right; the lock-file watcher refreshes the panel when it is done.
+   */
+  private async runUpdate(rows: CapabilityRow[]): Promise<string> {
+    const names = rows.flatMap((r) => (r.updatable ? [r.updatable] : []));
+    const first = rows[0];
+    if (!first) return "";
+    const repos = [...new Set(rows.map((r) => r.thirdParty ?? r.group))];
+    let edited = "";
+    if (rows.length === 1 && first.update === "available" && first.updatable) {
+      const d = await this.source.updateDiff(first.updatable);
+      if (typeof d !== "string" && d.editedHere?.length) {
+        edited = `You changed ${d.editedHere.join(", ")} here. The update replaces ${d.editedHere.length === 1 ? "it" : "them"}.`;
+      }
+    }
+    const pick = await vscode.window.showWarningMessage(
+      rows.length === 1
+        ? `Update "${first.name}" from ${repos[0]}?`
+        : `Update ${rows.length} skills from ${repos.join(", ")}?`,
+      {
+        modal: true,
+        detail: [
+          "npx skills downloads the new version and replaces the skill's files, in every AI tool it is installed for.",
+          edited ||
+            (rows.length === 1
+              ? "Use See changes first to read what is new."
+              : "Changes you made to these skills here are replaced too."),
+          rows.some((r) => r.update === "moved")
+            ? "A skill that moved in its repo is looked up there; one that was removed is reported."
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      },
+      "Update",
+    );
+    if (pick !== "Update") return "";
+    const r = await this.source.updateCommand(names);
+    if (r.error) return r.error;
+    if (!UPDATE_COMMAND_RE.test(r.command))
+      return "Synthra sent a command this extension won't run.";
+    const t = vscode.window.createTerminal({ name: "Synthra: update skills" });
+    t.show();
+    t.sendText(r.command);
+    return "";
   }
 
   /** VS Code's own dialog, so a delete is never one stray click. */

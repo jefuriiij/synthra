@@ -32,6 +32,10 @@ class Store {
   restoreLines = $state<string[]>([]);
   restoreError = $state("");
   reinstall = $state(0);
+  /** The update check of installed skills, in the Capabilities tab. */
+  checkingUpdates = $state(false);
+  updatesText = $state("");
+  updatesError = $state("");
 
   apply(msg: HostToWebview): void {
     if (msg.type === "view") this.view = msg.view;
@@ -55,6 +59,10 @@ class Store {
       this.restoreLines = msg.lines;
       this.reinstall = msg.reinstall;
       this.restoreError = msg.error;
+    } else if (msg.type === "updatesResult") {
+      this.checkingUpdates = false;
+      this.updatesText = msg.text;
+      this.updatesError = msg.error;
     } else if (msg.type === "mergeResult") {
       this.merging = false;
       this.mergeError = msg.error;
@@ -98,6 +106,38 @@ class Store {
     this.skillBusy = { ...this.skillBusy, [a.path]: true };
     this.skillErrors = { ...this.skillErrors, [a.path]: "" };
     post(a);
+  }
+
+  /** Ask GitHub which installed skills have updates. */
+  checkUpdates(): void {
+    this.checkingUpdates = true;
+    this.updatesText = "";
+    this.updatesError = "";
+    post({ type: "checkUpdates" });
+  }
+
+  /** Update installed skills (the host asks first). Busy under "update:<names>". */
+  updateSkills(names: string[]): void {
+    const target = `update:${names.join(" ")}`;
+    this.skillBusy = { ...this.skillBusy, [target]: true };
+    this.skillErrors = { ...this.skillErrors, [target]: "" };
+    post({ type: "updateSkills", names });
+  }
+
+  /** "Don't update" on or off, or the update's changes as a diff; busy and
+   *  errors under the skill's path. */
+  installed(
+    a: { type: "holdSkill"; name: string; on: boolean } | { type: "skillChanges"; name: string },
+    path: string,
+  ): void {
+    this.skillBusy = { ...this.skillBusy, [path]: true };
+    this.skillErrors = { ...this.skillErrors, [path]: "" };
+    post(a);
+  }
+
+  /** Open an installed skill's repo on GitHub. */
+  openRepo(repo: string): void {
+    post({ type: "openRepo", repo });
   }
 
   /** Put a merge request for these skills on the clipboard. */

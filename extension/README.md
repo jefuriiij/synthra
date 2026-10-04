@@ -75,8 +75,10 @@ a **skill**. Next time, that is one step.
 ![The Capabilities tab: skills, agents, connected tools and plugins, grouped by where they come from](https://raw.githubusercontent.com/jefuriiij/synthra/main/extension/images/capabilities.png)
 
 - **Capabilities:** every skill, agent, connected tool (MCP server) and plugin
-  Claude Code can use, grouped by where it comes from. Search them, and click one
-  to open it.
+  Claude Code can use, grouped by where it comes from, with a section for each
+  GitHub repo you installed skills from. Search them, and click one to open it.
+  **Check for updates** finds newer versions of installed skills: see what
+  changed, then update one skill or a whole repo.
 - **Agents:** the helper agents Claude started this week, with the task it gave
   each one.
 

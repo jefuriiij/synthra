@@ -87,6 +87,8 @@ export interface CapabilitiesTab {
   agents: CapabilityRow[];
   mcp: CapabilityRow[];
   plugins: PluginRow[];
+  /** The last check for updates of installed skills (Synthra 0.38+). */
+  updates?: { checkedAt: number; errors: string[] };
 }
 
 export interface CapabilityRow {
@@ -94,7 +96,8 @@ export interface CapabilityRow {
   name: string;
   description: string;
   scope: "project" | "personal" | "plugin";
-  /** "This project", "Yours", or the plugin's name — what the chips filter on. */
+  /** The section it is listed in: "This project", "Yours", the repo an
+   *  installed skill came from ("owner/repo"), or the plugin's name. */
   group: string;
   /** "12 commands", "sonnet", "http". */
   extra?: string;
@@ -124,6 +127,13 @@ export interface CapabilityRow {
   canFavorite?: boolean;
   canDelete?: boolean;
   canMerge?: boolean;
+  // Installed from GitHub (Synthra 0.38+):
+  /** Its name in the lock file: what update and "Don't update" act on. */
+  updatable?: string;
+  /** A newer version is on GitHub, or its folder moved in its repo. */
+  update?: "available" | "moved";
+  /** Set to "Don't update". */
+  held?: boolean;
 }
 
 export interface PluginRow {
@@ -281,7 +291,9 @@ export type HostToWebview =
   /** A backup was saved (`text` says where), or why not. "" both: cancelled. */
   | { type: "backupResult"; text: string; error: string }
   /** What a restore did, line by line, and how many skills to reinstall. */
-  | { type: "restoreResult"; lines: string[]; reinstall: number; error: string };
+  | { type: "restoreResult"; lines: string[]; reinstall: number; error: string }
+  /** The update check finished: `text` says what it found, or `error` why not. */
+  | { type: "updatesResult"; text: string; error: string };
 
 export type WebviewToHost =
   | { type: "ready" }
@@ -307,4 +319,14 @@ export type WebviewToHost =
   /** Settings: restore from a backup file (the host asks which). */
   | { type: "restoreBackup" }
   /** Settings: run the last restore's reinstall commands in a terminal. */
-  | { type: "reinstall" };
+  | { type: "reinstall" }
+  /** Capabilities: ask GitHub which installed skills have updates. */
+  | { type: "checkUpdates" }
+  /** Capabilities: update these installed skills (lock names; the host asks first). */
+  | { type: "updateSkills"; names: string[] }
+  /** Capabilities: "Don't update" on or off for one installed skill. */
+  | { type: "holdSkill"; name: string; on: boolean }
+  /** Capabilities: show what updating one installed skill changes. */
+  | { type: "skillChanges"; name: string }
+  /** Capabilities: open an installed skill's repo on GitHub. */
+  | { type: "openRepo"; repo: string };

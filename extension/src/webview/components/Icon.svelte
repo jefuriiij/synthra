@@ -32,7 +32,11 @@
     | "star-full"
     | "trash"
     | "merge"
-    | "link";
+    | "link"
+    | "update"
+    | "hold"
+    | "diff"
+    | "external";
 </script>
 
 <script lang="ts">
@@ -136,6 +140,15 @@
       <path d="M4 5v6M4 6c0 2 2.5 2 6.5 2" />
     {:else if name === "link"}
       <path d="M7 9a2.5 2.5 0 0 0 3.5 0l2-2A2.5 2.5 0 0 0 9 3.5l-.7.7M9 7a2.5 2.5 0 0 0-3.5 0l-2 2A2.5 2.5 0 0 0 7 12.5l.7-.7" />
+    {:else if name === "update"}
+      <path d="M8 2v8M4.8 7L8 10.2 11.2 7M2.5 11v2.5h11V11" />
+    {:else if name === "hold"}
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    {:else if name === "diff"}
+      <path d="M5 2v6M2 5h6M8.5 11.5h5.5M3 14L13 2" />
+    {:else if name === "external"}
+      <path d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4" />
     {:else if name === "robot"}
       <path d="M3.5 5.5h9v7h-9zM8 2.5v3M6 8.5v.5M10 8.5v.5M6.5 10.8h3M1.5 8v2.5M14.5 8v2.5" />
     {/if}

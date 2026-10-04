@@ -33,6 +33,9 @@ describe("POST guard", () => {
         "/skills/delete",
         "/skills/answer-group",
         "/restore",
+        "/skills/updates/check",
+        "/skills/hold",
+        "/skills/update-command",
         "/curator/run",
         "/gate",
       ]) {

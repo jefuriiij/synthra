@@ -36,6 +36,22 @@ export const OPEN_COMMAND = "synthra.panels.open";
 /** Read-only documents for a skill change's before/after. */
 const DIFF_SCHEME = "synthra-skill";
 
+const TOO_OLD_FOR_UPDATES =
+  "This version of Synthra can't check skills for updates. Update Synthra to 0.38 or later.";
+
+/** What updating one installed skill changes (GET /skills/update-diff). */
+export interface UpdateDiff {
+  name: string;
+  source: string;
+  before: string;
+  after: string;
+  added: string[];
+  changed: string[];
+  removed: string[];
+  /** Files changed here since the install; null = couldn't tell. */
+  editedHere: string[] | null;
+}
+
 /** Synthra and Claude rewrite several files per change: read once after they settle. */
 const DEBOUNCE_MS = 800;
 
@@ -194,6 +210,8 @@ export class SynthraPanels implements vscode.Disposable {
       watch(project, ".claude/{skills,agents}/**", true);
       watch(project, ".mcp.json", true);
       watch(home, ".claude/{skills,agents}/**", true);
+      // npx skills add / update / remove: the installed list and its versions.
+      watch(home, ".agents/.skill-lock.json", true);
       // Proposals arriving or answered, and the change ledger.
       watch(home, ".synthra/skills/{pending/*.json,ledger.jsonl}", false);
     }
@@ -468,7 +486,111 @@ export class SynthraPanels implements vscode.Disposable {
     };
   }
 
-  private async skillPost(route: string, body: unknown, what: string): Promise<string> {
+  /** Ask GitHub which installed skills have updates. Resolves to what it
+   *  found, or why not. */
+  async checkUpdates(): Promise<{ text: string; error: string }> {
+    const port = this.deps.port();
+    if (port === null) return { text: "", error: "Synthra is not running." };
+    const r = await this.deps.postJson<{
+      ok?: boolean;
+      error?: string;
+      checked?: number;
+      available?: number;
+      moved?: number;
+      errors?: string[];
+    }>(`http://127.0.0.1:${port}/skills/updates/check`, {}, 90_000);
+    this.refresh({ fresh: true });
+    if (r.status === 404) return { text: "", error: TOO_OLD_FOR_UPDATES };
+    if (r.status !== 200 || !r.body) {
+      return { text: "", error: "Synthra did not answer. See the log (Synthra: Show log)." };
+    }
+    const b = r.body;
+    if (!b.ok) return { text: "", error: b.error ?? "The check failed." };
+    const n = b.available ?? 0;
+    const parts = [
+      n ? `${n} update${n === 1 ? "" : "s"}` : "Everything is up to date",
+      b.moved ? `${b.moved} moved in ${b.moved === 1 ? "its" : "their"} repo` : "",
+      `${b.checked ?? 0} installed skill${b.checked === 1 ? "" : "s"} checked`,
+    ];
+    return {
+      text: parts.filter(Boolean).join(" · "),
+      error: (b.errors ?? []).length ? `Not checked: ${(b.errors ?? []).join("; ")}` : "",
+    };
+  }
+
+  /** "Don't update" on or off. Resolves to "" or why not. */
+  async holdSkill(name: string, on: boolean): Promise<string> {
+    return this.skillPost("/skills/hold", { name, on }, "", TOO_OLD_FOR_UPDATES);
+  }
+
+  /** The command that updates these skills, from the engine (which checks
+   *  each is installed and not held), or why not. */
+  async updateCommand(names: string[]): Promise<{ command: string; error: string }> {
+    const port = this.deps.port();
+    if (port === null) return { command: "", error: "Synthra is not running." };
+    const r = await this.deps.postJson<{ ok?: boolean; error?: string; command?: string }>(
+      `http://127.0.0.1:${port}/skills/update-command`,
+      { names },
+      10_000,
+    );
+    if (r.status === 404) return { command: "", error: TOO_OLD_FOR_UPDATES };
+    if (r.status !== 200 || !r.body) {
+      return { command: "", error: "Synthra did not answer. See the log (Synthra: Show log)." };
+    }
+    return r.body.ok && r.body.command
+      ? { command: r.body.command, error: "" }
+      : { command: "", error: r.body.error ?? "Nothing to update." };
+  }
+
+  /** What updating one installed skill changes (asks GitHub). */
+  async updateDiff(name: string): Promise<UpdateDiff | string> {
+    const port = this.deps.port();
+    if (port === null) return "Synthra is not running.";
+    const r = await this.deps.getJson<{ ok?: boolean; error?: string; diff?: UpdateDiff }>(
+      `http://127.0.0.1:${port}/skills/update-diff?name=${encodeURIComponent(name)}`,
+      60_000,
+    );
+    if (r.status === 404) return TOO_OLD_FOR_UPDATES;
+    if (r.status !== 200 || !r.body)
+      return "Synthra did not answer. See the log (Synthra: Show log).";
+    return r.body.ok && r.body.diff ? r.body.diff : (r.body.error ?? "GitHub had no answer.");
+  }
+
+  /** SKILL.md here against GitHub's, side by side, and the other files the
+   *  update touches. Resolves to "" or why it couldn't. */
+  async showUpdateDiff(name: string): Promise<string> {
+    const d = await this.updateDiff(name);
+    if (typeof d === "string") return d;
+    await this.showDiff({
+      kind: "diff",
+      name: d.name,
+      title: `${d.name}: yours ↔ ${d.source} now`,
+      before: { text: d.before },
+      after: { text: d.after },
+    });
+    const others = [
+      d.added.length ? `adds ${d.added.join(", ")}` : "",
+      d.changed.filter((f) => f !== "SKILL.md").length
+        ? `changes ${d.changed.filter((f) => f !== "SKILL.md").join(", ")}`
+        : "",
+      d.removed.length ? `removes ${d.removed.join(", ")}` : "",
+    ].filter(Boolean);
+    const lines = [
+      others.length ? `The update also ${others.join("; ")}.` : "",
+      d.editedHere?.length
+        ? `You changed ${d.editedHere.join(", ")} here: updating replaces ${d.editedHere.length === 1 ? "it" : "them"}.`
+        : "",
+    ].filter(Boolean);
+    if (lines.length) void vscode.window.showInformationMessage(`Synthra: ${lines.join(" ")}`);
+    return "";
+  }
+
+  private async skillPost(
+    route: string,
+    body: unknown,
+    what: string,
+    tooOld = `This version of Synthra can't ${what}. Update Synthra to 0.36 or later.`,
+  ): Promise<string> {
     const port = this.deps.port();
     if (port === null) return "Synthra is not running.";
     const r = await this.deps.postJson<{ ok?: boolean; error?: string }>(
@@ -477,8 +599,7 @@ export class SynthraPanels implements vscode.Disposable {
       30_000,
     );
     this.refresh({ fresh: true });
-    if (r.status === 404)
-      return `This version of Synthra can't ${what}. Update Synthra to 0.36 or later.`;
+    if (r.status === 404) return tooOld;
     if (r.status !== 200 || !r.body)
       return "Synthra did not answer. See the log (Synthra: Show log).";
     return r.body.ok ? "" : (r.body.error ?? "Nothing happened.");

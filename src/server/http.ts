@@ -51,6 +51,12 @@ import { handlePanels } from "./routes/panels.js";
 import { handlePrime } from "./routes/prime.js";
 import { handleRoute } from "./routes/route.js";
 import { handleSettingsPost, settingsView } from "./routes/settings.js";
+import {
+  handleCheckUpdates,
+  handleHold,
+  handleUpdateCommand,
+  handleUpdateDiff,
+} from "./routes/skill-updates.js";
 
 export interface ServerHandle {
   port: number;
@@ -286,6 +292,19 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     return c.json(await handleDelete(body, ctx));
   });
   app.post("/curator/run", async (c) => c.json(await handleCuratorRun(ctx)));
+  // Updates for the skills installed with npx skills (the Capabilities tab).
+  app.post("/skills/updates/check", async (c) => c.json(await handleCheckUpdates(ctx)));
+  app.get("/skills/update-diff", async (c) =>
+    c.json(await handleUpdateDiff(c.req.query("name"), ctx)),
+  );
+  app.post("/skills/hold", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleHold(body, ctx));
+  });
+  app.post("/skills/update-command", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleUpdateCommand(body, ctx));
+  });
 
   // The IDE's Settings tab: ~/.synthra/settings.json, with where each value
   // comes from. POST {key, value} sets one (value null = back to default).

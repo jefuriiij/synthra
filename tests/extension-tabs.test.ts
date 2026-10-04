@@ -6,7 +6,14 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 
 import { buildCsp, buildHtml } from "../extension/src/html.js";
-import { buildTabs, mergePrompt, messageTabs, tildify } from "../extension/src/panelTabs.js";
+import {
+  buildTabs,
+  mergePrompt,
+  messageTabs,
+  REPO_RE,
+  tildify,
+  UPDATE_COMMAND_RE,
+} from "../extension/src/panelTabs.js";
 import { type PanelsPayload, proposalTitle } from "../extension/src/panelTrees.js";
 
 const ROOT = "/work/aster";
@@ -289,6 +296,61 @@ describe("Capabilities tab", () => {
     expect(text).toContain("absorbed_into");
     expect(text).toContain("references/<topic>.md");
     expect(text).not.toContain(String.fromCharCode(0x2014));
+  });
+
+  it("lists installed skills under their repo, with their update state", () => {
+    const skill = (name: string, over: Record<string, unknown> = {}) => ({
+      name,
+      description: name,
+      scope: "personal" as const,
+      file: `/home/me/.claude/skills/${name}/SKILL.md`,
+      editable: true as const,
+      ...over,
+    });
+    const { view } = buildTabs(
+      ROOT,
+      payload({
+        capabilities: {
+          ...payload().capabilities,
+          skills: [
+            skill("mine", { deletable: true }),
+            skill("taste", {
+              third_party: "Leonxlnx/taste-skill",
+              updatable: "taste",
+              update: "available",
+            }),
+            skill("kept", { third_party: "Leonxlnx/taste-skill", updatable: "kept", held: true }),
+            skill("gone", { third_party: "a/b", updatable: "gone", update: "moved" }),
+          ],
+          updates: { checked_at: "2026-10-04T10:00:00.000Z", errors: ["c/d: not found"] },
+        },
+      }),
+    );
+    const c = view.capabilities;
+    const row = (n: string) => c?.skills.find((r) => r.name === n);
+    expect(row("mine")?.group).toBe("Yours");
+    expect(row("taste")).toMatchObject({
+      group: "Leonxlnx/taste-skill",
+      updatable: "taste",
+      update: "available",
+    });
+    expect(row("kept")).toMatchObject({ group: "Leonxlnx/taste-skill", held: true });
+    expect(row("gone")).toMatchObject({ group: "a/b", update: "moved" });
+    expect(row("mine")?.updatable).toBeUndefined();
+    expect(c?.updates).toEqual({
+      checkedAt: Date.parse("2026-10-04T10:00:00.000Z"),
+      errors: ["c/d: not found"],
+    });
+  });
+
+  it("runs only the update command the engine writes, and opens only repo slugs", () => {
+    expect(UPDATE_COMMAND_RE.test("npx -y skills update taste react:components -g -y")).toBe(true);
+    expect(UPDATE_COMMAND_RE.test("npx -y skills update taste -g -y; rm -rf ~")).toBe(false);
+    expect(UPDATE_COMMAND_RE.test("npx -y skills update -g -y")).toBe(false);
+    expect(UPDATE_COMMAND_RE.test("npx -y skills update a&&b -g -y")).toBe(false);
+    expect(REPO_RE.test("Leonxlnx/taste-skill")).toBe(true);
+    expect(REPO_RE.test("evil.com/x/y")).toBe(false);
+    expect(REPO_RE.test("javascript:alert(1)")).toBe(false);
   });
 
   it("passes a scan error through", () => {

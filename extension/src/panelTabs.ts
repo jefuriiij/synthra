@@ -205,7 +205,13 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
       name: i.name,
       description: i.description,
       scope: i.scope,
-      group: i.scope === "plugin" ? (i.source ?? GROUP.plugin) : GROUP[i.scope],
+      // An installed skill is listed under the repo it came from.
+      group:
+        i.scope === "plugin"
+          ? (i.source ?? GROUP.plugin)
+          : kind === "skills" && i.third_party
+            ? i.third_party
+            : GROUP[i.scope],
       ...(extra ? { extra } : {}),
       off: i.enabled === false,
       ...(i.file ? { key: keys.open(i.file) } : {}),
@@ -233,6 +239,9 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
       ...(knows ? { canFavorite: true } : {}),
       ...(i.deletable ? { canDelete: true } : {}),
       ...(i.deletable && !i.third_party ? { canMerge: true } : {}),
+      ...(i.updatable ? { updatable: i.updatable } : {}),
+      ...(i.update ? { update: i.update } : {}),
+      ...(i.held ? { held: true } : {}),
     };
   };
 
@@ -257,7 +266,11 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
     }
   }
 
+  const checked = c.updates ? ms(c.updates.checked_at) : undefined;
   return {
+    ...(checked !== undefined && c.updates
+      ? { updates: { checkedAt: checked, errors: c.updates.errors } }
+      : {}),
     skills: c.skills.map((i) => row("skills", i)),
     agents: c.agents.map((i) => row("agents", i)),
     mcp: c.mcp.map((i) => row("mcp", i)),
@@ -285,6 +298,13 @@ export function mergePrompt(rows: { name: string; path: string }[]): string {
     "Everything waits for my OK in Synthra's Learning tab. If these don't belong together, say so and stop.",
   ].join("\n");
 }
+
+/** A GitHub repo slug the page may open ("owner/repo"). */
+export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/** Only the command the engine writes, in the shape it writes it. */
+export const UPDATE_COMMAND_RE =
+  /^npx -y skills update( [A-Za-z0-9][A-Za-z0-9._:-]{0,127})+ -g -y$/;
 
 // ─── Agents ─────────────────────────────────────────────────────────────────
 

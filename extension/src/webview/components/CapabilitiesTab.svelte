@@ -16,9 +16,10 @@
   ];
   const size = (k: Kind) => (k === "plugins" ? c.plugins.length : c[k].length);
 
-  // Two chips that cut across where a skill lives.
+  // Chips that cut across where a skill lives (the sections below).
   const SYNTHRA = " synthra";
   const FAVORITES = " favorites";
+  const UPDATES = " updates";
 
   let kind = $state<Kind>("skills");
   let group = $state("all");
@@ -26,21 +27,17 @@
   const needle = $derived(query.trim().toLowerCase());
 
   const rows = $derived(kind === "plugins" ? [] : c[kind]);
-  /** Only groups that have rows get a chip: this project, yours, then plugins. */
-  const groups = $derived.by(() => {
-    const order = ["This project", "Yours"];
-    const names = [...new Set(rows.map((r) => r.group))];
-    return names.sort((a, b) => {
-      const ia = order.indexOf(a);
-      const ib = order.indexOf(b);
-      if (ia !== -1 || ib !== -1) return (ia === -1 ? 9 : ia) - (ib === -1 ? 9 : ib);
-      return a < b ? -1 : a > b ? 1 : 0;
-    });
-  });
   const mine = $derived(rows.filter((r) => r.synthra).length);
   const favorites = $derived(rows.filter((r) => r.favorite).length);
+  const hasUpdate = (r: CapabilityRow) => r.update !== undefined && !r.held;
+  const updates = $derived(rows.filter(hasUpdate).length);
   const inGroup = (r: CapabilityRow, g: string) =>
-    g === "all" || (g === SYNTHRA ? r.synthra === true : g === FAVORITES ? r.favorite === true : r.group === g);
+    g === "all" ||
+    (g === SYNTHRA
+      ? r.synthra === true
+      : g === FAVORITES
+        ? r.favorite === true
+        : g === UPDATES && hasUpdate(r));
   const shown = $derived(
     rows.filter(
       (r) =>
@@ -52,21 +49,68 @@
     ),
   );
 
-  /** Rows before "Show all" (a filter shows every match). */
+  // ─── sections: this project, yours, each repo skills were installed from,
+  // each plugin ───
+  type Section = {
+    name: string;
+    sort: "project" | "yours" | "repo" | "plugin";
+    rows: CapabilityRow[];
+  };
+  const SORT = { project: 0, yours: 1, repo: 2, plugin: 3 } as const;
+  const sections = $derived.by(() => {
+    const by = new Map<string, Section>();
+    for (const r of shown) {
+      const sort =
+        r.group === "This project"
+          ? "project"
+          : r.group === "Yours"
+            ? "yours"
+            : r.thirdParty
+              ? "repo"
+              : "plugin";
+      const s = by.get(r.group) ?? { name: r.group, sort, rows: [] };
+      s.rows.push(r);
+      by.set(r.group, s);
+    }
+    return [...by.values()].sort(
+      (a, b) => SORT[a.sort] - SORT[b.sort] || (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1),
+    );
+  });
+  /** Repos and plugins start folded; a filter or a chip opens everything. */
+  let folded = $state<Record<string, boolean>>({});
+  const isOpen = (s: Section) =>
+    needle !== "" ||
+    group !== "all" ||
+    sections.length === 1 ||
+    !(folded[`${kind}:${s.name}`] ?? (s.sort === "repo" || s.sort === "plugin"));
+  const fold = (s: Section) => {
+    const k = `${kind}:${s.name}`;
+    folded = { ...folded, [k]: isOpen(s) };
+  };
+
+  /** Rows of a section before "Show all" (a filter shows every match). */
   const FIRST = 12;
-  let all = $state(false);
-  const visible = $derived(all || needle ? shown : shown.slice(0, FIRST));
+  let all = $state<Record<string, boolean>>({});
+  const visible = (s: Section) =>
+    all[s.name] || needle ? s.rows : s.rows.slice(0, FIRST);
 
   function pick(k: Kind): void {
     kind = k;
     group = "all";
-    all = false;
+    all = {};
     stopMerge();
   }
   function chip(g: string): void {
     group = g;
-    all = false;
+    all = {};
   }
+
+  // ─── updates of installed skills ───
+  const updatable = $derived(c.skills.some((r) => r.updatable));
+  const repos = $derived(new Set(c.skills.flatMap((r) => (r.thirdParty ? [r.thirdParty] : []))).size);
+  const updateKey = (names: string[]) => `update:${names.join(" ")}`;
+  const pending = (s: Section) =>
+    s.rows.flatMap((r) => (hasUpdate(r) && r.updatable ? [r.updatable] : []));
 
   const icon = (r: CapabilityRow): IconName =>
     kind === "mcp"
@@ -138,14 +182,41 @@
         disabled: store.skillBusy[path],
         run: () => store.skill({ type: "deleteSkill", path }),
       });
-    } else if (r.thirdParty) {
+    }
+    if (r.updatable) {
+      const name = r.updatable;
+      const busy = store.skillBusy[path] || store.skillBusy[updateKey([name])];
+      if (r.update === "available" && !r.held) {
+        items.push({
+          label: "See changes",
+          icon: "diff",
+          sep: true,
+          hint: "yours next to the new one",
+          disabled: busy,
+          run: () => store.installed({ type: "skillChanges", name }, path),
+        });
+      }
+      if (r.update && !r.held) {
+        items.push({
+          label: r.update === "moved" ? "Update (finds where it moved)" : "Update",
+          icon: "update",
+          ...(r.update === "moved" ? { sep: true } : {}),
+          disabled: busy,
+          run: () => store.updateSkills([name]),
+        });
+      }
       items.push({
-        label: `Installed from ${r.thirdParty}`,
-        icon: "package",
-        sep: true,
-        disabled: true,
-        run: () => {},
+        label: r.held ? "Allow updates" : "Don't update",
+        icon: "hold",
+        ...(r.update && !r.held ? {} : { sep: true }),
+        hint: r.held ? "" : "keep this version",
+        disabled: busy,
+        run: () => store.installed({ type: "holdSkill", name, on: !r.held }, path),
       });
+      if (r.thirdParty) {
+        const repo = r.thirdParty;
+        items.push({ label: "Open on GitHub", icon: "external", run: () => store.openRepo(repo) });
+      }
     }
     return items;
   }
@@ -158,7 +229,7 @@
       Claude can use {plural(c.skills.length, "skill")}, {plural(c.agents.length, "agent")} and {plural(c.mcp.length, "connected tool")}
     </span>
     <span class="small muted">
-      From this project, from you, and from {plural(c.plugins.length, "plugin")}{c.skills.some((r) => r.synthra)
+      From this project, from you{repos ? `, from ${plural(repos, "GitHub repo")}` : ""} and from {plural(c.plugins.length, "plugin")}{c.skills.some((r) => r.synthra)
         ? ` · ${c.skills.filter((r) => r.synthra).length} made by Synthra`
         : ""}. Click a name to open it.
     </span>
@@ -176,7 +247,26 @@
         </button>
       {/each}
     </div>
+    {#if kind === "skills" && updatable}
+      <div class="check">
+        <span class="small muted" aria-live="polite">
+          {#if store.checkingUpdates}
+            Asking GitHub...
+          {:else if store.updatesText}
+            {store.updatesText}
+          {:else if c.updates}
+            Checked {relativeTime(c.updates.checkedAt, now)}
+          {/if}
+        </span>
+        <button type="button" class="btn" disabled={store.checkingUpdates} onclick={() => store.checkUpdates()}>
+          <Icon name={store.checkingUpdates ? "spin" : "refresh"} size={13} /> Check for updates
+        </button>
+      </div>
+    {/if}
   </div>
+  {#if kind === "skills" && (store.updatesError || (!store.updatesText && c.updates?.errors.length))}
+    <p class="stale small">{store.updatesError || `Not checked: ${c.updates?.errors.join("; ")}`}</p>
+  {/if}
 
   {#if kind === "plugins"}
     {#if c.plugins.length === 0}
@@ -220,7 +310,7 @@
       <input id="cap-filter" bind:value={query} type="text" placeholder="Filter {rows.length} {KINDS.find((k) => k.id === kind)?.label.toLowerCase()}" />
     </div>
 
-    {#if groups.length > 1 || mine || favorites}
+    {#if mine || favorites || updates}
       <div class="chips" role="group" aria-label="Which ones to show">
         <button type="button" class="chip" aria-pressed={group === "all"} onclick={() => chip("all")}>
           All <span class="n">{rows.length}</span>
@@ -235,13 +325,10 @@
             <Icon name="star-full" size={11} class="fav" /> Favorites <span class="n">{favorites}</span>
           </button>
         {/if}
-        {#if groups.length > 1}
-          {#each groups as g (g)}
-            <button type="button" class="chip" aria-pressed={group === g} onclick={() => chip(g)}>
-              {g}
-              <span class="n">{rows.filter((r) => r.group === g).length}</span>
-            </button>
-          {/each}
+        {#if updates}
+          <button type="button" class="chip" aria-pressed={group === UPDATES} onclick={() => chip(UPDATES)}>
+            <Icon name="update" size={11} class="syn" /> Updates <span class="n">{updates}</span>
+          </button>
         {/if}
       </div>
     {/if}
@@ -268,71 +355,115 @@
         {needle ? `Nothing matches "${query.trim()}".` : "None here yet."}
       </p>
     {:else}
-      <div class="card">
-        {#each visible as r (r.id)}
-          {#if kind === "skills" && r.path}
-            {@const path = r.path}
-            <div class="row" class:dim={merging && !r.canMerge}>
-              {#if merging}
-                <input
-                  type="checkbox"
-                  class="pick"
-                  aria-label="Merge {r.name}"
-                  disabled={!r.canMerge}
-                  checked={picked.includes(path)}
-                  onchange={() => togglePick(path)}
+      {#each sections as s (s.name)}
+        {@const open = isOpen(s)}
+        {@const names = pending(s)}
+        <section class="section">
+          {#if sections.length > 1 || s.sort === "repo"}
+            <div class="sec-head">
+              <button type="button" class="sec-toggle" aria-expanded={open} onclick={() => fold(s)}>
+                <span class="chev" class:open><Icon name="chevron" size={11} /></span>
+                <Icon
+                  name={s.sort === "project" ? "repo" : s.sort === "yours" ? "person" : "package"}
+                  size={14}
+                  class="muted"
                 />
+                <span class={s.sort === "repo" || s.sort === "plugin" ? "mono sec-name" : "sec-name"}>{s.name}</span>
+                <span class="n small muted">{s.rows.length}</span>
+                {#if names.length}
+                  <span class="tag syn-tag small"><Icon name="update" size={10} /> {plural(names.length, "update")}</span>
+                {/if}
+              </button>
+              {#if s.sort === "repo"}
+                <button type="button" class="link-btn small gh" title="Open github.com/{s.name}" onclick={() => store.openRepo(s.name)}>
+                  GitHub <Icon name="external" size={11} />
+                </button>
               {/if}
-              <Icon name={icon(r)} size={15} class={r.synthra ? "syn icon" : "muted icon"} />
-              <span class="stack">
-                <span class="name-line">
-                  {#if r.key}
-                    <button type="button" class="link-btn mono name" title="Open its SKILL.md" onclick={() => store.open(r.key)}>{r.name}</button>
-                  {:else}
-                    <span class="mono name">{r.name}</span>
-                  {/if}
-                  {@render tags(r)}
-                </span>
-                {#if r.description}<span class="small muted clamp2">{r.description}</span>{/if}
-                {#if r.uses || r.files?.length}
-                  <span class="meta small muted">
-                    {#if r.uses}
-                      <span>used {plural(r.uses, "time")}{r.lastUsed !== undefined ? ` · last used ${relativeTime(r.lastUsed, now)}` : ""}</span>
-                    {/if}
-                    {#if r.files?.length}
-                      <button type="button" class="link-btn files-toggle" aria-expanded={openFiles[r.id] === true} onclick={() => toggleFiles(r.id)}>
-                        <span class="chev" class:open={openFiles[r.id]}><Icon name="chevron" size={10} /></span>
-                        {plural(r.files.length + (r.filesMore ?? 0), "file")}
-                      </button>
-                    {/if}
-                  </span>
-                {/if}
-                {#if openFiles[r.id] && r.files}
-                  <span class="files">
-                    {#each r.files as f (f.path)}
-                      <button type="button" class="link-btn mono small" onclick={() => store.open(f.key)}>{f.path}</button>
-                    {/each}
-                    {#if r.filesMore}<span class="small muted">and {r.filesMore} more</span>{/if}
-                  </span>
-                {/if}
-                {#if store.skillErrors[path]}<span class="stale">{store.skillErrors[path]}</span>{/if}
-              </span>
-              {#if !merging}<Menu items={menu(r)} label="Actions for {r.name}" />{/if}
+              {#if names.length && !merging}
+                <button
+                  type="button"
+                  class="btn small-btn"
+                  disabled={store.skillBusy[updateKey(names)]}
+                  onclick={() => store.updateSkills(names)}
+                >
+                  <Icon name="update" size={12} /> {names.length === 1 ? "Update" : `Update ${names.length}`}
+                </button>
+              {/if}
             </div>
-          {:else if r.key}
-            <button type="button" class="row-btn" title="Open its file" onclick={() => store.open(r.key)}>
-              {@render body(r)}
-            </button>
-          {:else}
-            <div class="row">{@render body(r)}</div>
+            {#if store.skillErrors[updateKey(names)]}<p class="stale">{store.skillErrors[updateKey(names)]}</p>{/if}
           {/if}
-        {/each}
-        {#if !needle && shown.length > FIRST}
-          <button type="button" class="row-btn small link" onclick={() => (all = !all)}>
-            {all ? "Show fewer" : `Show all ${shown.length}`}
-          </button>
-        {/if}
-      </div>
+          {#if open}
+            <div class="card">
+              {#each visible(s) as r (r.id)}
+                {#if kind === "skills" && r.path}
+                  {@const path = r.path}
+                  <div class="row" class:dim={merging && !r.canMerge}>
+                    {#if merging}
+                      <input
+                        type="checkbox"
+                        class="pick"
+                        aria-label="Merge {r.name}"
+                        disabled={!r.canMerge}
+                        checked={picked.includes(path)}
+                        onchange={() => togglePick(path)}
+                      />
+                    {/if}
+                    <Icon name={icon(r)} size={15} class={r.synthra ? "syn icon" : "muted icon"} />
+                    <span class="stack">
+                      <span class="name-line">
+                        {#if r.key}
+                          <button type="button" class="link-btn mono name" title="Open its SKILL.md" onclick={() => store.open(r.key)}>{r.name}</button>
+                        {:else}
+                          <span class="mono name">{r.name}</span>
+                        {/if}
+                        {@render tags(r)}
+                      </span>
+                      {#if r.description}<span class="small muted clamp2">{r.description}</span>{/if}
+                      {#if r.uses || r.files?.length}
+                        <span class="meta small muted">
+                          {#if r.uses}
+                            <span>used {plural(r.uses, "time")}{r.lastUsed !== undefined ? ` · last used ${relativeTime(r.lastUsed, now)}` : ""}</span>
+                          {/if}
+                          {#if r.files?.length}
+                            <button type="button" class="link-btn files-toggle" aria-expanded={openFiles[r.id] === true} onclick={() => toggleFiles(r.id)}>
+                              <span class="chev" class:open={openFiles[r.id]}><Icon name="chevron" size={10} /></span>
+                              {plural(r.files.length + (r.filesMore ?? 0), "file")}
+                            </button>
+                          {/if}
+                        </span>
+                      {/if}
+                      {#if openFiles[r.id] && r.files}
+                        <span class="files">
+                          {#each r.files as f (f.path)}
+                            <button type="button" class="link-btn mono small" onclick={() => store.open(f.key)}>{f.path}</button>
+                          {/each}
+                          {#if r.filesMore}<span class="small muted">and {r.filesMore} more</span>{/if}
+                        </span>
+                      {/if}
+                      {#if store.skillErrors[path]}<span class="stale">{store.skillErrors[path]}</span>{/if}
+                      {#if r.updatable && store.skillErrors[updateKey([r.updatable])]}
+                        <span class="stale">{store.skillErrors[updateKey([r.updatable])]}</span>
+                      {/if}
+                    </span>
+                    {#if !merging}<Menu items={menu(r)} label="Actions for {r.name}" />{/if}
+                  </div>
+                {:else if r.key}
+                  <button type="button" class="row-btn" title="Open its file" onclick={() => store.open(r.key)}>
+                    {@render body(r)}
+                  </button>
+                {:else}
+                  <div class="row">{@render body(r)}</div>
+                {/if}
+              {/each}
+              {#if !needle && s.rows.length > FIRST}
+                <button type="button" class="row-btn small link" onclick={() => (all = { ...all, [s.name]: !all[s.name] })}>
+                  {all[s.name] ? "Show fewer" : `Show all ${s.rows.length}`}
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </section>
+      {/each}
     {/if}
     {#if kind === "skills" && !merging && mergeable.length >= 2}
       <p class="empty">
@@ -344,13 +475,14 @@
 
 {#snippet tags(r: CapabilityRow)}
   {#if r.synthra}<span class="tag syn-tag"><Icon name="sparkle" size={10} /> Synthra</span>{/if}
-  {#if r.thirdParty}<span class="tag">from {r.thirdParty}</span>{/if}
+  {#if r.update === "available" && !r.held}<span class="tag syn-tag"><Icon name="update" size={10} /> update</span>{/if}
+  {#if r.update === "moved" && !r.held}<span class="tag warn-tag" title="Its folder isn't where it was in its repo. Update finds where it went.">moved in its repo</span>{/if}
+  {#if r.held}<span class="tag" title="You set it to Don't update."><Icon name="hold" size={10} /> kept</span>{/if}
   {#if r.linkedTo}<span class="tag" title="A link to {r.linkedTo}"><Icon name="link" size={11} /> linked</span>{/if}
   {#if r.favorite}<span class="tag"><Icon name="star-full" size={10} class="fav" /> favorite</span>{/if}
   {#if r.staleDays !== undefined}<span class="tag warn-tag">unused {r.staleDays} days</span>{/if}
   {#if r.extra}<span class="small muted">{r.extra}</span>{/if}
   {#if r.off}<span class="tag">off</span>{/if}
-  {#if group === "all" && groups.length > 1}<span class="tag">{r.group}</span>{/if}
 {/snippet}
 
 {#snippet body(r: CapabilityRow)}
@@ -477,5 +609,72 @@
   }
   .link {
     color: var(--link);
+  }
+  .bar {
+    justify-content: space-between;
+    align-items: center;
+  }
+  .check {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 10px;
+  }
+  .check .btn,
+  .small-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .section + .section {
+    margin-top: 4px;
+  }
+  .section .card {
+    margin: 2px 0 8px;
+  }
+  .sec-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .sec-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 4px 2px;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sec-toggle:focus-visible,
+  .gh:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 2px;
+  }
+  .sec-name {
+    overflow-wrap: anywhere;
+  }
+  .sec-toggle .n {
+    font-weight: 400;
+  }
+  .sec-toggle .tag {
+    font-weight: 400;
+  }
+  .gh {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--link);
+  }
+  .small-btn {
+    margin-left: auto;
+    padding-block: 2px;
   }
 </style>

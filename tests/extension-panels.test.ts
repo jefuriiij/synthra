@@ -265,6 +265,34 @@ describe("Capabilities panel", () => {
     ]);
   });
 
+  it("puts installed skills in a folder per repo, with their updates", () => {
+    const v = capabilitiesView(
+      payload({
+        capabilities: {
+          ...payload().capabilities,
+          skills: [
+            item({ name: "mine", scope: "personal" }),
+            item({ name: "taste", scope: "personal", third_party: "L/taste", update: "available" }),
+            item({ name: "brutal", scope: "personal", third_party: "L/taste" }),
+            item({ name: "gone", scope: "personal", third_party: "a/b", update: "moved" }),
+          ],
+        },
+      }),
+    );
+    const yours = find(find(v.nodes, "cap:skills")?.children ?? [], "cap:skills:personal");
+    expect(yours?.children?.map((n) => [n.label, n.description])).toEqual([
+      ["mine", undefined],
+      ["L/taste", "2 · 1 update"],
+      ["a/b", "1"],
+    ]);
+    const taste = yours?.children?.[1]?.children;
+    expect(taste?.map((n) => [n.label, n.description])).toEqual([
+      ["taste", "update available"],
+      ["brutal", undefined],
+    ]);
+    expect(yours?.children?.[2]?.children?.[0]?.description).toBe("moved in its repo");
+  });
+
   it("says when the scan failed instead of showing nothing", () => {
     const v = capabilitiesView(
       payload({ capabilities: { ...payload().capabilities, error: "EACCES" } }),
