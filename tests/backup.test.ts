@@ -8,7 +8,14 @@ import { dirname, join } from "node:path";
 
 import { readPins, readUsage, setPin } from "../src/learn/curator.js";
 import { checkBackup, createBackup, remapPath, restoreBackup } from "../src/learn/backup.js";
-import { listPending, readLedger, renderSkill, skillLockPath } from "../src/learn/skills.js";
+import {
+  listArchived,
+  listPending,
+  readLedger,
+  renderSkill,
+  restoreSkill,
+  skillLockPath,
+} from "../src/learn/skills.js";
 import { resolvePaths, type SynthraPaths } from "../src/shared/paths.js";
 
 const before = process.env.SYN_SETTINGS;
@@ -192,6 +199,66 @@ describe("backup, then restore on a new machine", () => {
     expect(r.reinstall).toEqual([]);
     expect(await exists(join(b.paths.globalSkillsDir, "outside.md"))).toBe(false);
     expect(await exists(join(dirname(b.paths.globalSkillsDir), "outside.md"))).toBe(false);
+  });
+
+  it("never lets a history line from a backup send Restore to move another folder", async () => {
+    const b = await machine("move");
+    const secret = join(b.home, "secret", "thing");
+    await put(join(secret, "SKILL.md"), "mine");
+    const event = (name: string, path: string, archivePath: string) => ({
+      id: `id-${name}`,
+      ts: "2026-10-01T00:00:00.000Z",
+      action: "archive" as const,
+      actor: "curator" as const,
+      scope: "global" as const,
+      name,
+      path,
+      project: "/home/old/work/shop",
+      archivePath,
+    });
+    await restoreBackup(
+      b.paths,
+      {
+        format: "synthra-backup",
+        version: 1,
+        created: "2026-10-04T00:00:00.000Z",
+        synthra: "x",
+        home: "/home/old",
+        platform: "linux",
+        skills: [],
+        userMemory: null,
+        settings: null,
+        favorites: [],
+        usage: {},
+        ledger: [
+          event(
+            "kept",
+            "/home/old/.claude/skills/kept/SKILL.md",
+            "/home/old/.synthra/skills/archive/kept",
+          ),
+          event("evil", join(b.home, "Startup", "x", "SKILL.md"), secret),
+        ],
+        blobs: {},
+        archive: [{ dir: "kept", files: [{ path: "SKILL.md", text: learned("kept", "Body.") }] }],
+        installed: [],
+      },
+      { home: b.home },
+    );
+    const evil = (await readLedger(b.paths.skillState)).find((e) => e.name === "evil");
+    expect(evil?.archivePath).toBeUndefined();
+    // A line written into the history by hand is ignored as well.
+    await writeFile(
+      join(b.paths.skillState, "ledger.jsonl"),
+      `${JSON.stringify(event("hand", join(b.home, "y", "z", "SKILL.md"), secret))}\n`,
+      { flag: "a" },
+    );
+    expect((await listArchived(b.paths.skillState)).map((a) => a.name)).toEqual(["kept"]);
+    expect((await restoreSkill(b.paths.skillState, secret)).ok).toBe(false);
+    expect(await readFile(join(secret, "SKILL.md"), "utf8")).toBe("mine");
+    expect(
+      (await restoreSkill(b.paths.skillState, join(b.paths.skillState, "archive", "kept"))).ok,
+    ).toBe(true);
+    expect(await exists(join(b.paths.globalSkillsDir, "kept", "SKILL.md"))).toBe(true);
   });
 
   it("refuses a file that isn't a backup, or one from a newer Synthra", () => {

@@ -18,7 +18,7 @@
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { readSkillLock } from "../dashboard/arsenal.js";
 import { charCount, parseKnowledge, readKnowledge } from "../memory/knowledge.js";
@@ -427,7 +427,18 @@ export async function restoreBackup(
   }
 
   // History: the texts its diffs show, then the events not known here, kept in
-  // time order so "recent" stays recent.
+  // time order so "recent" stays recent. An archive event keeps its folder
+  // only when Restore would move it from this machine's archive back into
+  // ~/.claude/skills; any other place (a project's archive, or a crafted path)
+  // stays in the history without a Restore button.
+  const archiveDir = pathKey(join(state, "archive"));
+  const skillsDir = pathKey(paths.globalSkillsDir);
+  const restorable = (path: string, to: string) =>
+    pathKey(dirname(to)) === archiveDir &&
+    NAME_RE.test(basename(to)) &&
+    basename(path) === "SKILL.md" &&
+    pathKey(dirname(dirname(path))) === skillsDir &&
+    NAME_RE.test(basename(dirname(path)));
   for (const [sha, text] of Object.entries(b.blobs ?? {})) {
     if (!/^[0-9a-f]{40}$/.test(sha) || typeof text !== "string") continue;
     const p = join(state, "blobs", `${sha}.md`);
@@ -454,11 +465,11 @@ export async function restoreBackup(
       );
       const add = incoming
         .filter((e) => !have.has(`${e.id}:${e.action}`))
-        .map((e) => ({
-          ...e,
-          path: move(e.path),
-          ...(e.archivePath ? { archivePath: move(e.archivePath) } : {}),
-        }));
+        .map(({ archivePath, ...e }) => {
+          const path = move(String(e.path ?? ""));
+          const to = typeof archivePath === "string" ? move(archivePath) : "";
+          return { ...e, path, ...(to && restorable(path, to) ? { archivePath: to } : {}) };
+        });
       report.history = add.length;
       if (!add.length) return null;
       const all = [

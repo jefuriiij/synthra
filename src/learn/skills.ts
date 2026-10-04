@@ -1401,6 +1401,18 @@ export interface ArchivedSkill {
   project: string;
 }
 
+/** Restore moves `archivePath` to `path`'s folder, so both must look like what
+ *  archive() writes: a "<name>/SKILL.md" skill, and a folder directly in an
+ *  archive. A ledger line (hand-edited, or from a backup) can't send a move
+ *  anywhere else. */
+function archiveShape(path: unknown, archivePath: string): boolean {
+  if (typeof path !== "string" || basename(path) !== "SKILL.md") return false;
+  const name = basename(dirname(path));
+  if (!name || name === "." || name === "..") return false;
+  const box = basename(dirname(archivePath));
+  return box === "archive" || box === "skills-archive";
+}
+
 /** Archived skills whose copy is still there and that weren't restored since. */
 export async function listArchived(state: string): Promise<ArchivedSkill[]> {
   const latest = new Map<string, SkillEvent>();
@@ -1411,6 +1423,7 @@ export async function listArchived(state: string): Promise<ArchivedSkill[]> {
   const out: ArchivedSkill[] = [];
   for (const e of latest.values()) {
     if (e.action !== "archive" || !e.archivePath) continue;
+    if (!archiveShape(e.path, e.archivePath)) continue;
     if ((await readText(join(e.archivePath, "SKILL.md"))) === null) continue;
     out.push({
       name: e.name,
