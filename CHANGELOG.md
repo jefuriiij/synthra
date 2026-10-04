@@ -7,7 +7,10 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.38.0] (2026-10-04)
+
+Keep the skills you installed with `npx skills` up to date, from the IDE, and
+see them grouped by the repo they came from.
 
 ### Added
 

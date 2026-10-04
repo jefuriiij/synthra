@@ -3,9 +3,10 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 0.36.0 (2026-10-04)
 
-These need the next update of the Synthra engine.
+These come with Synthra 0.38.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
 
 - **Updates for installed skills.** In Capabilities, **Check for updates**
   finds newer versions of the skills you installed with `npx skills`. See
