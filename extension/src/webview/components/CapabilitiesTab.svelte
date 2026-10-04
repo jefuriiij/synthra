@@ -265,7 +265,7 @@
     {/if}
   </div>
   {#if kind === "skills" && (store.updatesError || (!store.updatesText && c.updates?.errors.length))}
-    <p class="stale small">{store.updatesError || `Not checked: ${c.updates?.errors.join("; ")}`}</p>
+    <p class="stale small">{store.updatesError || `Not checked: ${c.updates?.errors.join(" ")}`}</p>
   {/if}
 
   {#if kind === "plugins"}

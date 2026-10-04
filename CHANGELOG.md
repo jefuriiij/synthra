@@ -7,6 +7,23 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Check for updates when GitHub's hourly limit is used up.** GitHub answers
+  60 checks an hour without a login. Past that, Synthra now asks the GitHub CLI
+  (`gh api`) when you are logged in to it, as `npx skills` does: 5,000 checks
+  an hour, and Synthra never sees the token. Without `gh`, it stops asking
+  after the first refusal.
+- **A failed check no longer says "Everything is up to date"**, and no longer
+  clears the updates the last check found: a repo that can't be checked keeps
+  its last results.
+- **One line per reason.** The same error for seven repos is now one sentence
+  that names the seven repos, with the time the limit ends.
+
+---
+
 ## [0.38.0] (2026-10-04)
 
 Keep the skills you installed with `npx skills` up to date, from the IDE, and

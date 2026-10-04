@@ -135,9 +135,9 @@ describe("installed-skill updates", () => {
         ],
       },
     });
-    const r = await checkUpdates(paths, { fetch: gh.fetch, token: null });
+    const r = await checkUpdates(paths, { fetch: gh.fetch, token: null, ghApi: null });
     expect(r).toMatchObject({ checked: 3, available: 1, moved: 1 });
-    expect(r.errors).toEqual([expect.stringMatching(/^b\/private: not found/)]);
+    expect(r.errors).toEqual(["not found (private, renamed or deleted) (b/private)"]);
     // One tree for a/skills; b/private tries its three branch names.
     expect(gh.calls.filter((u) => u.includes("a/skills"))).toHaveLength(1);
 
@@ -154,13 +154,84 @@ describe("installed-skill updates", () => {
     expect(Object.fromEntries(f.state)).toEqual({ gone: "moved" });
   });
 
+  it("when GitHub's hourly limit is used up: asks gh, else keeps the last results and says why once", async () => {
+    const { home, paths } = await machine();
+    await lock(home, {
+      a1: entry("o/one", "a1/SKILL.md", h("1")),
+      b1: entry("o/two", "b1/SKILL.md", h("1")),
+      c1: entry("o/three", "c1/SKILL.md", h("1")),
+    });
+    const trees = {
+      "o/one@HEAD": { sha: h("9"), tree: [{ path: "a1", type: "tree", sha: h("2") }] },
+      "o/two@HEAD": { sha: h("9"), tree: [{ path: "b1", type: "tree", sha: h("2") }] },
+      "o/three@HEAD": { sha: h("9"), tree: [{ path: "c1", type: "tree", sha: h("1") }] },
+    };
+    // A first check that worked.
+    await checkUpdates(paths, { fetch: github(trees).fetch, token: null, ghApi: null });
+    expect(Object.fromEntries((await updateFacts(paths)).state)).toEqual({
+      a1: "available",
+      b1: "available",
+    });
+
+    // Now every API call says "limit used up".
+    const calls: string[] = [];
+    const limited: Fetch = async (url) => {
+      calls.push(url);
+      return {
+        ok: false,
+        status: 403,
+        headers: {
+          get: (n: string) =>
+            n === "x-ratelimit-remaining" ? "0" : n === "x-ratelimit-reset" ? "1791100000" : null,
+        },
+        json: async () => ({}),
+        text: async () => "",
+      };
+    };
+    // No gh: one API call in all, then each repo fails at once, with one
+    // line for the one reason, and the last results stay.
+    const r = await checkUpdates(paths, {
+      fetch: limited,
+      token: null,
+      ghApi: async () => "unavailable",
+    });
+    expect(calls).toHaveLength(1);
+    expect(r.checked).toBe(0);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatch(
+      /limit of 60 checks an hour is used up until .*gh auth login.*\(o\/one, o\/two, o\/three\)$/,
+    );
+    expect(Object.fromEntries((await updateFacts(paths)).state)).toEqual({
+      a1: "available",
+      b1: "available",
+    });
+
+    // With gh logged in: gh answers instead, through `gh api`.
+    const asked: string[] = [];
+    const r2 = await checkUpdates(paths, {
+      fetch: limited,
+      token: null,
+      ghApi: async (endpoint) => {
+        asked.push(endpoint);
+        const m = endpoint.match(/^repos\/([^/]+\/[^/]+)\/git\/trees\/([^?]+)/);
+        return trees[`${m?.[1]}@${m?.[2]}` as keyof typeof trees] ?? null;
+      },
+    });
+    expect(r2).toMatchObject({ checked: 3, available: 2, errors: [] });
+    expect(asked).toEqual([
+      "repos/o/one/git/trees/HEAD?recursive=1",
+      "repos/o/two/git/trees/HEAD?recursive=1",
+      "repos/o/three/git/trees/HEAD?recursive=1",
+    ]);
+  });
+
   it("uses the lock's branch when it has one", async () => {
     const { home, paths } = await machine();
     await lock(home, { x: entry("a/b", "x/SKILL.md", h("1"), { ref: "v2" }) });
     const gh = github({
       "a/b@v2": { sha: h("9"), tree: [{ path: "x", type: "tree", sha: h("1") }] },
     });
-    expect(await checkUpdates(paths, { fetch: gh.fetch, token: null })).toMatchObject({
+    expect(await checkUpdates(paths, { fetch: gh.fetch, token: null, ghApi: null })).toMatchObject({
       checked: 1,
       available: 0,
     });
@@ -233,7 +304,7 @@ describe("installed-skill updates", () => {
       },
       { "o/r@HEAD:skills/tool/SKILL.md": newSkill },
     );
-    const d = await updateDiff(paths, "tool", { fetch: gh.fetch, token: null });
+    const d = await updateDiff(paths, "tool", { fetch: gh.fetch, token: null, ghApi: null });
     if (typeof d === "string") throw new Error(d);
     expect(d.after).toBe(newSkill);
     expect(d.before).toBe(oldSkill.replace(/\n/g, "\r\n"));
@@ -242,7 +313,7 @@ describe("installed-skill updates", () => {
     expect(d.removed).toEqual(["references/old.md"]);
     expect(d.editedHere).toEqual(["notes.md", "references/a.md", "references/old.md"]);
 
-    expect(await updateDiff(paths, "nope", { fetch: gh.fetch, token: null })).toMatch(
+    expect(await updateDiff(paths, "nope", { fetch: gh.fetch, token: null, ghApi: null })).toMatch(
       /isn't a skill installed/,
     );
   });
@@ -268,7 +339,9 @@ describe("installed-skill updates", () => {
         ],
       },
     });
-    expect(await handleCheckUpdates(ctx, { fetch: gh.fetch, token: null })).toMatchObject({
+    expect(
+      await handleCheckUpdates(ctx, { fetch: gh.fetch, token: null, ghApi: null }),
+    ).toMatchObject({
       ok: true,
       available: 2,
     });

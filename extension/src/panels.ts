@@ -506,15 +506,21 @@ export class SynthraPanels implements vscode.Disposable {
     }
     const b = r.body;
     if (!b.ok) return { text: "", error: b.error ?? "The check failed." };
+    const errors = b.errors ?? [];
+    // Nothing could be asked: say so, never "up to date". The last check's
+    // results stay on the rows.
+    if (!b.checked && errors.length) {
+      return { text: "", error: `Couldn't check for updates. ${errors.join(" ")}` };
+    }
     const n = b.available ?? 0;
     const parts = [
-      n ? `${n} update${n === 1 ? "" : "s"}` : "Everything is up to date",
+      n ? `${n} update${n === 1 ? "" : "s"}` : errors.length ? "" : "Everything is up to date",
       b.moved ? `${b.moved} moved in ${b.moved === 1 ? "its" : "their"} repo` : "",
       `${b.checked ?? 0} installed skill${b.checked === 1 ? "" : "s"} checked`,
     ];
     return {
       text: parts.filter(Boolean).join(" · "),
-      error: (b.errors ?? []).length ? `Not checked: ${(b.errors ?? []).join("; ")}` : "",
+      error: errors.length ? `Not checked: ${errors.join(" ")}` : "",
     };
   }
 

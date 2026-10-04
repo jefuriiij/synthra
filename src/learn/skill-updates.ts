@@ -13,6 +13,7 @@
 // (the skills never to offer). A check result only says "update" while the
 // lock still has the hash the check saw, so a finished update clears itself.
 
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir } from "node:fs/promises";
@@ -122,6 +123,13 @@ export async function setHold(state: string, name: string, on: boolean): Promise
   await writeJsonAtomic(holdsFile(state), { held: [...held].sort() });
 }
 
+/** One line per reason: "<why> (a/b, c/d)", not the same sentence per repo. */
+export function groupErrors(errors: Record<string, string>): string[] {
+  const by = new Map<string, string[]>();
+  for (const [source, why] of Object.entries(errors)) by.set(why, [...(by.get(why) ?? []), source]);
+  return [...by].map(([why, sources]) => `${why} (${sources.join(", ")})`);
+}
+
 export type UpdateState = "available" | "moved";
 
 /** What the Capabilities tab shows per installed skill, from the last check
@@ -144,7 +152,7 @@ export async function updateFacts(paths: SynthraPaths): Promise<UpdateFacts> {
   const out: UpdateFacts = { errors: [], state: new Map(), held };
   if (!check) return out;
   out.checkedAt = check.checkedAt;
-  out.errors = Object.entries(check.errors).map(([s, why]) => `${s}: ${why}`);
+  out.errors = groupErrors(check.errors);
   for (const e of lock) {
     const c = check.skills[e.name];
     // Updated (or reinstalled) since the check: the lock moved on.
@@ -168,11 +176,41 @@ export type Fetch = (
   text(): Promise<string>;
 }>;
 
+/** `gh api <endpoint>`: its JSON; null when GitHub refused this one (not
+ *  found); "unavailable" when gh isn't installed or isn't logged in. Synthra
+ *  never sees the token; gh sends it. */
+export type GhApi = (endpoint: string) => Promise<unknown>;
+
 export interface GitHubOptions {
   fetch?: Fetch;
   /** GITHUB_TOKEN or GH_TOKEN by default: 5000 requests an hour, not 60. */
   token?: string | null;
+  /** When the hourly limit is used up (or a repo is private), ask the
+   *  GitHub CLI instead, as `npx skills` does. null = don't. */
+  ghApi?: GhApi | null;
 }
+
+const ghCli: GhApi = (endpoint) =>
+  new Promise((done) => {
+    execFile(
+      "gh",
+      ["api", endpoint],
+      { timeout: 30_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) {
+          const missing =
+            (err as NodeJS.ErrnoException).code === "ENOENT" ||
+            /auth login|not logged in/i.test(String(stderr));
+          return done(missing ? "unavailable" : null);
+        }
+        try {
+          done(JSON.parse(stdout));
+        } catch {
+          done(null);
+        }
+      },
+    );
+  });
 
 interface TreeEntry {
   path: string;
@@ -198,13 +236,33 @@ function client(o: GitHubOptions) {
     "User-Agent": "synthra",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  const ghApi = o.ghApi === undefined ? ghCli : o.ghApi;
+  /** Set once GitHub says the hourly limit is used up: later trees go
+   *  straight to gh, or fail at once without asking GitHub again. */
+  let limited: { until: number | null } | null = null;
+  let ghWorks = true;
+  const viaGh = async (endpoint: string): Promise<Tree | null> => {
+    if (!ghApi || !ghWorks) return null;
+    const t = await ghApi(endpoint);
+    if (t === "unavailable") ghWorks = false;
+    return t && typeof t === "object" && Array.isArray((t as Tree).tree) ? (t as Tree) : null;
+  };
+  const limitText = () => {
+    const at = limited?.until
+      ? ` until ${new Date(limited.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+      : "";
+    return `GitHub's limit of 60 checks an hour is used up${at}. Log in with the GitHub CLI (gh auth login) or set GITHUB_TOKEN to check more often`;
+  };
   /** A tree, or why not. */
   const tree = async (source: string, ref: string): Promise<Tree | string> => {
+    const endpoint = `repos/${source}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
+    if (limited) {
+      const t = await viaGh(endpoint);
+      if (t) return t;
+      return ghApi && ghWorks ? "not found (private, renamed or deleted)" : limitText();
+    }
     try {
-      const r = await doFetch(
-        `https://api.github.com/repos/${source}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
-        { headers },
-      );
+      const r = await doFetch(`https://api.github.com/${endpoint}`, { headers });
       if (r.ok) {
         const t = (await r.json()) as Tree;
         return Array.isArray(t?.tree) ? t : "GitHub sent something unexpected";
@@ -213,11 +271,17 @@ function client(o: GitHubOptions) {
         (r.status === 403 || r.status === 429) &&
         r.headers.get("x-ratelimit-remaining") === "0"
       ) {
-        return "GitHub's limit of 60 checks an hour is used up. Try again later, or set GITHUB_TOKEN.";
+        const reset = Number(r.headers.get("x-ratelimit-reset"));
+        limited = { until: Number.isFinite(reset) && reset > 0 ? reset : null };
+        return tree(source, ref);
       }
-      return r.status === 404
-        ? "not found (private, renamed or deleted)"
-        : `GitHub said ${r.status}`;
+      if (r.status === 404 || r.status === 401) {
+        // Private to GitHub's public API, but maybe not to the user's gh.
+        const t = await viaGh(endpoint);
+        if (t) return t;
+        return "not found (private, renamed or deleted)";
+      }
+      return `GitHub said ${r.status}`;
     } catch (e) {
       return `GitHub didn't answer (${(e as Error).message})`;
     }
@@ -278,12 +342,18 @@ export async function checkUpdates(
     bySource.set(k, [...(bySource.get(k) ?? []), e]);
   }
   const result: CheckResult = { checked: 0, available: 0, moved: 0, errors: [] };
+  // A repo that can't be checked now keeps what the last check found.
+  const before = await readCheck(state);
   for (const list of bySource.values()) {
     const first = list[0];
     if (!first) continue;
     const got = await repoTree(gh, first.source, first.ref);
     if (typeof got === "string") {
       check.errors[first.source] = got;
+      for (const e of list) {
+        const old = before?.skills[e.name];
+        if (old) check.skills[e.name] = old;
+      }
       continue;
     }
     const folders = new Map(
@@ -306,7 +376,7 @@ export async function checkUpdates(
       else if (latest !== e.folderHash) result.available++;
     }
   }
-  result.errors = Object.entries(check.errors).map(([s, why]) => `${s}: ${why}`);
+  result.errors = groupErrors(check.errors);
   await mkdir(state, { recursive: true });
   await writeJsonAtomic(checkFile(state), check);
   return result;

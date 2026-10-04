@@ -3,6 +3,15 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+These need the next update of the Synthra engine.
+
+- **Fixed: Check for updates said "Everything is up to date" when GitHub
+  refused to answer.** It now says it couldn't check, keeps the updates it
+  found before, and uses your GitHub CLI login (`gh`) when GitHub's hourly
+  limit is used up.
+
 ## 0.36.0 (2026-10-04)
 
 These come with Synthra 0.38.0. The extension offers the update, or run
