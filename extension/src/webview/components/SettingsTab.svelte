@@ -123,11 +123,58 @@
   </div>
 {/each}
 
-<p class="empty">
-  Learning and Curator settings will appear here when those features arrive.
-</p>
+<h2 class="section-label">Backup</h2>
+<div class="card">
+  <div class="row setting">
+    <div class="stack">
+      <span class="label">Back up and restore</span>
+      <span class="small muted">
+        One file with what lives on this computer only: your skills for every project, your notes
+        about yourself (USER.md), favorites, settings and the skill history. Project skills and
+        project memory travel with each project's git repo. Restore merges: it adds what is
+        missing, and a skill that differs waits in the Learning tab for your pick. Nothing is
+        overwritten.
+      </span>
+      {#if store.backupError}<span class="stale">{store.backupError}</span>{/if}
+      {#if store.backupText}<span class="small ok">{store.backupText}</span>{/if}
+      {#if store.restoreError}<span class="stale">{store.restoreError}</span>{/if}
+      {#if store.restoreLines.length}
+        <ul class="report small">
+          {#each store.restoreLines as line, i (i)}<li>{line}</li>{/each}
+        </ul>
+      {/if}
+    </div>
+    <div class="backup-actions">
+      <button type="button" class="btn" disabled={store.backingUp} onclick={() => store.backup()}>
+        {store.backingUp ? "Saving..." : "Back up..."}
+      </button>
+      <button type="button" class="btn" disabled={store.restoring} onclick={() => store.restore()}>
+        {store.restoring ? "Restoring..." : "Restore from backup..."}
+      </button>
+      {#if store.reinstall}
+        <button type="button" class="btn primary" onclick={() => store.runReinstall()}>
+          Reinstall {store.reinstall} installed skill{store.reinstall === 1 ? "" : "s"}
+        </button>
+      {/if}
+    </div>
+  </div>
+</div>
 
 <style>
+  .backup-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 180px;
+  }
+  .ok {
+    color: var(--success);
+  }
+  .report {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
   .hero :global(.syn) {
     color: var(--syn);
   }

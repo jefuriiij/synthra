@@ -3,8 +3,12 @@
 // decided in panelTrees.ts (pure, tested); this file renders it, watches the
 // files behind it, and runs the clicks.
 
+import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import * as vscode from "vscode";
+
+import { tildify } from "./panelTabs";
 
 import {
   agentsView,
@@ -377,6 +381,91 @@ export class SynthraPanels implements vscode.Disposable {
   /** Approve or reject every change of one merge, in order, as one answer. */
   async answerGroup(group: string, verdict: "approve" | "reject"): Promise<string> {
     return this.skillPost("/skills/answer-group", { group, verdict }, "answer a merge at once");
+  }
+
+  /**
+   * Save a backup of what lives on this machine only (skills for every
+   * project, USER.md, favorites, history) where the user picks. Resolves to
+   * the line to show, or why not; both "" when the user cancelled.
+   */
+  async backup(): Promise<{ text: string; error: string }> {
+    const port = this.deps.port();
+    if (port === null) return { text: "", error: "Synthra is not running." };
+    const day = new Date().toISOString().slice(0, 10);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(join(homedir(), `synthra-backup-${day}.json`)),
+      filters: { "Synthra backup": ["json"] },
+      saveLabel: "Save backup",
+    });
+    if (!target) return { text: "", error: "" };
+    const r = await this.deps.getJson<{ skills?: unknown[] }>(
+      `http://127.0.0.1:${port}/backup`,
+      60_000,
+    );
+    if (r.status === 404) {
+      return {
+        text: "",
+        error: "This version of Synthra can't make backups. Update Synthra to 0.37 or later.",
+      };
+    }
+    if (r.status !== 200 || !r.body) {
+      return { text: "", error: "Synthra did not answer. See the log (Synthra: Show log)." };
+    }
+    await writeFile(target.fsPath, `${JSON.stringify(r.body, null, 2)}\n`, "utf8");
+    const n = Array.isArray(r.body.skills) ? r.body.skills.length : 0;
+    return {
+      text: `Saved ${tildify(target.fsPath)} (${n} skill${n === 1 ? "" : "s"}). It holds your notes about yourself: keep it private.`,
+      error: "",
+    };
+  }
+
+  /**
+   * Merge a backup file into this machine: what is missing is added, what
+   * differs waits in the Learning tab. Resolves to the report's lines and the
+   * reinstall commands; all empty when the user cancelled.
+   */
+  async restore(): Promise<{ lines: string[]; reinstall: string[]; error: string }> {
+    const none = { lines: [], reinstall: [] };
+    const port = this.deps.port();
+    if (port === null) return { ...none, error: "Synthra is not running." };
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(homedir()),
+      filters: { "Synthra backup": ["json"] },
+      openLabel: "Restore",
+    });
+    const file = picked?.[0];
+    if (!file) return { ...none, error: "" };
+    let backup: unknown;
+    try {
+      backup = JSON.parse(await readFile(file.fsPath, "utf8"));
+    } catch {
+      return { ...none, error: "That file isn't a Synthra backup (it isn't valid JSON)." };
+    }
+    const r = await this.deps.postJson<{
+      ok?: boolean;
+      error?: string;
+      lines?: string[];
+      report?: { reinstall?: { command?: string }[] };
+    }>(`http://127.0.0.1:${port}/restore`, { backup }, 120_000);
+    this.refresh({ fresh: true });
+    if (r.status === 404) {
+      return {
+        ...none,
+        error: "This version of Synthra can't restore backups. Update Synthra to 0.37 or later.",
+      };
+    }
+    if (r.status !== 200 || !r.body) {
+      return { ...none, error: "Synthra did not answer. See the log (Synthra: Show log)." };
+    }
+    if (!r.body.ok) return { ...none, error: r.body.error ?? "Nothing was restored." };
+    return {
+      lines: r.body.lines ?? [],
+      reinstall: (r.body.report?.reinstall ?? []).flatMap((x) =>
+        typeof x.command === "string" ? [x.command] : [],
+      ),
+      error: "",
+    };
   }
 
   private async skillPost(route: string, body: unknown, what: string): Promise<string> {

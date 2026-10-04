@@ -24,6 +24,14 @@ class Store {
   /** Why the last merge request couldn't be made ("" = it is on the clipboard). */
   mergeError = $state("");
   merging = $state(false);
+  /** Backup and restore, in the Settings tab. */
+  backingUp = $state(false);
+  backupText = $state("");
+  backupError = $state("");
+  restoring = $state(false);
+  restoreLines = $state<string[]>([]);
+  restoreError = $state("");
+  reinstall = $state(0);
 
   apply(msg: HostToWebview): void {
     if (msg.type === "view") this.view = msg.view;
@@ -38,6 +46,15 @@ class Store {
     } else if (msg.type === "skillResult") {
       this.skillBusy = { ...this.skillBusy, [msg.target]: false };
       this.skillErrors = { ...this.skillErrors, [msg.target]: msg.error };
+    } else if (msg.type === "backupResult") {
+      this.backingUp = false;
+      this.backupText = msg.text;
+      this.backupError = msg.error;
+    } else if (msg.type === "restoreResult") {
+      this.restoring = false;
+      this.restoreLines = msg.lines;
+      this.reinstall = msg.reinstall;
+      this.restoreError = msg.error;
     } else if (msg.type === "mergeResult") {
       this.merging = false;
       this.mergeError = msg.error;
@@ -88,6 +105,25 @@ class Store {
     this.merging = true;
     this.mergeError = "";
     post({ type: "mergeSkills", paths });
+  }
+
+  backup(): void {
+    this.backingUp = true;
+    this.backupText = "";
+    this.backupError = "";
+    post({ type: "backup" });
+  }
+
+  restore(): void {
+    this.restoring = true;
+    this.restoreLines = [];
+    this.restoreError = "";
+    this.reinstall = 0;
+    post({ type: "restoreBackup" });
+  }
+
+  runReinstall(): void {
+    post({ type: "reinstall" });
   }
 
   /** Change a setting; null = back to its default. */

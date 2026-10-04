@@ -26,6 +26,7 @@ import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
 import { recordProject } from "../shared/project-registry.js";
+import { backupCommand, restoreCommand } from "./backup-command.js";
 import { cleanup } from "./cleanup.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
@@ -282,6 +283,24 @@ export function buildProgram() {
     .option("--yes", "Skip the confirmation prompt", false)
     .action(async (path: string | undefined, opts: { yes?: boolean }) => {
       await removeCommand(path ?? ".", { yes: opts.yes });
+    });
+
+  prog
+    .command(
+      "backup [file]",
+      "Save your skills for all projects, USER.md, favorites and history to one file, for a new device.",
+    )
+    .action(async (file: string | undefined) => {
+      await backupCommand(file, { version: VERSION });
+    });
+
+  prog
+    .command(
+      "restore <file>",
+      "Merge a backup into this machine: adds what is missing, never overwrites (differences wait in the Learning tab).",
+    )
+    .action(async (file: string) => {
+      await restoreCommand(file);
     });
 
   return prog;

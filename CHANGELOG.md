@@ -9,6 +9,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Added
+
+- **Backup and restore, for a new device.** `syn backup [file]` (or **Back
+  up...** in the IDE's Settings tab) saves what lives on this machine only to
+  one JSON file: the skills for every project that you or Synthra wrote, with
+  their support files (a linked skill as a plain copy), `USER.md`, settings,
+  favorites, use counts, the archive, and the skill history with the texts its
+  diffs show. Installed skills (`npx skills`) go in as a list. `syn restore
+  <file>` (or **Restore from backup...**) merges it in and never overwrites: a
+  skill that isn't here is added, one that differs waits in the Learning tab,
+  the notes about you are combined without duplicates, favorites, history and
+  the archive are joined, a setting already set here stays, and paths under
+  the old home folder move to the new one, across Windows, macOS and Linux.
+  **Reinstall** runs `npx skills add <source> -g -s <name>` for each missing
+  installed skill in a terminal. Restoring twice adds nothing twice. A damaged
+  or edited file can't write outside the skill folders. New routes:
+  `GET /backup` and `POST /restore`.
+
 ---
 
 ## [0.36.0] (2026-10-03)

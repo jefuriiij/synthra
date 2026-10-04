@@ -19,6 +19,13 @@ import { loadConfig } from "../shared/config.js";
 import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
+import {
+  type Backup,
+  checkBackup,
+  createBackup,
+  restoreBackup,
+  restoreSummary,
+} from "../learn/backup.js";
 import type { ServerContext } from "./context.js";
 import { type HookName, noteHook } from "./heartbeat.js";
 import { handleMcpRequest } from "./mcp.js";
@@ -257,6 +264,17 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleRestore(body, ctx));
   });
+  // Backup and restore (the Settings tab): the user's skills for every
+  // project, notes, favorites and history, as one JSON file for a new device.
+  app.get("/backup", async (c) => c.json(await createBackup(ctx.paths, { version })));
+  app.post("/restore", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { backup?: unknown };
+    const bad = checkBackup(body?.backup);
+    if (bad) return c.json({ ok: false, error: bad });
+    const report = await restoreBackup(ctx.paths, body.backup as Backup);
+    return c.json({ ok: true, report, lines: restoreSummary(report, { commands: false }) });
+  });
+
   // A merge's changes, answered together and in order.
   app.post("/skills/answer-group", async (c) => {
     const body = await c.req.json().catch(() => ({}));

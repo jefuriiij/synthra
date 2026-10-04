@@ -65,7 +65,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 /** By skill path: when Claude last loaded it, how often, and when Synthra
  *  first saw it. */
-type Usage = Record<string, { lastUsed?: string; uses?: number; firstSeen?: string }>;
+export type Usage = Record<string, { lastUsed?: string; uses?: number; firstSeen?: string }>;
 
 const usageFile = (state: string) => join(state, "usage.json");
 const pinsFile = (state: string) => join(state, "pins.json");
@@ -85,6 +85,29 @@ function withUsage<T>(fn: (u: Usage) => Promise<T> | T, state: string): Promise<
   });
   usageQueue = run.catch(() => undefined);
   return run;
+}
+
+/** Fold use counts from a backup in: per skill, the higher count, the later
+ *  last use and the earlier first sighting. */
+export function mergeUsage(state: string, incoming: Usage): Promise<number> {
+  return withUsage((u) => {
+    let n = 0;
+    for (const [path, b] of Object.entries(incoming)) {
+      const a = u[path] ?? {};
+      const later = (x?: string, y?: string) => (!x ? y : !y ? x : x > y ? x : y);
+      const earlier = (x?: string, y?: string) => (!x ? y : !y ? x : x < y ? x : y);
+      const lastUsed = later(a.lastUsed, b.lastUsed);
+      const firstSeen = earlier(a.firstSeen, b.firstSeen);
+      const uses = Math.max(a.uses ?? 0, b.uses ?? 0);
+      u[path] = {
+        ...(lastUsed ? { lastUsed } : {}),
+        ...(uses ? { uses } : {}),
+        ...(firstSeen ? { firstSeen } : {}),
+      };
+      n++;
+    }
+    return n;
+  }, state);
 }
 
 export async function readUsage(state: string): Promise<Usage> {

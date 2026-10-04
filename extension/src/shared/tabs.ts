@@ -277,7 +277,11 @@ export type HostToWebview =
   /** How a favorite or a delete from Capabilities went, by the skill's path. */
   | { type: "skillResult"; target: string; error: string }
   /** The merge request is on the clipboard (error ""), or why not. */
-  | { type: "mergeResult"; error: string };
+  | { type: "mergeResult"; error: string }
+  /** A backup was saved (`text` says where), or why not. "" both: cancelled. */
+  | { type: "backupResult"; text: string; error: string }
+  /** What a restore did, line by line, and how many skills to reinstall. */
+  | { type: "restoreResult"; lines: string[]; reinstall: number; error: string };
 
 export type WebviewToHost =
   | { type: "ready" }
@@ -297,4 +301,10 @@ export type WebviewToHost =
   /** Capabilities: put a merge request for these skills on the clipboard. */
   | { type: "mergeSkills"; paths: string[] }
   /** Learning: approve or reject every change of one merge. */
-  | { type: "answerGroup"; group: string; verdict: "approve" | "reject" };
+  | { type: "answerGroup"; group: string; verdict: "approve" | "reject" }
+  /** Settings: save a backup file (the host asks where). */
+  | { type: "backup" }
+  /** Settings: restore from a backup file (the host asks which). */
+  | { type: "restoreBackup" }
+  /** Settings: run the last restore's reinstall commands in a terminal. */
+  | { type: "reinstall" };

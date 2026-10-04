@@ -97,7 +97,7 @@ Savings depend on the work. A refactor leans on the graph much more than a marku
 | **Memory** | The project memory, the notes about you, and the session notes for this branch. |
 | **Capabilities** | Every skill, agent, connected tool (MCP server) and plugin Claude Code can use, grouped by where it comes from, plus **Made by Synthra** and **Favorites**. Each skill shows how often it was used and its side files. Its ⋯ menu opens, edits, stars, merges or deletes it (a delete moves it to the archive, so Restore brings it back). |
 | **Agents** | The helper agents Claude started this week, and the task it gave each one. |
-| **Settings** | The memory and skill reminders, the memory size limits, skill approval and the Curator. |
+| **Settings** | The memory and skill reminders, the memory size limits, skill approval and the Curator. **Back up** and **Restore** for a new device. |
 
 The status bar item shows whether Synthra runs. Click it to open the dashboard. When it is yellow or red, it lists what is wrong and offers **Repair**. Technical notes for the extension are in [`docs/EXTENSION.md`](./docs/EXTENSION.md).
 
@@ -198,7 +198,15 @@ syn doctor [path]         # Check this project's Synthra setup.
 syn doctor --report       # A redacted diagnostic to paste into a GitHub issue.
 syn remove [path]         # Take Synthra out of a project. Asks [y/N]; --yes skips it.
                           # Your own .gitignore lines, CLAUDE.md text and hooks stay.
+syn backup [file]         # Save your skills for all projects, USER.md, favorites and
+                          # history to one JSON file, for a new device.
+syn restore <file>        # Merge a backup in: adds what is missing, never overwrites
+                          # (a skill that differs waits in the Learning tab).
 ```
+
+### Moving to a new device
+
+Project skills and `.synthra/MEMORY.md` travel with each project's git repo. Everything else Synthra keeps lives on one machine, so take a backup: **Back up...** in the Settings tab, or `syn backup`. On the new device, **Restore from backup...** (or `syn restore <file>`) adds the skills that are missing, combines the notes about you, favorites and history, keeps any setting already set there, and moves paths from the old home folder to the new one (Windows, macOS and Linux). A skill that differs from the new device's copy waits in the Learning tab, so nothing is overwritten. Installed skills (`npx skills`) come back from their source with one **Reinstall** button. The file holds your notes about yourself: keep it private.
 
 ---
 

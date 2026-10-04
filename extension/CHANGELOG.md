@@ -3,6 +3,16 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+These need the next update of the Synthra engine.
+
+- **Back up and restore** in the Settings tab: save your skills for every
+  project, your notes about yourself, favorites and history to one file, and
+  restore it on a new computer. Restore adds what is missing and never
+  overwrites: a skill that differs waits in the Learning tab for your pick, and
+  **Reinstall** brings back the skills you installed with `npx skills`.
+
 ## 0.34.0 (2026-10-03)
 
 These come with Synthra 0.36.0. The extension offers the update, or run

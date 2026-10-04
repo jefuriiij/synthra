@@ -29,6 +29,8 @@ export class SynthraEditorPanel implements vscode.Disposable {
   private skillRows = new Map<string, CapabilityRow>();
   /** The merge groups the last view's Learning tab showed. */
   private groups = new Set<string>();
+  /** The last restore's reinstall commands: the only ones "reinstall" runs. */
+  private reinstall: string[] = [];
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -209,6 +211,42 @@ export class SynthraEditorPanel implements vscode.Disposable {
         void this.source
           .answerGroup(msg.group, msg.verdict)
           .then((error) => this.post({ type: "answerResult", id: msg.group, error }));
+        return;
+      }
+      case "backup": {
+        void this.source
+          .backup()
+          .catch((e: Error) => ({ text: "", error: `The backup failed: ${e.message}` }))
+          .then((r) => this.post({ type: "backupResult", ...r }));
+        return;
+      }
+      case "restoreBackup": {
+        void this.source
+          .restore()
+          .catch((e: Error) => ({
+            lines: [],
+            reinstall: [],
+            error: `The restore failed: ${e.message}`,
+          }))
+          .then((r) => {
+            // Only a command the engine wrote, in the shape it writes them.
+            this.reinstall = r.reinstall.filter((c) =>
+              /^npx skills add [A-Za-z0-9_.:/-]+ -g -s [A-Za-z0-9._:-]+$/.test(c),
+            );
+            this.post({
+              type: "restoreResult",
+              lines: r.lines,
+              reinstall: this.reinstall.length,
+              error: r.error,
+            });
+          });
+        return;
+      }
+      case "reinstall": {
+        if (this.reinstall.length === 0) return;
+        const t = vscode.window.createTerminal({ name: "Synthra: reinstall skills" });
+        t.show();
+        for (const c of this.reinstall) t.sendText(c);
         return;
       }
       case "setSetting": {
