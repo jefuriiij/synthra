@@ -7,7 +7,10 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.37.0] (2026-10-04)
+
+Take your skills and notes to a new computer. One file holds what lives on
+this machine only; restore merges it in and never overwrites.
 
 ### Added
 
@@ -24,7 +27,8 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
   the old home folder move to the new one, across Windows, macOS and Linux.
   **Reinstall** runs `npx skills add <source> -g -s <name>` for each missing
   installed skill in a terminal. Restoring twice adds nothing twice. A damaged
-  or edited file can't write outside the skill folders. New routes:
+  or edited file can't write outside the skill folders, and its history can't
+  make Restore in the Learning tab move any other folder. New routes:
   `GET /backup` and `POST /restore`.
 
 ---

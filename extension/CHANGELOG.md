@@ -3,9 +3,10 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 0.35.0 (2026-10-04)
 
-These need the next update of the Synthra engine.
+These come with Synthra 0.37.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
 
 - **Back up and restore** in the Settings tab: save your skills for every
   project, your notes about yourself, favorites and history to one file, and
