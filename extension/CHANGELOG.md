@@ -3,6 +3,12 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+- **Clearer approval setting.** With "New skills wait for my OK" off, the
+  Learning tab now says that changes to skills you wrote yourself, and to
+  scripts, still wait for your OK.
+
 ## 0.36.1 (2026-10-04)
 
 These come with Synthra 0.38.1. The extension offers the update, or run

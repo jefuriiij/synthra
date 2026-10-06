@@ -7,6 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **The "New skills wait for my OK" setting says what it covers.** Turned off,
+  it lets the skills Synthra writes go live at once; a change to a skill you
+  wrote yourself, or to a skill's scripts, has always waited for your OK. The
+  setting, the Learning tab and the docs now say so.
+
+---
+
 ## [0.38.1] (2026-10-04)
 
 ### Fixed

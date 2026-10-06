@@ -79,7 +79,7 @@ export const SETTINGS: readonly SettingDef[] = [
     type: "boolean",
     default: true,
     label: "New skills wait for my OK",
-    help: "When the AI writes or changes a skill, it waits in the Learning tab until you approve it. Turn this off to let skills go live at once; every change is still recorded and can be seen as a diff.",
+    help: "When the AI writes or changes a skill, it waits in the Learning tab until you approve it. Turn this off to let skills go live at once; every change is still recorded and can be seen as a diff. Changes to skills you wrote yourself, and to a skill's scripts, always wait for your OK.",
   },
   {
     key: "skillNudgeEvery",

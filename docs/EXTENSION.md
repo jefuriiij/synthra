@@ -55,7 +55,7 @@ The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory pa
 
 - **Memory nudge:** on or off, and after how many Claude replies without new notes.
 - **Project memory limit** and **About-you limit:** the size limits of `.synthra/MEMORY.md` and `~/.synthra/USER.md`.
-- **New skills wait for my OK:** off lets the skills Claude writes go live at once (every change is still listed in Learning).
+- **New skills wait for my OK:** off lets the skills Claude writes go live at once (every change is still listed in Learning). Changes to skills you wrote yourself, and to a skill's `scripts/`, always wait for your OK.
 - **Skill nudge:** after how many tool calls without a skill saved (25 by default) Claude is asked whether the work taught something a skill should hold; 0 = off.
 - **Curator:** the weekly tidy, on or off.
 - **Suggest agents in chat:** the Dispatcher's hint before Claude answers.

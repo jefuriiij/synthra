@@ -253,7 +253,7 @@
 <p class="empty">
   {l.approval
     ? "New and changed skills wait for your OK. Change that in Settings."
-    : "Skills go live at once (approval is off in Settings). Every change is still listed here."}
+    : "Skills Synthra writes go live at once (approval is off in Settings). Changes to skills you wrote yourself, and to scripts, still wait for your OK. Every change is listed here."}
 </p>
 
 <style>

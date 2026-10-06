@@ -296,7 +296,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_USER_CHARS` | `2000` | Size limit of `~/.synthra/USER.md` |
 | `SYN_USER_MEMORY` | `~/.synthra/USER.md` | Where USER.md lives |
 | `SYN_MEMORY_NUDGE_EVERY` | `10` | Remind Claude to save what it learned after this many replies; `0` turns it off |
-| `SYN_SKILL_APPROVAL` | `1` | `0` lets new and changed skills go live at once, without your OK |
+| `SYN_SKILL_APPROVAL` | `1` | `0` lets new and changed skills go live at once, without your OK. Changes to skills you wrote yourself, and to a skill's scripts, always wait. |
 | `SYN_SKILL_NUDGE_EVERY` | `25` | Ask Claude whether its work taught something a skill should hold after this many tool calls; `0` turns it off |
 | `SYN_CURATOR` | `1` | `0` turns the weekly Curator off ("Run now" still works) |
 | `SYN_ROUTE_HINTS` | _(unset)_ | `1` lets the Dispatcher add suggestions to the chat again |
