@@ -135,15 +135,35 @@ export interface CostCard {
   priciest: { ts: string; project: string; model: string; cost: number }[];
 }
 
+/** One project's numbers in the window, for the All projects view. */
+export interface ProjectNumbers {
+  path: string;
+  name: string;
+  spend: number;
+  replies: number;
+  map: number;
+  files: number;
+  search: number;
+}
+
 export interface OverviewData {
   days: number;
   generated_at: string;
+  /** The project shown: Learning, Memory and `this_project` are its. */
   project: { path: string; name: string };
+  /** The project of the window that runs this dashboard (0.39+). */
+  home?: { path: string; name: string };
   health: ProjectHealth[];
+  /** All projects. */
   finding: Finding;
   learning: LearningCard | null;
   memory: MemoryCard | null;
+  /** All projects. */
   cost: CostCard;
+  /** The shown project's own finding and cost (0.39+). */
+  this_project?: { finding: Finding; cost: CostCard };
+  /** Every known project's numbers in the window (0.39+). */
+  projects?: ProjectNumbers[];
 }
 
 /** -1, 0 or 1, comparing dotted versions numerically ("0.34.0" > "0.9.1"). */
@@ -456,18 +476,29 @@ async function memoryCard(
   };
 }
 
+const nameOf = (root: string) => root.split(/[/\\]/).filter(Boolean).pop() ?? root;
+
+/**
+ * The report card for `activePaths`' project, with every known project's
+ * health and numbers. `home` is the project of the window running the
+ * dashboard: it is always listed, even before the registry has it.
+ */
 export async function computeOverview(
   activePaths: SynthraPaths,
-  opts: { days: number; version: string; now?: number },
+  opts: { days: number; version: string; now?: number; home?: string },
 ): Promise<OverviewData> {
   const now = opts.now ?? Date.now();
   const from = now - opts.days * DAY;
   const root = activePaths.projectRoot;
-  const name = root.split(/[/\\]/).filter(Boolean).pop() ?? root;
+  const name = nameOf(root);
+  const home = opts.home ?? root;
 
   const registered = await listProjects();
   const all = registered.map((p) => ({ path: p.path, name: p.name, last_seen: p.last_seen }));
-  if (!all.some((p) => sameRoot(p.path, root))) all.unshift({ path: root, name, last_seen: "" });
+  for (const r of new Set([home, root])) {
+    if (!all.some((p) => sameRoot(p.path, r)))
+      all.unshift({ path: r, name: nameOf(r), last_seen: "" });
+  }
 
   const [health, files] = await Promise.all([
     Promise.all(
@@ -485,14 +516,34 @@ export async function computeOverview(
     memoryCard(activePaths, nudges, active?.tools ?? [], from, now).catch(() => null),
   ]);
 
+  const projects = files.map((f): ProjectNumbers => {
+    const c = computeCost([f], from, now);
+    const fi = computeFinding([f], from, now);
+    return {
+      path: f.path,
+      name: f.name,
+      spend: c.spend,
+      replies: c.replies,
+      map: fi.map,
+      files: fi.files,
+      search: fi.search,
+    };
+  });
+
   return {
     days: opts.days,
     generated_at: new Date(now).toISOString(),
     project: { path: root, name },
+    home: { path: home, name: nameOf(home) },
     health: health.filter((h): h is ProjectHealth => h !== null),
     finding: computeFinding(files, from, now),
     learning,
     memory,
     cost: computeCost(files, from, now),
+    this_project: {
+      finding: computeFinding(active ? [active] : [], from, now),
+      cost: computeCost(active ? [active] : [], from, now),
+    },
+    projects,
   };
 }

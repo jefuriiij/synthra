@@ -9,7 +9,7 @@
 </script>
 
 <header class="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
-  <div class="mx-auto flex max-w-[1120px] items-center gap-3 px-7 py-3">
+  <div class="flex h-14 items-center gap-3 px-4 sm:px-5">
     <div class="grid size-8 place-items-center rounded-lg bg-primary font-serif text-lg italic text-primary-foreground">S</div>
     <div class="font-serif text-xl leading-none text-foreground">Synth<em>ra</em></div>
     <span class="ml-2 inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
@@ -17,7 +17,7 @@
         class={"size-1.5 rounded-full " +
           (store.status === "live" ? "bg-money" : store.status === "offline" ? "bg-destructive" : "bg-muted-foreground")}
       ></span>
-      {store.overview?.project.name ?? "…"} · {store.status === "live" ? store.clock : store.status}
+      {store.status === "live" ? `live · ${store.clock}` : store.status}
     </span>
     <div class="flex-1"></div>
     <div class="flex rounded-lg border border-border bg-card p-0.5">

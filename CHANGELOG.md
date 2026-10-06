@@ -9,6 +9,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ## [Unreleased]
 
+### Added
+
+- **One dashboard for every project.** Any window's dashboard now shows every
+  project Synthra knows, in a list on the left: the ones used this week first,
+  each with a dot (works, needs a look, quiet) and its cost, and the older ones
+  folded away. It opens on that window's project; **All projects** shows the
+  totals (spend, replies, map share, projects that need a look), the health
+  table with each project's cost, and cost and code lookups per project. A
+  project's page now shows its own lookups, missed chances and cost, with its
+  share of all your spend. Click any project, in the list or a table, to open
+  it; the address keeps the view, so back and bookmarks work. Closing one
+  window never breaks the others' dashboards.
+- **The dashboard uses the full width.** No more 1120 px column: the cards
+  fill the window in a grid and stack on a narrow one.
+- `GET /overview` takes `project=<path>`, only for a project in
+  `~/.synthra/projects.json`, and returns `home`, `this_project` and
+  `projects`.
+
 ### Fixed
 
 - **The "New skills wait for my OK" setting says what it covers.** Turned off,

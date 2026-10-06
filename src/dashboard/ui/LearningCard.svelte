@@ -15,7 +15,7 @@
   );
 </script>
 
-<div class="h-full rounded-xl border border-border bg-card/70 px-5 py-4">
+<div>
   {#if !l}
     <p class="text-sm text-muted-foreground">Skills could not be read.</p>
   {:else}

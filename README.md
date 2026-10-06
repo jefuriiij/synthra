@@ -108,7 +108,9 @@ The status bar item shows whether Synthra runs. Click it to open the dashboard. 
 
 Live at **http://127.0.0.1:8901** (or the next free port up to 8910). In the extension, click the Synthra item in the status bar.
 
-One page that answers five questions, for this week or this month:
+One dashboard for every project. On the left: every project Synthra knows, the ones used this week first, each with a dot (works, needs a look, quiet) and what it cost. Any window's dashboard shows any of them, and opens on that window's project. **All projects** shows the totals, the health of each project, and cost and code lookups per project. The page uses the full width of the window.
+
+It answers five questions, for this week or this month:
 
 - **Is it working?** When each hook last ran in each project, and whether its hook scripts are current. A hook that stops quietly shows up here, with a plain-words reason and a **Fix hooks** button (it rewrites that project's hooks, the same step `syn .` runs).
 - **Is it helping?** How Claude found code: from Synthra's map, by reading whole files, or with a search, week by week. Plus the terminal searches the map could have answered: the place to improve Synthra next.

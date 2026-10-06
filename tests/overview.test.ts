@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleRepair } from "../src/dashboard/repair.js";
+import { pickProject } from "../src/dashboard/pick-project.js";
+import { recordProject } from "../src/shared/project-registry.js";
 import type { ProjectFiles } from "../src/dashboard/delta.js";
 import {
   compareVersions,
@@ -243,6 +245,46 @@ describe("computeOverview", () => {
     expect(o.memory?.notes).toBe(1);
     expect(o.memory?.stale_notes).toBe(1);
     expect(o.learning).toMatchObject({ live: 0, waiting: 0 });
+  });
+
+  it("shows another known project from any window, with every project's numbers", async () => {
+    const own = await project();
+    const other = await project();
+    await recordProject(own.projectRoot);
+    await recordProject(other.projectRoot);
+    const reply = (out: number, hoursAgo: number) =>
+      `${JSON.stringify({ ts: new Date(Date.now() - hoursAgo * 3600e3).toISOString(), input_tokens: 0, output_tokens: out, model: "claude-opus-5" })}\n`;
+    await writeFile(own.tokenLog, reply(100_000, 1), "utf8");
+    await writeFile(other.tokenLog, reply(300_000, 1) + reply(300_000, 2), "utf8");
+    await mkdir(other.contextDir, { recursive: true });
+    await writeFile(other.memoryMd, "- Other project fact\n", "utf8");
+
+    // The other project, asked for from this window's dashboard.
+    const target = await pickProject(own, other.projectRoot);
+    expect(target?.projectRoot).toBe(other.projectRoot);
+    const o = await computeOverview(target as SynthraPaths, {
+      days: 7,
+      version: "0.39.0",
+      home: own.projectRoot,
+    });
+    expect(o.project.path).toBe(other.projectRoot);
+    expect(o.home?.path).toBe(own.projectRoot);
+    expect(o.memory?.project).toMatchObject({ exists: true, entries: 1 });
+    expect(o.this_project?.cost.replies).toBe(2);
+    expect(o.cost.replies).toBe(3);
+    const n = (p: SynthraPaths) => o.projects?.find((x) => x.path === p.projectRoot);
+    expect(n(own)).toMatchObject({ replies: 1 });
+    expect(n(other)).toMatchObject({ replies: 2 });
+    expect(n(other)?.spend ?? 0).toBeGreaterThan(n(own)?.spend ?? 0);
+  });
+
+  it("never opens a folder that isn't in the project list", async () => {
+    const own = await project();
+    const stranger = await project();
+    expect(await pickProject(own, undefined)).toBe(own);
+    expect(await pickProject(own, own.projectRoot)).toBe(own);
+    expect(await pickProject(own, stranger.projectRoot)).toBeNull();
+    expect(await pickProject(own, "C:\\Windows")).toBeNull();
   });
 
   it("hides a folder Synthra no longer runs in", async () => {

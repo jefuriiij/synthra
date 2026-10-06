@@ -17,7 +17,8 @@ import { buildDiagnosticReport, runDoctorChecks } from "../cli/doctor-command.js
 import { loadConfig } from "../shared/config.js";
 import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
 import { log } from "../shared/logger.js";
-import type { SynthraPaths } from "../shared/paths.js";
+import { type SynthraPaths, pathKey } from "../shared/paths.js";
+import { pickProject } from "./pick-project.js";
 import { findFreePort } from "../server/port.js";
 import { computeDashboardData } from "./delta.js";
 import { type OverviewData, computeOverview } from "./overview.js";
@@ -95,13 +96,22 @@ export async function startDashboard(
 
   // The report card. Reads a few dozen small files per project, so it is
   // memoized briefly: two tabs, or a poll and a click, share one read.
-  const overviewMemo = new Map<number, { at: number; data: OverviewData }>();
+  // Any window's dashboard shows any project: ?project=<path> picks one, but
+  // only a project in the registry (or this window's own), never any path.
+  const overviewMemo = new Map<string, { at: number; data: OverviewData }>();
   app.get("/overview", async (c) => {
     const days = c.req.query("days") === "30" ? 30 : 7;
-    const hit = overviewMemo.get(days);
+    const target = await pickProject(paths, c.req.query("project"));
+    if (!target) return c.json({ error: "Synthra doesn't know that project." }, 404);
+    const key = `${days}|${pathKey(target.projectRoot)}`;
+    const hit = overviewMemo.get(key);
     if (hit && Date.now() - hit.at < OVERVIEW_TTL_MS) return c.json(hit.data);
-    const data = await computeOverview(paths, { days, version: VERSION });
-    overviewMemo.set(days, { at: Date.now(), data });
+    const data = await computeOverview(target, {
+      days,
+      version: VERSION,
+      home: paths.projectRoot,
+    });
+    overviewMemo.set(key, { at: Date.now(), data });
     return c.json(data);
   });
 
