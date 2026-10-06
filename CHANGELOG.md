@@ -7,7 +7,9 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.39.0] (2026-10-07)
+
+One dashboard for all your projects, across the full width of the window.
 
 ### Added
 

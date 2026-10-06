@@ -3,8 +3,15 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 0.37.0 (2026-10-07)
 
+These come with Synthra 0.39.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
+
+- **One dashboard for every project.** The dashboard you open from the status
+  bar now lists all your projects on the left and shows any of them, or all
+  of them, across the full width of the window. It opens on this window's
+  project.
 - **Clearer approval setting.** With "New skills wait for my OK" off, the
   Learning tab now says that changes to skills you wrote yourself, and to
   scripts, still wait for your OK.

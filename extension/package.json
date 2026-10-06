@@ -2,7 +2,7 @@
   "name": "synthra-vscode",
   "displayName": "Synthra",
   "description": "A memory and a skill book for Claude Code: it remembers your project, learns your workflows with your OK, and shows it all in the sidebar. Works in VS Code, Cursor, Antigravity and more.",
-  "version": "0.36.1",
+  "version": "0.37.0",
   "publisher": "jefuriiij",
   "icon": "resources/icon.png",
   "galleryBanner": {
