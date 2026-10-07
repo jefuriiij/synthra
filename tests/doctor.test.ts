@@ -12,6 +12,7 @@ import {
   runDoctorChecks,
   type DoctorCheck,
 } from "../src/cli/doctor-command.js";
+import { claudePolicy } from "../src/cli/claude-policy.js";
 import { SCHEMA_VERSION } from "../src/graph/types.js";
 import { POLICY_VERSION } from "../src/hooks/claude-md.js";
 
@@ -111,7 +112,8 @@ describe("runDoctorChecks", () => {
     const checks = await runDoctorChecks(dir);
 
     expect(find(checks, "Graph")?.status).toBe("warn");
-    expect(find(checks, "MCP registration")?.status).toBe("warn");
+    // Not running and not registered: Synthra removes its entry when it stops.
+    expect(find(checks, "MCP registration")?.status).toBe("ok");
     expect(find(checks, "CLAUDE.md policy")?.status).toBe("warn");
     expect(find(checks, "Hooks")?.status).toBe("warn");
     expect(find(checks, "Node")?.status).toBe("ok"); // tests run on Node >= 18
@@ -242,5 +244,121 @@ describe("diagnostic report (v0.17)", () => {
     const md = buildDiagnosticReport(checks, { ...info, claudeBin: bin });
     expect(md).not.toContain(home);
     expect(md).toContain("~\\bin\\claude.cmd");
+  });
+});
+
+// v0.40 — doctor checks what Claude Code really loaded, not only which files
+// exist: an MCP entry at the right port, a live connection from Claude, and
+// no Claude Code setting that switches Synthra's hooks or tools off.
+describe("MCP registration, Claude connection and policy (v0.40)", () => {
+  async function project(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "syn-doctor-reg-"));
+    await mkdir(join(dir, ".synthra-graph"), { recursive: true });
+    await writeFile(join(dir, ".synthra-graph", "mcp_port"), "8123", "utf8");
+    return dir;
+  }
+  const mcpJson = (port: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      mcpServers: { synthra: { type: "http", url: `http://127.0.0.1:${port}/mcp`, ...extra } },
+    });
+
+  it("warns when Synthra runs but .mcp.json doesn't name it, or names another port", async () => {
+    const dir = await project();
+    let c = find(
+      await runDoctorChecks(dir, { environment: false, selfPort: 8123 }),
+      "MCP registration",
+    );
+    expect(c?.status).toBe("warn");
+    expect(c?.detail).toContain("doesn't name it");
+
+    await writeFile(join(dir, ".mcp.json"), mcpJson(9000));
+    c = find(
+      await runDoctorChecks(dir, { environment: false, selfPort: 8123 }),
+      "MCP registration",
+    );
+    expect(c?.status).toBe("warn");
+    expect(c?.detail).toContain(":9000");
+
+    await writeFile(join(dir, ".mcp.json"), mcpJson(8123, { alwaysLoad: true }));
+    c = find(
+      await runDoctorChecks(dir, { environment: false, selfPort: 8123 }),
+      "MCP registration",
+    );
+    expect(c?.status).toBe("ok");
+    expect(c?.detail).toContain("map tools kept loaded");
+  });
+
+  it("says whether Claude really connected to Synthra's tools", async () => {
+    const dir = await project();
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    const opts = { environment: false, selfPort: 8123, startedAt };
+
+    // Nobody worked here since the start: nothing to say.
+    let c = find(await runDoctorChecks(dir, { ...opts, connection: null }), "Claude connection");
+    expect(c?.status).toBe("ok");
+
+    // Hooks fired after the start, but Claude never connected: a warning.
+    await writeFile(
+      join(dir, ".synthra-graph", "heartbeat.json"),
+      JSON.stringify({ version: "x", hooks: { reply: new Date().toISOString() } }),
+    );
+    c = find(await runDoctorChecks(dir, { ...opts, connection: null }), "Claude connection");
+    expect(c?.status).toBe("warn");
+    expect(c?.detail).toContain("never connected");
+
+    const now = new Date().toISOString();
+    c = find(
+      await runDoctorChecks(dir, {
+        ...opts,
+        connection: {
+          client: "claude-code",
+          clientVersion: "2.1.292",
+          protocol: "2025-11-25",
+          at: now,
+          lastSeen: now,
+        },
+      }),
+      "Claude connection",
+    );
+    expect(c?.status).toBe("ok");
+    expect(c?.detail).toContain("Claude Code 2.1.292");
+    expect(c?.detail).toContain("MCP 2025-11-25");
+  });
+
+  it("finds Claude Code settings that switch Synthra's hooks or tools off", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "syn-policy-proj-"));
+    const home = await mkdtemp(join(tmpdir(), "syn-policy-home-"));
+    const sys = await mkdtemp(join(tmpdir(), "syn-policy-sys-"));
+    expect(await claudePolicy(dir, { home, systemDir: sys })).toEqual([]);
+
+    await mkdir(join(dir, ".claude"), { recursive: true });
+    await writeFile(
+      join(dir, ".claude", "settings.json"),
+      JSON.stringify({ disableAllHooks: true }),
+    );
+    await writeFile(
+      join(sys, "managed-settings.json"),
+      JSON.stringify({
+        deniedMcpServers: [{ serverName: "synthra" }],
+        allowedMcpServers: [{ serverName: "github" }],
+      }),
+    );
+    await writeFile(join(sys, "managed-mcp.json"), "{}");
+    const found = await claudePolicy(dir, { home, systemDir: sys });
+    expect(found.map((f) => f.status)).toEqual(["fail", "fail", "warn", "warn"]);
+    expect(found[0]?.text).toContain(".claude/settings.json");
+    expect(found[1]?.text).toContain("deniedMcpServers");
+    expect(found[2]?.text).toContain("allowedMcpServers");
+    expect(found[3]?.text).toContain("managed-mcp.json");
+
+    // An allowlist that names Synthra is fine.
+    await writeFile(
+      join(sys, "managed-settings.json"),
+      JSON.stringify({ allowedMcpServers: [{ serverName: "synthra" }] }),
+    );
+    await writeFile(join(dir, ".claude", "settings.json"), "{}");
+    await writeFile(join(sys, "managed-mcp.json"), "");
+    const ok = await claudePolicy(dir, { home, systemDir: sys });
+    expect(ok.map((f) => f.text).join()).not.toContain("allowedMcpServers");
   });
 });

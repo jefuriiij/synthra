@@ -59,8 +59,9 @@ The large panel's **Settings** tab (or the ⚙ button on the sidebar's Memory pa
 - **Skill nudge:** after how many tool calls without a skill saved (25 by default) Claude is asked whether the work taught something a skill should hold; 0 = off.
 - **Curator:** the weekly tidy, on or off.
 - **Suggest agents in chat:** the Dispatcher's hint before Claude answers.
+- **Keep map tools loaded:** keeps the three map tools in every Claude session instead of behind tool search (about 350 tokens a session). Takes effect when Synthra next starts.
 
-They are saved in `~/.synthra/settings.json`, so they apply to every project and also work when you run `syn` from a terminal. An environment variable (`SYN_MEMORY_NUDGE_EVERY`, `SYN_MEMORY_CHARS`, `SYN_USER_CHARS`, `SYN_ROUTE_HINTS`) wins over the file; the tab then shows the setting as locked. Settings need Synthra running.
+They are saved in `~/.synthra/settings.json`, so they apply to every project and also work when you run `syn` from a terminal. An environment variable (`SYN_MEMORY_NUDGE_EVERY`, `SYN_MEMORY_CHARS`, `SYN_USER_CHARS`, `SYN_ROUTE_HINTS`, `SYN_MAP_TOOLS_LOADED`) wins over the file; the tab then shows the setting as locked. Settings need Synthra running.
 
 The **Backup** card saves what lives on this computer only (skills for every project, `USER.md`, favorites, settings, the skill history) to one JSON file, and restores one on a new device. Restore merges and never overwrites: a skill that differs waits in Learning, and **Reinstall** runs the installer for the installed skills in a terminal. The same works from a terminal with `syn backup` and `syn restore <file>`.
 

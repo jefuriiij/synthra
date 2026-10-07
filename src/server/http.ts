@@ -28,7 +28,7 @@ import {
 } from "../learn/backup.js";
 import type { ServerContext } from "./context.js";
 import { type HookName, noteHook } from "./heartbeat.js";
-import { handleMcpRequest } from "./mcp.js";
+import { handleMcpRequest, mcpConnection } from "./mcp.js";
 import { checkOwner, claimOwnership, releaseOwnership } from "./owner.js";
 import { reserveFreePort, type PortReservation } from "./port.js";
 import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
@@ -124,6 +124,8 @@ async function loadContext(paths: SynthraPaths): Promise<ServerContext> {
 
 function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   const app = new Hono();
+  /** Doctor compares hook activity after this with Claude's MCP connection. */
+  const startedAt = new Date().toISOString();
 
   // First, and on every route rather than per-handler — a guard you have to
   // remember to add is a guard that gets missed on the next route. This one
@@ -189,6 +191,8 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     const checks = await runDoctorChecks(ctx.paths.projectRoot, {
       environment: c.req.query("env") === "1",
       selfPort: port,
+      connection: mcpConnection(ctx),
+      startedAt,
     });
     return c.json({ version, status: worstStatus(checks), checks });
   });
@@ -316,7 +320,9 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
 
   app.post("/mcp", async (c) => {
     const body = await c.req.json().catch(() => null);
-    return c.json(await handleMcpRequest(body, ctx));
+    const answer = await handleMcpRequest(body, ctx);
+    // A notification is accepted with no body (MCP Streamable HTTP).
+    return answer ? c.json(answer) : c.body(null, 202);
   });
 
   app.onError((err, c) => {

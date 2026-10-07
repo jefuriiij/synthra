@@ -14,7 +14,10 @@ import { SCHEMA_VERSION } from "../graph/types.js";
 import type { GraphSchema } from "../graph/types.js";
 import { POLICY_VERSION } from "../hooks/claude-md.js";
 import { ourHookCounts, type HooksConfig } from "../hooks/hooks-config.js";
+import { readHeartbeat } from "../server/heartbeat.js";
+import type { McpConnection } from "../server/mcp.js";
 import { probeHealth, sameRoot } from "../server/owner.js";
+import { claudePolicy } from "./claude-policy.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
@@ -139,6 +142,9 @@ export interface DoctorCheckOptions {
   /** Set when the server runs the checks about itself — swaps the HTTP
    *  self-probe for a direct port-file comparison (see checkSelfPort). */
   selfPort?: number;
+  /** Server only: who connected to its MCP tools, and when it started. */
+  connection?: McpConnection | null;
+  startedAt?: string;
 }
 
 /** The worst status in a set of checks — what the IDE status bar shows. */
@@ -159,7 +165,7 @@ export async function runDoctorChecks(
   const checks: DoctorCheck[] = [];
   if (opts.environment !== false) await environmentChecks(checks, cfg.claudeBin);
 
-  await projectChecks(checks, projectRoot, paths, opts.selfPort);
+  await projectChecks(checks, projectRoot, paths, opts.selfPort, opts);
   return checks;
 }
 
@@ -212,11 +218,106 @@ async function environmentChecks(checks: DoctorCheck[], claudeBin: string): Prom
   );
 }
 
+async function readPort(file: string): Promise<number | null> {
+  const n = Number((await readFile(file, "utf8").catch(() => "")).trim());
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+async function checkRegistration(
+  projectRoot: string,
+  portFile: string,
+  selfPort: number | undefined,
+): Promise<DoctorCheck> {
+  const label = "MCP registration";
+  const running = selfPort ?? (await readPort(portFile));
+  let entry: { url?: unknown; alwaysLoad?: unknown } | undefined;
+  try {
+    const mcp = JSON.parse(await readFile(join(projectRoot, ".mcp.json"), "utf8")) as {
+      mcpServers?: Record<string, { url?: unknown; alwaysLoad?: unknown }>;
+    };
+    entry = mcp.mcpServers?.synthra;
+  } catch {
+    entry = undefined;
+  }
+  if (!entry) {
+    return running === null
+      ? {
+          status: "ok",
+          label,
+          detail: "not registered while Synthra is stopped here (it registers when it starts)",
+        }
+      : {
+          status: "warn",
+          label,
+          detail: `Synthra runs on :${running} but .mcp.json doesn't name it, so Claude can't use its tools. Restart Synthra.`,
+        };
+  }
+  const m = typeof entry.url === "string" ? /:(\d+)(?:\/|$)/.exec(entry.url) : null;
+  const port = m?.[1] ? Number(m[1]) : null;
+  if (running !== null && port !== running) {
+    return {
+      status: "warn",
+      label,
+      detail: `.mcp.json points at :${port ?? "?"} but Synthra runs on :${running}. Restart Synthra.`,
+    };
+  }
+  return {
+    status: "ok",
+    label,
+    detail: `.mcp.json names Synthra at :${port ?? "?"}${entry.alwaysLoad === true ? ", map tools kept loaded" : ""}`,
+  };
+}
+
+/** Claude Code connects to the MCP server when a session starts. Hooks firing
+ *  after Synthra started, with no connection, mean Claude runs here without
+ *  Synthra's tools: a session started before Synthra registered, or a policy
+ *  that blocks the server. */
+async function checkConnection(
+  heartbeatFile: string,
+  connection: McpConnection | null,
+  startedAt: string,
+): Promise<DoctorCheck> {
+  const label = "Claude connection";
+  if (connection) {
+    const who = `${connection.client === "claude-code" ? "Claude Code" : connection.client}${connection.clientVersion ? ` ${connection.clientVersion}` : ""}`;
+    return {
+      status: "ok",
+      label,
+      detail: `${who} uses Synthra's tools (MCP ${connection.protocol}, last call ${ago(connection.lastSeen)})`,
+    };
+  }
+  const beat = await readHeartbeat(heartbeatFile);
+  const since = Date.parse(startedAt);
+  const after = Object.values(beat?.hooks ?? {}).some((t) => Date.parse(t ?? "") > since);
+  return after
+    ? {
+        status: "warn",
+        label,
+        detail:
+          "Claude has worked here since Synthra started, but never connected to its tools. Start a new Claude session; if this stays, check the Claude Code policy line below and /mcp in Claude Code.",
+      }
+    : {
+        status: "ok",
+        label,
+        detail: "no Claude session here since Synthra started",
+      };
+}
+
+function ago(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  return s < 90
+    ? `${s}s ago`
+    : s < 5400
+      ? `${Math.round(s / 60)} min ago`
+      : `${Math.round(s / 3600)} h ago`;
+}
+
 async function projectChecks(
   checks: DoctorCheck[],
   projectRoot: string,
   paths: ReturnType<typeof resolvePaths>,
   selfPort: number | undefined,
+  opts: DoctorCheckOptions = {},
 ): Promise<void> {
   // Graph
   if (!(await exists(paths.infoGraph))) {
@@ -262,18 +363,29 @@ async function projectChecks(
       : await checkSelfPort(paths.mcpPort, selfPort),
   );
 
-  // MCP registration for the IDE (.mcp.json at the project root)
+  // MCP registration: .mcp.json must name Synthra, at the port it runs on.
+  // Synthra removes its entry when it stops, so "not registered" is only a
+  // problem while it runs.
+  checks.push(await checkRegistration(projectRoot, paths.mcpPort, selfPort));
+
+  // Did Claude Code really connect? Only the server itself knows.
+  if (selfPort !== undefined && opts.startedAt) {
+    checks.push(await checkConnection(paths.heartbeat, opts.connection ?? null, opts.startedAt));
+  }
+
+  // Claude Code settings that switch hooks or MCP servers off.
+  const policy = await claudePolicy(projectRoot).catch(() => []);
   checks.push(
-    (await exists(join(projectRoot, ".mcp.json")))
+    policy.length === 0
       ? {
           status: "ok",
-          label: "MCP registration",
-          detail: ".mcp.json present (IDE can see graph_* tools)",
+          label: "Claude Code policy",
+          detail: "no settings file here turns off Synthra's hooks or tools",
         }
       : {
-          status: "warn",
-          label: "MCP registration",
-          detail: "no .mcp.json — the IDE extension won't see Synthra's tools; run `syn .`.",
+          status: policy.some((p) => p.status === "fail") ? "fail" : "warn",
+          label: "Claude Code policy",
+          detail: `${policy.map((p) => p.text).join("; ")}.`,
         },
   );
 

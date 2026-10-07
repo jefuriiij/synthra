@@ -302,6 +302,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_SKILL_NUDGE_EVERY` | `25` | Ask Claude whether its work taught something a skill should hold after this many tool calls; `0` turns it off |
 | `SYN_CURATOR` | `1` | `0` turns the weekly Curator off ("Run now" still works) |
 | `SYN_ROUTE_HINTS` | _(unset)_ | `1` lets the Dispatcher add suggestions to the chat again |
+| `SYN_MAP_TOOLS_LOADED` | `0` | `1` keeps the three map tools (`graph_continue`, `graph_read`, `find_symbol`) loaded in every Claude session instead of behind tool search; takes effect when Synthra next starts |
 | `SYN_ROUTE_MIN_SCORE` | `5` | How sure the Dispatcher must be (higher is quieter) |
 | `SYN_NO_ROUTE` | _(unset)_ | `1` turns the Dispatcher off, logging included (`route_task` still works) |
 | `SYN_NO_AUTOREINDEX` | _(unset)_ | `1` stops the rescan after edits |

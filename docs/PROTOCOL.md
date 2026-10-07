@@ -51,7 +51,7 @@ Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in
 | `POST` | `/settings` | IDE extension Settings tab (v0.33) | `{ key, value }` sets one setting (`value: null` = back to the default); answers `{ ok, error?, path, settings[] }`. Changing a memory limit rewrites the AGENTS.md block at once. |
 | `GET` | `/panels` | IDE extension sidebar and large panel (v0.33) | `{ version, project_root, memory, capabilities, agents }` in one read: the knowledge files and this branch's context entries (with stale files), the arsenal with each item's absolute file, and the last 7 days of delegations, plus the same `settings` as `GET /settings`, and `learning` (proposals with their before/after text and a `stale` flag, the last 30 days of skill changes, the skills Synthra wrote). Each section fails on its own. `?fresh=1` drops the arsenal's 15s memo. |
 | `POST` | `/context-update` | Stop hook | Update `CONTEXT.md` from session transcript. |
-| `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope — `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. |
+| `POST` | `/mcp` | Claude Code (MCP client) | JSON-RPC 2.0 envelope: `initialize` / `notifications/initialized` / `tools/list` / `tools/call` / `ping`. See MCP tools below. A notification gets `202 Accepted` with no body (0.40+). |
 
 21 routes total (verified against `src/server/http.ts`, 2026-10-02).
 
@@ -94,6 +94,10 @@ Exposed over MCP-HTTP (`POST /mcp`, JSON-RPC 2.0). 15 tools total (verified agai
 | `route_task` | `{ task: string }` | Which installed subagent/skill fits a task, and on which model — the Dispatcher's on-demand form; shares its scorer with `POST /route`. |
 
 Plus the MCP envelope methods: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`.
+
+**Protocol versions (0.40+).** Synthra speaks the handshake-based revisions `2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05`. `initialize` answers with the client's version when it is one of these, else `2025-11-25` (before 0.40 it echoed any version). It is not a `2026-07-28` server: Claude Code 2.1.274+ first probes with `server/discover`, gets "Method not found", and falls back to `initialize` with `2025-11-25`. The server records the client name, version and agreed protocol for doctor's "Claude connection" check.
+
+**Tool loading (0.40+).** `tools/list` marks every tool except `graph_continue`, `graph_read` and `find_symbol` with `_meta: { "anthropic/alwaysLoad": false }`. With the setting "Keep map tools loaded" (`SYN_MAP_TOOLS_LOADED=1`), Synthra registers itself with `claude mcp add-json ... {"alwaysLoad": true}`, so those three tools stay loaded in every session and the rest stay behind tool search. Without it (the default), Claude Code defers all of Synthra's tools until Claude searches for them.
 
 ## Hook payloads
 

@@ -14,6 +14,7 @@ import { installHooks } from "../hooks/installer.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import type { SynthraPaths } from "../shared/paths.js";
+import { settingValues } from "../shared/settings.js";
 
 const MCP_NAME = "synthra";
 
@@ -43,22 +44,44 @@ function runClaude(
   });
 }
 
-export async function registerMcp(bin: string, mcpPort: number, cwd: string): Promise<boolean> {
+export async function registerMcp(
+  bin: string,
+  mcpPort: number,
+  cwd: string,
+  alwaysLoad = settingValues().mapToolsLoaded,
+): Promise<boolean> {
   const url = `http://127.0.0.1:${mcpPort}/mcp`;
   await runClaude(bin, ["mcp", "remove", MCP_NAME, "--scope", "project"], cwd).catch(
     () => undefined,
   );
-  const reg = await runClaude(
-    bin,
-    ["mcp", "add", MCP_NAME, "--transport", "http", "--scope", "project", url],
-    cwd,
-  );
+  // "Keep map tools loaded" registers the server with alwaysLoad; the tools
+  // other than the map ones opt out themselves (mcp.ts MAP_TOOLS).
+  const reg = alwaysLoad
+    ? await runClaude(
+        bin,
+        [
+          "mcp",
+          "add-json",
+          MCP_NAME,
+          JSON.stringify({ type: "http", url, alwaysLoad: true }),
+          "--scope",
+          "project",
+        ],
+        cwd,
+      )
+    : await runClaude(
+        bin,
+        ["mcp", "add", MCP_NAME, "--transport", "http", "--scope", "project", url],
+        cwd,
+      );
   if (reg.code !== 0) {
     log.warn(`claude mcp add failed (code ${reg.code}). stderr: ${reg.stderr.trim()}`);
     log.warn(`Synthra's MCP tools won't be visible to Claude this session.`);
     return false;
   }
-  log.info(`registered MCP with Claude: ${MCP_NAME} → ${url}`);
+  log.info(
+    `registered MCP with Claude: ${MCP_NAME} → ${url}${alwaysLoad ? " (map tools kept loaded)" : ""}`,
+  );
   return true;
 }
 

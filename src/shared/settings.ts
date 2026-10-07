@@ -21,13 +21,14 @@ export type SettingKey =
   | "skillApproval"
   | "skillNudgeEvery"
   | "curator"
-  | "routeHints";
+  | "routeHints"
+  | "mapToolsLoaded";
 
 interface Base {
   key: SettingKey;
   /** The environment variable that overrides the file. */
   env: string;
-  group: "Memory" | "Learning" | "Dispatcher";
+  group: "Memory" | "Learning" | "Dispatcher" | "Code map";
   label: string;
   help: string;
 }
@@ -111,10 +112,21 @@ export const SETTINGS: readonly SettingDef[] = [
     label: "Suggest agents in chat",
     help: "Before Claude answers, add a short hint naming the installed agent or skill that fits the task best. Off by default: Synthra still records its suggestions, and route_task answers when asked.",
   },
+  {
+    key: "mapToolsLoaded",
+    env: "SYN_MAP_TOOLS_LOADED",
+    group: "Code map",
+    type: "boolean",
+    default: false,
+    label: "Keep map tools loaded",
+    help: "Claude Code hides MCP tools until Claude searches for them. On, Synthra's three map tools (graph_continue, graph_read, find_symbol) stay loaded in every session, so Claude can reach for the map first; about 350 tokens per session. The other tools stay hidden either way. Takes effect when Synthra next starts; compare the dashboard's map share before and after.",
+  },
 ];
 
 export type SettingValues = {
-  [K in SettingKey]: K extends "routeHints" | "skillApproval" | "curator" ? boolean : number;
+  [K in SettingKey]: K extends "routeHints" | "skillApproval" | "curator" | "mapToolsLoaded"
+    ? boolean
+    : number;
 };
 export type SettingSource = "default" | "file" | "env";
 

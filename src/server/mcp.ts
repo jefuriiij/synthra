@@ -57,7 +57,60 @@ import { noteSkillSaved } from "./routes/nudge.js";
 import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
 import { graphExtCounts } from "./routes/route.js";
 
-const PROTOCOL_VERSION = "2024-11-05";
+/**
+ * The MCP revisions Synthra really implements, newest first. Synthra serves
+ * tools only, over plain JSON responses, which all of these share. It is not
+ * a 2026-07-28 server: that revision drops `initialize`, adds `server/discover`
+ * and per-request `_meta`, and requires `resultType` on every result.
+ */
+export const SUPPORTED_PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
+/** The version to answer `initialize` with: the client's when Synthra
+ *  supports it, else Synthra's newest (the spec's rule; the client then
+ *  decides whether it can use it). Never an echo of a version Synthra doesn't
+ *  speak. */
+export function negotiateProtocol(requested: unknown): string {
+  return typeof requested === "string" && SUPPORTED_PROTOCOLS.includes(requested)
+    ? requested
+    : (SUPPORTED_PROTOCOLS[0] as string);
+}
+
+/** Who connected to this server's tools, and when: the doctor's proof that
+ *  Claude Code really loaded Synthra, not just that `.mcp.json` names it. */
+export interface McpConnection {
+  client: string;
+  clientVersion?: string;
+  protocol: string;
+  /** When the handshake happened. */
+  at: string;
+  /** The last tools/list or tools/call. */
+  lastSeen: string;
+}
+
+const connections = new WeakMap<ServerContext, McpConnection>();
+
+export function mcpConnection(ctx: ServerContext): McpConnection | null {
+  return connections.get(ctx) ?? null;
+}
+
+function touch(ctx: ServerContext): void {
+  const c = connections.get(ctx);
+  if (c) c.lastSeen = nowIso();
+}
+
+/**
+ * The tools Claude Code keeps loaded when Synthra is registered with
+ * `alwaysLoad` (setting "Keep map tools loaded"): the map lookups Claude
+ * should reach for first. Every other tool says `alwaysLoad: false`, so it
+ * stays behind tool search either way.
+ */
+export const MAP_TOOLS = new Set(["graph_continue", "graph_read", "find_symbol"]);
+
+function listedTools() {
+  return TOOLS.map((t) =>
+    MAP_TOOLS.has(t.name) ? t : { ...t, _meta: { "anthropic/alwaysLoad": false } },
+  );
+}
 // What Claude Code sees in the `initialize` handshake. This was the literal
 // "0.0.1" from the first commit, never updated — the same stale value GET /
 // reported until 0.32.0. Read from package.json (inlined at build time, as the
@@ -1756,10 +1809,19 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/**
+ * One JSON-RPC message from Claude Code. Null for a notification, which gets
+ * no answer.
+ *
+ * Synthra speaks the handshake-based ("legacy") MCP revisions. Claude Code
+ * 2.1.274+ first tries the stateless 2026-07-28 revision (`server/discover`);
+ * the "Method not found" answer below sends it back to `initialize`, where it
+ * asks for 2025-11-25.
+ */
 export async function handleMcpRequest(
   body: unknown,
   ctx: ServerContext,
-): Promise<JsonRpcResponse> {
+): Promise<JsonRpcResponse | null> {
   if (!body || typeof body !== "object") {
     return err(null, ERR.invalidRequest, "Request body must be a JSON-RPC 2.0 object.");
   }
@@ -1769,26 +1831,39 @@ export async function handleMcpRequest(
     return err(req.id ?? null, ERR.invalidRequest, "Invalid JSON-RPC envelope.");
   }
 
+  // A notification (no id) gets no JSON-RPC answer: the HTTP route sends
+  // 202 Accepted with an empty body, as the spec asks.
+  if (req.id === undefined) return null;
   const id = req.id ?? null;
 
   try {
     switch (req.method) {
-      case "initialize":
+      case "initialize": {
+        const params = (req.params ?? {}) as {
+          protocolVersion?: unknown;
+          clientInfo?: { name?: unknown; version?: unknown };
+        };
+        const protocol = negotiateProtocol(params.protocolVersion);
+        const at = nowIso();
+        connections.set(ctx, {
+          client: typeof params.clientInfo?.name === "string" ? params.clientInfo.name : "unknown",
+          ...(typeof params.clientInfo?.version === "string"
+            ? { clientVersion: params.clientInfo.version }
+            : {}),
+          protocol,
+          at,
+          lastSeen: at,
+        });
         return ok(id, {
-          protocolVersion:
-            typeof req.params?.protocolVersion === "string"
-              ? req.params.protocolVersion
-              : PROTOCOL_VERSION,
+          protocolVersion: protocol,
           capabilities: { tools: {} },
           serverInfo: SERVER_INFO,
         });
-
-      case "notifications/initialized":
-        // Client confirms initialization. No response required for notifications (id===undefined).
-        return ok(id, {});
+      }
 
       case "tools/list":
-        return ok(id, { tools: TOOLS });
+        touch(ctx);
+        return ok(id, { tools: listedTools() });
 
       case "tools/call": {
         const params = req.params ?? {};
@@ -1799,6 +1874,7 @@ export async function handleMcpRequest(
             ? (params.arguments as Record<string, unknown>)
             : {};
         void logToolCall(ctx, toolName);
+        touch(ctx);
         const result = await callTool(toolName, args, ctx);
         return ok(id, result);
       }

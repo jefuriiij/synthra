@@ -7,6 +7,45 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Keep map tools loaded** (Settings, `SYN_MAP_TOOLS_LOADED=1`). Claude Code
+  hides an MCP server's tools until Claude searches for them, and by default
+  that hides all of Synthra's: tested on Claude Code 2.1.292, a session could
+  call none of them directly, which matches map shares around 1%. With the
+  setting on, Synthra registers itself with `alwaysLoad` and only its three map
+  tools (`graph_continue`, `graph_read`, `find_symbol`) stay loaded, about
+  350 tokens a session; every other tool marks itself
+  `_meta['anthropic/alwaysLoad']: false` and stays behind tool search. Off by
+  default: turn it on and compare the dashboard's map share.
+- **Doctor checks what Claude Code really loaded.** "Claude connection": the
+  server records who connected to its tools, so doctor says "Claude Code
+  2.1.292 uses Synthra's tools (MCP 2025-11-25, last call 2 min ago)", or warns
+  when Claude worked in the project since Synthra started but never connected.
+  "Claude Code policy": settings that switch Synthra off (`disableAllHooks`,
+  `allowManagedHooksOnly`, `deniedMcpServers`, an `allowedMcpServers` list
+  without Synthra, a `managed-mcp.json`), read from your own and your
+  organization's settings files. "MCP registration" now checks that
+  `.mcp.json` names Synthra at the port it runs on, and no longer warns when
+  Synthra is simply stopped (it removes its entry when it stops).
+
+### Fixed
+
+- **The MCP handshake no longer claims versions Synthra doesn't speak.**
+  `initialize` echoed whatever protocol version the client asked for. Claude
+  Code now speaks 2026-07-28, a stateless revision without `initialize`;
+  Synthra speaks the handshake revisions (2025-11-25 and older) and now answers
+  with one of those. Claude Code already falls back to 2025-11-25 after its
+  `server/discover` probe, so nothing changes for it today.
+- **A notification gets 202 Accepted and no body**, as MCP's Streamable HTTP
+  transport asks, instead of a JSON-RPC answer with a null id.
+- A test keeps every MCP tool description under 1,800 characters: Claude Code
+  cuts them at 2,048 (`skill_manage` is the longest, at 1,736).
+
+---
+
 ## [0.39.0] (2026-10-07)
 
 One dashboard for all your projects, across the full width of the window.

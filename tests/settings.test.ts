@@ -56,6 +56,7 @@ describe("settings file", () => {
       skillNudgeEvery: 25,
       curator: true,
       routeHints: false,
+      mapToolsLoaded: false,
     });
     expect(source("memoryChars")).toBe("default");
   });
@@ -135,6 +136,7 @@ describe("settings routes", () => {
       ["skillNudgeEvery", 25, "default"],
       ["curator", true, "default"],
       ["routeHints", true, "env"],
+      ["mapToolsLoaded", false, "default"],
     ]);
     expect(v.settings[0]).toMatchObject({ type: "number", min: 0, max: 100, unit: "replies" });
   });
@@ -154,7 +156,7 @@ describe("settings routes", () => {
     const r = await handleSettingsPost({ key: "memoryChars", value: "lots" }, await ctx());
     expect(r.ok).toBe(false);
     expect(r.error).toContain("number from 500 to 20000");
-    expect(r.settings).toHaveLength(7);
+    expect(r.settings).toHaveLength(8);
   });
 
   it("is served over HTTP, and /panels carries it too", async () => {
@@ -176,7 +178,7 @@ describe("settings routes", () => {
       const panels = (await (await fetch(`${base}/panels`)).json()) as {
         settings?: { settings: unknown[] };
       };
-      expect(panels.settings?.settings).toHaveLength(7);
+      expect(panels.settings?.settings).toHaveLength(8);
     } finally {
       await handle.stop();
     }

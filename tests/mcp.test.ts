@@ -15,7 +15,11 @@ import {
   buildFactsFooter,
   buildTestsFooter,
   handleMcpRequest,
+  MAP_TOOLS,
+  mcpConnection,
+  negotiateProtocol,
   resolveFileTarget,
+  SUPPORTED_PROTOCOLS,
   staleAnchorPaths,
 } from "../src/server/mcp.js";
 import { resolvePaths } from "../src/shared/paths.js";
@@ -804,5 +808,75 @@ describe("second-brain integration (v0.15.0)", () => {
 
     const miss = await call(ctx, "graph_continue", { query: "zebra quantum flux" });
     expect(miss).not.toContain("Remembered:");
+  });
+});
+
+// v0.40 — the handshake answers only versions Synthra speaks (it used to echo
+// any), a notification gets no answer, and the tool list fits Claude Code's
+// limits: 2,048 characters per description, map tools loaded first.
+describe("MCP handshake and tool list (v0.40)", () => {
+  it("never claims a protocol version it doesn't speak", () => {
+    expect(negotiateProtocol("2025-11-25")).toBe("2025-11-25");
+    expect(negotiateProtocol("2025-06-18")).toBe("2025-06-18");
+    // 2026-07-28 drops initialize altogether: Synthra offers its newest instead.
+    expect(negotiateProtocol("2026-07-28")).toBe(SUPPORTED_PROTOCOLS[0]);
+    expect(negotiateProtocol(undefined)).toBe(SUPPORTED_PROTOCOLS[0]);
+  });
+
+  it("records who connected, answers no notification, and sends 2026-07-28 probes back to initialize", async () => {
+    const ctx = await ctxWith(graphOf("src/a.ts"));
+    expect(mcpConnection(ctx)).toBeNull();
+    // Claude Code 2.1.292 probes the stateless revision first.
+    const probe = await handleMcpRequest(
+      { jsonrpc: "2.0", id: "p", method: "server/discover" },
+      ctx,
+    );
+    expect(probe?.error?.code).toBe(-32601);
+
+    const init = await handleMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          clientInfo: { name: "claude-code", version: "2.1.292" },
+        },
+      },
+      ctx,
+    );
+    expect((init?.result as { protocolVersion: string }).protocolVersion).toBe("2025-11-25");
+    expect(mcpConnection(ctx)).toMatchObject({
+      client: "claude-code",
+      clientVersion: "2.1.292",
+      protocol: "2025-11-25",
+    });
+    expect(
+      await handleMcpRequest({ jsonrpc: "2.0", method: "notifications/initialized" }, ctx),
+    ).toBeNull();
+  });
+
+  it("keeps every description under Claude Code's cap, and only the map tools loaded", async () => {
+    const res = await handleMcpRequest(
+      { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      await ctxWith(graphOf("src/a.ts")),
+    );
+    const tools = (
+      res?.result as {
+        tools: { name: string; description: string; _meta?: Record<string, unknown> }[];
+      }
+    ).tools;
+    // Claude Code cuts at 2,048 (2.1.280); stay clear of it.
+    for (const t of tools) expect(t.description.length, t.name).toBeLessThanOrEqual(1800);
+    for (const t of tools) {
+      if (MAP_TOOLS.has(t.name)) expect(t._meta, t.name).toBeUndefined();
+      else expect(t._meta?.["anthropic/alwaysLoad"], t.name).toBe(false);
+    }
+    expect(
+      tools
+        .filter((t) => MAP_TOOLS.has(t.name))
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual([...MAP_TOOLS].sort());
   });
 });
