@@ -7,7 +7,11 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
-## [Unreleased]
+## [0.40.0] (2026-10-07)
+
+Synthra and Claude Code, checked against Claude Code 2.1.292: an honest MCP
+handshake, a way to keep the map tools in front of Claude, and a doctor that
+checks what Claude really loaded. The IDE extension needs no update.
 
 ### Added
 
