@@ -7,6 +7,27 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.40.3] (2026-10-10)
+
+### Security
+
+- **Closed the gaps a security review found in 0.40.2's git hardening.**
+  - The resume step's `git diff` took its base commit from
+    `.synthra-graph/session.json`, a file a cloned repo can ship. A value
+    like `--output=<file>` made git write a file. Only a commit id reaches
+    git now, after `--end-of-options`. This one was older than 0.40.2.
+  - Filter names are now read in git's exact machine format (`-z`), and from
+    files the repo's config includes and from its worktree config, so an odd
+    name or an `[include]` can't hide a filter. A name that can't be passed
+    safely skips git for that repo.
+  - `git status` and `git diff` skip submodules, whose own config Synthra
+    doesn't read. (A submodule's `fsmonitor` program was already blocked in
+    0.40.2.)
+  Each case has a test with a hostile repo that proves plain git runs the
+  planted program and Synthra's git doesn't.
+
+---
+
 ## [0.40.2] (2026-10-10)
 
 ### Fixed
