@@ -7,6 +7,26 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.40.1] (2026-10-09)
+
+A security fix for the hooks. Run `syn .` (or reopen the project in your editor)
+in each project to get the fixed hook scripts.
+
+### Security
+
+- **The hooks now accept a port number only.** Every hook read its server's
+  port from `.synthra-graph/mcp_port` and put that text into the URL as it
+  was. A port file holding `8081@evil.com`, for example one committed to a repo
+  you clone, made the hooks send your prompts, Bash commands and transcript
+  paths to that host, and take the primer, hints, gate decisions and Stop
+  nudges back from it. All ten hook scripts (PowerShell and bash) now exit
+  quietly unless the file holds a number from 1 to 65535, so they can only
+  reach `127.0.0.1`. A new test runs every hook against a crafted port file
+  and a local spy server: before the fix the spy's text reached Claude, now
+  nothing reaches the spy. Thanks to the report that found it.
+
+---
+
 ## [0.40.0] (2026-10-07)
 
 Synthra and Claude Code, checked against Claude Code 2.1.292: an honest MCP
