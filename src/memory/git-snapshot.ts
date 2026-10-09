@@ -1,14 +1,11 @@
 // Thin git helpers for the session snapshot: commits since a timestamp and the
 // files changed in the latest commit. Best-effort — returns empty on no git /
 // not a repo, so the snapshot (and the resume digest built from it) degrades
-// gracefully. Mirrors the execFileAsync pattern in branches.ts / git-watcher.ts.
+// gracefully. Runs git through shared/git.ts (safeGit), like branches.ts and git-watcher.ts.
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { safeGit } from "../shared/git.js";
 
 import type { SessionCommit } from "./session.js";
-
-const execFileAsync = promisify(execFile);
 
 const MAX_COMMITS = 5;
 const FIELD = "\x1f"; // unit separator — safe delimiter inside commit subjects
@@ -29,7 +26,7 @@ export async function getCommitsSince(
   if (Number.isFinite(Date.parse(sinceIso))) args.push(`--since=${sinceIso}`);
 
   try {
-    const { stdout } = await execFileAsync("git", args, { cwd: projectRoot });
+    const { stdout } = await safeGit(args, projectRoot);
     const out: SessionCommit[] = [];
     for (const line of stdout.split("\n")) {
       const t = line.trim();
@@ -47,7 +44,7 @@ export async function getCommitsSince(
  *  diff against next session for the "changed symbols" digest. */
 export async function getHeadSha(projectRoot: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: projectRoot });
+    const { stdout } = await safeGit(["rev-parse", "HEAD"], projectRoot);
     return stdout.trim();
   } catch {
     return "";
@@ -89,8 +86,7 @@ export async function getChangedLineRanges(
 ): Promise<Map<string, Array<[number, number]>>> {
   if (!sinceRef) return new Map();
   try {
-    const { stdout } = await execFileAsync("git", ["diff", "-U0", "--no-color", sinceRef, "--"], {
-      cwd: projectRoot,
+    const { stdout } = await safeGit(["diff", "-U0", "--no-color", sinceRef, "--"], projectRoot, {
       maxBuffer: 16 * 1024 * 1024,
     });
     return parseDiffHunks(stdout);
@@ -102,9 +98,7 @@ export async function getChangedLineRanges(
 /** Files changed in the latest commit (name-only). Empty on no git / shallow. */
 export async function getDiffFiles(projectRoot: string): Promise<string[]> {
   try {
-    const { stdout } = await execFileAsync("git", ["diff", "--name-only", "HEAD~1..HEAD"], {
-      cwd: projectRoot,
-    });
+    const { stdout } = await safeGit(["diff", "--name-only", "HEAD~1..HEAD"], projectRoot);
     return stdout
       .split("\n")
       .map((s) => s.trim())

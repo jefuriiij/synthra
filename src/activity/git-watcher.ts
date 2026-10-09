@@ -3,15 +3,12 @@
 // Always best-effort: in a non-git directory or when git is missing, the
 // watcher simply emits nothing.
 
-import { execFile } from "node:child_process";
 import { watch, type FSWatcher } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
+import { safeGit } from "../shared/git.js";
 import type { GitEvent } from "./activity-log.js";
-
-const execFileAsync = promisify(execFile);
 
 const POLL_MS = 2000;
 
@@ -38,9 +35,7 @@ async function readHeadBranch(projectRoot: string): Promise<string | null> {
 
 async function readStatusPorcelain(projectRoot: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
-      cwd: projectRoot,
-    });
+    const { stdout } = await safeGit(["status", "--porcelain"], projectRoot);
     return stdout;
   } catch {
     return null;

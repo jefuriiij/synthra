@@ -2,12 +2,9 @@
 // On the default branch, reads/writes go to .synthra/context-store.json.
 // On a feature branch, they go to .synthra/branches/<sanitized-branch>/context-store.json.
 
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { safeGit } from "../shared/git.js";
 
 export async function currentBranch(projectRoot: string): Promise<string> {
   // Try .git/HEAD first — avoids the subprocess cost and works for detached
@@ -24,9 +21,7 @@ export async function currentBranch(projectRoot: string): Promise<string> {
   }
 
   try {
-    const { stdout } = await execFileAsync("git", ["branch", "--show-current"], {
-      cwd: projectRoot,
-    });
+    const { stdout } = await safeGit(["branch", "--show-current"], projectRoot);
     const name = stdout.trim();
     if (name) return name;
   } catch {
@@ -38,10 +33,9 @@ export async function currentBranch(projectRoot: string): Promise<string> {
 
 export async function defaultBranch(projectRoot: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(
-      "git",
+    const { stdout } = await safeGit(
       ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
-      { cwd: projectRoot },
+      projectRoot,
     );
     const trimmed = stdout.trim();
     const match = trimmed.match(/^origin\/(.+)$/);
