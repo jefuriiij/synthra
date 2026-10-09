@@ -84,9 +84,13 @@ export async function getChangedLineRanges(
   projectRoot: string,
   sinceRef: string,
 ): Promise<Map<string, Array<[number, number]>>> {
-  if (!sinceRef) return new Map();
+  // sinceRef comes from .synthra-graph/session.json, a file a cloned repo can
+  // ship: only a commit id may reach git, or "--output=<file>" would make
+  // `git diff` write a file. --end-of-options says the same to git itself.
+  if (!/^[0-9a-f]{4,64}$/i.test(sinceRef)) return new Map();
   try {
-    const { stdout } = await safeGit(["diff", "-U0", "--no-color", sinceRef, "--"], projectRoot, {
+    const args = ["diff", "-U0", "--no-color", "--end-of-options", sinceRef, "--"];
+    const { stdout } = await safeGit(args, projectRoot, {
       maxBuffer: 16 * 1024 * 1024,
     });
     return parseDiffHunks(stdout);

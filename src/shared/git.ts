@@ -6,66 +6,83 @@
 //
 // What is switched off, per call:
 //   - core.fsmonitor (a program `git status` runs to list changed files);
-//   - clean, smudge and process filters defined in the repo's own config
-//     (filters from your global config, such as Git LFS, keep working);
+//   - clean, smudge and process filters defined in the repo's own config,
+//     including files it includes (filters from your global config, such as
+//     Git LFS, keep working);
 //   - external diff tools and textconv, for `git diff`;
+//   - submodules, whose own configs aren't read here: status and diff skip
+//     them, and nothing recurses into them;
 //   - optional index writes (GIT_OPTIONAL_LOCKS=0), so `git status` never
 //     rewrites the index and starts the post-index-change hook.
+// A repo whose filter names can't be switched off safely gets no git call at
+// all: callers already treat a failed call as "no git here".
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-/** Local filter names, per repo, re-read after a while (a repo's config can
- *  change while Synthra runs). */
+/** Local filter names, per repo, re-read after a while. */
 const FILTER_TTL_MS = 60_000;
 const filterMemo = new Map<string, { at: number; names: string[] }>();
+
+/** The filter names in `git config -z --get-regexp` output: records end in
+ *  NUL, each "key\nvalue". The key is `filter.<name>.<var>`; the name may hold
+ *  dots and spaces, so it is everything between the first and last dot. */
+export function filterNames(output: string): string[] {
+  const names = new Set<string>();
+  for (const record of output.split("\0")) {
+    const key = record.split("\n", 1)[0] ?? "";
+    if (!key.toLowerCase().startsWith("filter.")) continue;
+    const last = key.lastIndexOf(".");
+    if (last <= "filter.".length) continue;
+    names.add(key.slice("filter.".length, last));
+  }
+  return [...names];
+}
 
 async function localFilters(cwd: string): Promise<string[]> {
   const hit = filterMemo.get(cwd);
   if (hit && Date.now() - hit.at < FILTER_TTL_MS) return hit.names;
-  let names: string[] = [];
-  try {
-    // Reading config runs nothing.
-    const { stdout } = await execFileAsync(
-      "git",
-      ["config", "--local", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"],
-      { cwd },
-    );
-    names = [
-      ...new Set(
-        stdout
-          .split("\n")
-          .map((l) => /^filter\.(.+)\.(?:clean|smudge|process)\s/.exec(l)?.[1])
-          .filter((n): n is string => typeof n === "string" && n.length > 0),
-      ),
-    ];
-  } catch {
-    // Exit code 1 = no such keys; not a repo = nothing to switch off.
+  const names = new Set<string>();
+  // The repo's own config (and what it includes), and its worktree config.
+  // Reading config runs nothing.
+  for (const scope of ["--local", "--worktree"]) {
+    try {
+      const { stdout } = await execFileAsync(
+        "git",
+        ["config", scope, "--includes", "-z", "--get-regexp", "^filter\\."],
+        { cwd },
+      );
+      for (const n of filterNames(stdout)) names.add(n);
+    } catch {
+      // Exit code 1 = no such keys; no worktree config; not a repo.
+    }
   }
-  filterMemo.set(cwd, { at: Date.now(), names });
-  return names;
+  const list = [...names];
+  filterMemo.set(cwd, { at: Date.now(), names: list });
+  return list;
 }
 
 /** The `-c` options and arguments that keep a git command from running a
- *  program the repo names. Exported for the tests. */
+ *  program the repo names. Throws when a filter name can't be passed safely
+ *  as `-c filter.<name>.<var>=`. Exported for the tests. */
 export async function safeGitArgs(args: string[], cwd: string): Promise<string[]> {
-  const opts = ["-c", "core.fsmonitor=false"];
+  const opts = ["-c", "core.fsmonitor=false", "-c", "submodule.recurse=false"];
   for (const n of await localFilters(cwd)) {
-    opts.push(
-      "-c",
-      `filter.${n}.clean=`,
-      "-c",
-      `filter.${n}.smudge=`,
-      "-c",
-      `filter.${n}.process=`,
-      "-c",
-      `filter.${n}.required=false`,
-    );
+    if (/[=\n\r\0]/.test(n)) {
+      throw new Error(`git filter "${n}" can't be switched off safely; skipping git here`);
+    }
+    for (const v of ["clean", "smudge", "process"]) opts.push("-c", `filter.${n}.${v}=`);
+    opts.push("-c", `filter.${n}.required=false`);
   }
   const [sub, ...rest] = args;
-  const body = sub === "diff" ? ["diff", "--no-ext-diff", "--no-textconv", ...rest] : args;
+  const body =
+    sub === "diff"
+      ? ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", ...rest]
+      : sub === "status"
+        ? ["status", "--ignore-submodules=all", ...rest]
+        : args;
   return [...opts, ...body];
 }
 
