@@ -7,6 +7,22 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.40.4] (2026-10-10)
+
+### Security
+
+- **`git log` no longer runs a repo's signature program.** With
+  `log.showSignature` in a repository's own config, `git log` verified a
+  signed commit with the repo's `gpg.program`, and Synthra's own log format
+  did too (checked with a planted script on a commit carrying a fake
+  signature). Every git call Synthra makes now turns signature checks off, and
+  the pager. Older than 0.40.2; found by a second security review.
+- **Fail closed.** If Synthra can't read a repo's filter list for any reason
+  other than the known harmless ones, it now skips that git call instead of
+  running it with the filters on.
+
+---
+
 ## [0.40.3] (2026-10-10)
 
 ### Security
