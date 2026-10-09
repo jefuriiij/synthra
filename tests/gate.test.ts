@@ -434,3 +434,18 @@ describe("gate - test-file guard (v0.20)", () => {
     expect(res.decision).toBe("block");
   });
 });
+
+// v0.40.2 — a count ("how many matches?") is not a question the map answers,
+// so the gate lets it through. File lists stay gated: Grep's default mode, and
+// the map's best answer.
+describe("gate — counts go through (v0.40.2)", () => {
+  it("lets a counting Grep through, and still answers a file-list Grep", async () => {
+    const run = async (tool_input: Record<string, unknown>) =>
+      (await handleGate({ tool_name: "Grep", tool_input }, ctx())).decision;
+    expect(await run({ pattern: "login" })).toBe("block");
+    expect(await run({ pattern: "login", output_mode: "files_with_matches" })).toBe("block");
+    expect(await run({ pattern: "login", output_mode: "count" })).toBe("allow");
+    // grep's own flag, which Claude Code 2.1.295 accepts
+    expect(await run({ pattern: "login", "-c": true })).toBe("allow");
+  });
+});

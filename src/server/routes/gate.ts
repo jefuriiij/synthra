@@ -53,6 +53,11 @@ function extractQuery(toolName: string, input: Record<string, unknown>): string 
   return null;
 }
 
+/** Grep asked for match counts: `output_mode: "count"`, or grep's `-c`. */
+export function wantsCount(input: Record<string, unknown>): boolean {
+  return input.output_mode === "count" || input["-c"] === true || input.count === true;
+}
+
 // A recently-touched file "matches" the query if a query token appears in its
 // PATH or in its graph-node KEYWORDS (file contents). The content-keyword check
 // (#3) means a recent save of e.g. auth.ts relaxes `Grep "login"` when auth.ts
@@ -310,6 +315,20 @@ export async function handleGate(req: GateRequest, ctx: ServerContext): Promise<
   if (!query) {
     const res: GateResponse = { decision: "allow", reason: "no extractable query" };
     await logDecision(ctx, req.tool_name, null, res.decision, res.reason);
+    return res;
+  }
+
+  // Guard 0: a count ("how many matches?"). The map answers where a symbol
+  // lives, not how many lines match, so a block would hand Claude a different
+  // answer than it asked for. Claude Code 2.1.295 also accepts grep's own -c.
+  // File lists stay gated: they are Grep's default mode, and "which files
+  // have X" is the question the map answers best.
+  if (req.tool_name === "Grep" && wantsCount(input)) {
+    const res: GateResponse = {
+      decision: "allow",
+      reason: `a count of "${query}" (output_mode count), which the map can't give, letting Grep through`,
+    };
+    await logDecision(ctx, req.tool_name, query, res.decision, res.reason);
     return res;
   }
 
