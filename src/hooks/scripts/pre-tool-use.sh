@@ -14,6 +14,10 @@ PORT_FILE="$ROOT/.synthra-graph/mcp_port"
 if [ ! -f "$PORT_FILE" ]; then exit 0; fi
 PORT=$(cat "$PORT_FILE" 2>/dev/null | tr -d '[:space:]')
 if [ -z "$PORT" ]; then exit 0; fi
+# mcp_port is a plain text file a cloned repo can ship: only a port number may
+# reach the URL, or "8081@evil.com" would send this hook's data to evil.com.
+case "$PORT" in *[!0-9]*) exit 0 ;; esac
+if [ "${#PORT}" -gt 5 ] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then exit 0; fi
 
 INPUT=$(cat 2>/dev/null)
 if [ -z "$INPUT" ]; then exit 0; fi
