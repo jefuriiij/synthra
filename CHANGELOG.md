@@ -7,6 +7,38 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.40.2] (2026-10-10)
+
+### Fixed
+
+- **The dashboard's cost now uses today's prices.** The price list knew no
+  5.x model and priced every Opus at Opus 4's $15 / $75 per million tokens.
+  Opus 5.5 costs $4 / $20, so a week on Opus 5.5 read about 3.75 times too
+  high. Now: Opus 5.5 $4 / $20; Opus 4.5 to 5 $5 / $25; Sonnet 5.5 and 5
+  $2 / $10; Haiku 5.5 $0.10 / $0.50, and $0.50 / $2.50 for a request whose
+  prompt (with cache reads and writes) is over 100,000 tokens; Fable 5.1 cache
+  hits $0.25. Each model is matched by its version, and a new point release
+  takes the newest known price of its family. Source: Anthropic's pricing
+  page, 2026-10-10.
+- **The search gate lets counting searches through.** A Grep asking how many
+  lines match (`output_mode: "count"`, or grep's `-c`, which Claude Code
+  2.1.295 accepts) was answered with code-map hints instead of a count. File
+  lists stay with the map: they are Grep's default and the map's best answer.
+
+### Security
+
+- **Synthra's own git commands can't start a program a repo names.** Synthra
+  runs `git status`, `git diff`, `git log`, `git branch` and
+  `git rev-parse` in the background. A repository's own `.git/config` (for
+  example in a project you got as an archive) could make those start a program:
+  a filter, an `fsmonitor` program, an external diff tool. Tested on such a
+  repo: plain git ran three of them. Synthra now switches off `core.fsmonitor`,
+  the repo's own filters, external diff tools and textconv, and optional index
+  writes for these calls. Filters from your global git config, such as Git LFS,
+  keep working. Found through Hermes Agent v0.21.6, which fixed the same thing.
+
+---
+
 ## [0.40.1] (2026-10-09)
 
 A security fix for the hooks. Run `syn .` (or reopen the project in your editor)
