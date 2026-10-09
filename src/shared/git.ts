@@ -12,6 +12,9 @@
 //   - external diff tools and textconv, for `git diff`;
 //   - submodules, whose own configs aren't read here: status and diff skip
 //     them, and nothing recurses into them;
+//   - signature checks in `git log` (log.showSignature makes git run the
+//     repo's gpg.program on a signed commit; found by a security review);
+//   - the pager;
 //   - optional index writes (GIT_OPTIONAL_LOCKS=0), so `git status` never
 //     rewrites the index and starts the post-index-change hook.
 // A repo whose filter names can't be switched off safely gets no git call at
@@ -47,6 +50,8 @@ async function localFilters(cwd: string): Promise<string[]> {
   const names = new Set<string>();
   // The repo's own config (and what it includes), and its worktree config.
   // Reading config runs nothing.
+  // Fails closed: any failure other than the known harmless ones throws, and
+  // the caller skips git, rather than running git with filters left on.
   for (const scope of ["--local", "--worktree"]) {
     try {
       const { stdout } = await execFileAsync(
@@ -55,8 +60,17 @@ async function localFilters(cwd: string): Promise<string[]> {
         { cwd },
       );
       for (const n of filterNames(stdout)) names.add(n);
-    } catch {
-      // Exit code 1 = no such keys; no worktree config; not a repo.
+    } catch (e) {
+      const err = e as { code?: unknown; stderr?: unknown };
+      const stderr = String(err.stderr ?? "");
+      const harmless =
+        err.code === 1 || // no filter keys
+        /not a git repository|only be used inside a git repository/i.test(stderr) ||
+        (scope === "--worktree" && /worktreeConfig/i.test(stderr));
+      if (!harmless)
+        throw new Error(
+          `can't read this repo's git filters (${stderr.trim() || String(err.code)})`,
+        );
     }
   }
   const list = [...names];
@@ -68,7 +82,17 @@ async function localFilters(cwd: string): Promise<string[]> {
  *  program the repo names. Throws when a filter name can't be passed safely
  *  as `-c filter.<name>.<var>=`. Exported for the tests. */
 export async function safeGitArgs(args: string[], cwd: string): Promise<string[]> {
-  const opts = ["-c", "core.fsmonitor=false", "-c", "submodule.recurse=false"];
+  const opts = [
+    "--no-pager",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "submodule.recurse=false",
+    // `git log` checks commit signatures with the repo's gpg.program when
+    // log.showSignature is on; both can come from the repo's config.
+    "-c",
+    "log.showSignature=false",
+  ];
   for (const n of await localFilters(cwd)) {
     if (/[=\n\r\0]/.test(n)) {
       throw new Error(`git filter "${n}" can't be switched off safely; skipping git here`);
@@ -82,7 +106,9 @@ export async function safeGitArgs(args: string[], cwd: string): Promise<string[]
       ? ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", ...rest]
       : sub === "status"
         ? ["status", "--ignore-submodules=all", ...rest]
-        : args;
+        : sub === "log"
+          ? ["log", "--no-show-signature", ...rest]
+          : args;
   return [...opts, ...body];
 }
 

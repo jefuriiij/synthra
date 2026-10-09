@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { getChangedLineRanges } from "../src/memory/git-snapshot.js";
+import { getChangedLineRanges, getCommitsSince } from "../src/memory/git-snapshot.js";
 import { filterNames, safeGit, safeGitArgs } from "../src/shared/git.js";
 
 const run = promisify(execFile);
@@ -71,16 +71,24 @@ describe.runIf(hasGit)("Synthra's own git calls run no program a repo names", ()
       "--ignore-submodules=all",
       "HEAD",
     ]);
-    // A folder with no repo config: only the fsmonitor and submodule switches.
+    // A folder with no repo config: only the switches that apply everywhere.
     const plain = await mkdtemp(join(tmpdir(), "syn-plain-"));
     await mkdir(plain, { recursive: true });
     expect(await safeGitArgs(["status"], plain)).toEqual([
+      "--no-pager",
       "-c",
       "core.fsmonitor=false",
       "-c",
       "submodule.recurse=false",
+      "-c",
+      "log.showSignature=false",
       "status",
       "--ignore-submodules=all",
+    ]);
+    expect((await safeGitArgs(["log", "-1"], plain)).slice(-3)).toEqual([
+      "log",
+      "--no-show-signature",
+      "-1",
     ]);
   }, 30_000);
 });
@@ -176,6 +184,60 @@ describe.runIf(hasGit)("safe git: names, includes, submodules, and the diff base
     const target = join(repo, "written-by-git.txt");
     expect((await getChangedLineRanges(repo, `--output=${target}`)).size).toBe(0);
     await expect(stat(target)).rejects.toThrow();
+  }, 30_000);
+});
+
+// v0.40.3 — a second review: `git log` ran the repo's gpg.program on a signed
+// commit when the repo set log.showSignature, and a failure to read the
+// filters let git run with them on.
+describe.runIf(hasGit)("safe git: signatures and failures", () => {
+  it("never runs the repo's signature program from git log", async () => {
+    const { repo } = await evilRepo();
+    const g = (...a: string[]) => run("git", a, { cwd: repo });
+    // A commit carrying a (fake) signature, as a repo can ship.
+    const tree = (await g("rev-parse", "HEAD^{tree}")).stdout.trim();
+    const parent = (await g("rev-parse", "HEAD")).stdout.trim();
+    const body = [
+      `tree ${tree}`,
+      `parent ${parent}`,
+      "author t <t@t> 1700000000 +0000",
+      "committer t <t@t> 1700000000 +0000",
+      "gpgsig -----BEGIN PGP SIGNATURE-----",
+      " ",
+      " abc",
+      " -----END PGP SIGNATURE-----",
+      "",
+      "signed",
+      "",
+    ].join("\n");
+    await writeFile(join(repo, "c.txt"), body);
+    const sha = (await g("hash-object", "-t", "commit", "-w", "c.txt")).stdout.trim();
+    await g("update-ref", "HEAD", sha);
+    // The planted program: a script that leaves a marker.
+    const markers = await mkdtemp(join(tmpdir(), "syn-gpg-markers-"));
+    const script = join(markers, "..", `syn-evil-gpg-${Date.now()}`);
+    await writeFile(script, `#!/bin/sh\ntouch "${slash(markers)}/gpg"\nexit 1\n`, { mode: 0o755 });
+    await g("config", "log.showSignature", "true");
+    await g("config", "gpg.program", slash(script));
+
+    // Plain git log runs it...
+    await run("git", ["log", "--max-count=5", "--pretty=format:%h"], { cwd: repo }).catch(
+      () => undefined,
+    );
+    expect(await readdir(markers)).toEqual(["gpg"]);
+
+    // ...Synthra's doesn't, and still lists the commit.
+    const fresh = await mkdtemp(join(tmpdir(), "syn-gpg-markers-safe-"));
+    await writeFile(script, `#!/bin/sh\ntouch "${slash(fresh)}/gpg"\nexit 1\n`, { mode: 0o755 });
+    const commits = await getCommitsSince(repo, "2000-01-01T00:00:00Z");
+    expect(commits.map((c) => c.message)).toContain("signed");
+    expect(await readdir(fresh)).toEqual([]);
+  }, 30_000);
+
+  it("skips git when the repo's settings can't be read, instead of running unprotected", async () => {
+    const { repo } = await evilRepo();
+    await writeFile(join(repo, ".git", "config"), "[core\n\tthis is not a config\n");
+    await expect(safeGit(["status", "--porcelain"], repo)).rejects.toThrow();
   }, 30_000);
 });
 
