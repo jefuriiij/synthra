@@ -192,7 +192,10 @@ export async function codexCommand(opts: { remove?: boolean } = {}): Promise<voi
   log.info("  - the map tools (they run without asking; tools that write ask you first);");
   if (hooksOk) {
     log.info("  - hooks: memory at session start, token tracking, memory and skill reminders.");
-    log.info("Codex asks you to trust new hooks once: open Codex, type /hooks, and trust");
-    log.info("Synthra's three hooks. Then start a new Codex session.");
+    // Only the terminal version of Codex can trust hooks: the VS Code panel
+    // and the desktop app have no /hooks screen.
+    log.info("Codex runs new hooks only after you trust them, once. In a terminal, run");
+    log.info("`codex`, type /hooks, and trust Synthra's three hooks (the VS Code panel");
+    log.info("has no /hooks). Then start a new Codex session.");
   }
 }

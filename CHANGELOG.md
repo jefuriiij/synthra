@@ -7,6 +7,31 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.42.0] (2026-10-10)
+
+### Added
+
+- **Memory, tracking and reminders in Codex.** `syn codex` now also adds
+  three hooks to Codex's global `~/.codex/hooks.json` (other hooks there
+  stay as they are):
+  - at session start, and again after a compaction, Codex gets the project
+    memory, the notes about you and the "since you were last here" summary;
+  - shell searches like `rg` are recorded for the dashboard. Codex has no
+    Grep or Glob tool, so Synthra never blocks a search there;
+  - at the end of each turn, Synthra logs the tokens and how much of your
+    Codex limits is used, and adds the memory and skill reminders.
+
+  Run `syn codex` again to add them. Codex runs new hooks only after you
+  trust them, once: in a terminal, run `codex`, type `/hooks` and trust
+  Synthra's three (the VS Code panel has no `/hooks`). The hook commands stay
+  the same in later versions, so Codex won't ask again.
+- **Codex on the dashboard.** Codex replies, tokens and limit use show next
+  to Claude's, never as spend: a Codex plan is a flat fee, and Synthra has no
+  GPT prices.
+- **Doctor's Codex line** says whether the hooks are installed.
+
+---
+
 ## [0.41.0] (2026-10-10)
 
 ### Added

@@ -343,7 +343,7 @@ async function checkCodex(
   const hooks = await codexHooksInstalled(hooksFile);
   const hooksNote =
     hooks?.length === Object.keys(CODEX_HOOKS).length
-      ? "hooks installed (Codex asks you to trust them once, in /hooks)"
+      ? "hooks installed (trust them once: run `codex` in a terminal, then /hooks)"
       : "no hooks yet: run `syn codex` again for memory and tracking";
   if (connection) {
     const who = connection.client === "codex-mcp-client" ? "Codex" : connection.client;

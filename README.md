@@ -188,7 +188,7 @@ Fifteen tools over HTTP MCP (named `mcp__synthra__*`). Claude calls them instead
 
 Run **`syn codex`** once. Codex then starts `syn mcp` in each session, and `syn mcp` finds the project's Synthra server from the folder Codex runs in, so one setup covers every project Synthra has mapped. The tools that only read (the map, `blast_radius`, `find_symbol` and the others) run without an approval prompt; the ones that write (`memory`, `skill_manage`, `context_remember`, `graph_register_edit`) ask first. Synthra's server must be running for the project: open it in VS Code with the extension, or run `syn .`. Codex already reads the rules and knowledge in `AGENTS.md`.
 
-`syn codex` also adds three hooks to Codex's global `~/.codex/hooks.json` (other hooks there stay as they are). Codex asks you to trust new hooks once: type `/hooks` in Codex and trust Synthra's three.
+`syn codex` also adds three hooks to Codex's global `~/.codex/hooks.json` (other hooks there stay as they are). Codex runs new hooks only after you trust them, once: in a terminal, run `codex`, type `/hooks` and trust Synthra's three. The VS Code panel and the desktop app have no `/hooks` screen.
 
 | Hook | What it does in Codex |
 |---|---|
