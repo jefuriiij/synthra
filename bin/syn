@@ -1,8 +1,16 @@
 #!/usr/bin/env node
-import("../dist/cli/index.js")
-  .then((mod) => mod.main(process.argv))
-  .catch((err) => {
-    console.error("[syn] fatal:", err?.message ?? err);
-    if (err?.stack) console.error(err.stack);
-    process.exit(1);
-  });
+// `syn hook` runs on every Codex shell call, so it loads only the hook bundle,
+// and a failure stays silent: a hook must never break Codex.
+if (process.argv[2] === "hook") {
+  import("../dist/cli/hook.js")
+    .then((mod) => mod.codexHookCommand(process.argv[3] ?? ""))
+    .catch(() => process.exit(0));
+} else {
+  import("../dist/cli/index.js")
+    .then((mod) => mod.main(process.argv))
+    .catch((err) => {
+      console.error("[syn] fatal:", err?.message ?? err);
+      if (err?.stack) console.error(err.stack);
+      process.exit(1);
+    });
+}

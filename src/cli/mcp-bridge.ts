@@ -17,33 +17,17 @@
 //
 // stdout carries JSON-RPC only. Nothing else may be written there.
 
-import { stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-import { type JsonRpcResponse, listedTools, negotiateProtocol, VIA_HEADER } from "../server/mcp.js";
-import { checkOwner } from "../server/owner.js";
+import { type JsonRpcResponse, listedTools, negotiateProtocol } from "../server/mcp.js";
 import { setLevel } from "../shared/logger.js";
-import { resolvePaths } from "../shared/paths.js";
+import { findProjectRoot, liveServer, VIA_HEADER } from "./project-root.js";
+
+export { findProjectRoot };
 
 /** Long enough for a slow tool (a big blast_radius); a stuck server still
  *  gets an answer in the end. */
 const CALL_TIMEOUT_MS = 120_000;
-
-/** The nearest folder at or above `start` that Synthra has mapped. */
-export async function findProjectRoot(start: string): Promise<string | null> {
-  let dir = resolve(start);
-  for (;;) {
-    try {
-      if ((await stat(resolvePaths(dir).graphDir)).isDirectory()) return dir;
-    } catch {
-      // Not here: look one folder up.
-    }
-    const up = dirname(dir);
-    if (up === dir) return null;
-    dir = up;
-  }
-}
 
 interface Message {
   jsonrpc?: unknown;
@@ -66,14 +50,6 @@ export async function createBridge(cwd: string, version: string): Promise<Bridge
    *  can come back on the same port, so its start time counts too. */
   let greeted: string | null = null;
 
-  async function liveServer(): Promise<{ port: number; id: string } | null> {
-    if (!root) return null;
-    const owner = await checkOwner(resolvePaths(root));
-    if (owner.state !== "live") return null;
-    const { port, pid, startedAt } = owner.record;
-    return { port, id: `${port}:${pid}:${startedAt}` };
-  }
-
   async function post(port: number, msg: Message): Promise<Response> {
     return fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
@@ -86,7 +62,7 @@ export async function createBridge(cwd: string, version: string): Promise<Bridge
   /** The server's answer, null for an accepted notification, or undefined
    *  when no server for this project is running. */
   async function forward(msg: Message): Promise<JsonRpcResponse | null | undefined> {
-    const server = await liveServer();
+    const server = root ? await liveServer(root) : null;
     if (!server) return undefined;
     const { port } = server;
     if (msg.method !== "initialize" && handshake && greeted !== server.id) {

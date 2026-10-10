@@ -156,3 +156,15 @@ Response:
 ```
 
 `hint` is `""` unless `SYN_ROUTE_HINTS=1` (injection is off by default since v0.21's shadow mode). Harness pseudo-prompts (`<ide_opened_file>`, task notifications, etc.) are detected and skipped without scoring or logging — they made up the majority of hints in the first field window. When non-empty, the hook prints `hint` to stdout, which Claude Code injects as added context.
+
+### Codex hooks → `syn hook <event>` (v0.42+)
+
+`syn codex` writes three handlers into Codex's global `hooks.json` (`$CODEX_HOME/hooks.json`, else `~/.codex/hooks.json`), next to any others there: `SessionStart` → `syn hook session-start` (timeout 10 s, `additionalContextLimit` 6000), `PreToolUse` with matcher `Bash` → `syn hook pre-tool-use` (5 s), `Stop` → `syn hook stop` (30 s). Ours are the handlers whose command starts with `syn hook `; `syn codex --remove` takes only those out. The handlers stay the same across versions, because Codex asks the user to trust a hook again whenever it changes. `bin/syn` loads only `dist/cli/hook.js` for `syn hook`, and any failure exits 0 with no output.
+
+Each run reads Codex's event JSON on stdin (same shape as Claude Code's), finds the nearest mapped folder from its `cwd`, and calls the live server with the header `x-synthra-via: codex`. Calls with that header never touch `heartbeat.json`, which is the doctor's proof that Claude Code's hooks work.
+
+- `session-start`: `GET /prime`, printed as `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":<primer>}}`. Codex sends `source: "compact"` after a compaction, so this also replaces PreCompact.
+- `pre-tool-use`: `POST /gate` with `tool_name`, `tool_input` (an argument-list `command` is joined with spaces) and `session_id`. Codex's shell calls arrive as `Bash`, which the gate only observes; a `block` answer would print a `permissionDecision: "deny"`.
+- `stop`: reads Codex's session file (`transcript_path`) from the byte offset kept per session in `.synthra-graph/codex_sessions.json` (newest 50 sessions). The turn's usage is the change in the newest `event_msg`/`token_count` `total_token_usage`, logged to `POST /log` as `input_tokens` (input minus cached), `cache_read_input_tokens` (cached), `cache_creation_input_tokens`, `output_tokens`, with `agent: "codex"`, `model`, `session_id`, `tool_calls` (response items whose type ends in `_call`) and `codex_limits: { fiveHour, week }` (the percent used, from `rate_limits`). Only the first Stop to claim a stretch logs it. Then `POST /context-update` and `POST /nudge`; a nudge reason prints `{"decision":"block","reason":...}`, which makes Codex continue with that reason as the prompt. Codex's session format isn't a stable interface, so anything unexpected is skipped.
+
+`estimateCostUsd` returns 0 for `agent: "codex"` and for GPT, `o<digit>` and `codex` model names. The dashboard's cost card keeps Codex out of the spend and reports `codex: { replies, tokens, fiveHour, week, limitsAt }` instead.

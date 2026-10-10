@@ -26,6 +26,10 @@ export interface TokenLogEntry {
   project: string;
   /** Read tool calls in the reply (Stop hook 0.34+). */
   read_calls?: number;
+  /** "codex" for a turn Codex's Stop hook logged (0.42+). */
+  agent?: string;
+  /** Percent of Codex's 5-hour and weekly limits used, as Codex reported. */
+  codex_limits?: { fiveHour?: number; week?: number };
 }
 
 export interface GateLogEntry {

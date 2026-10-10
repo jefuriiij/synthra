@@ -133,6 +133,18 @@ export interface CostCard {
   /** Cost per model family. */
   models: Record<string, number>;
   priciest: { ts: string; project: string; model: string; cost: number }[];
+  /** Codex turns (v0.42), kept out of the spend: a Codex plan is a flat fee
+   *  and Synthra has no GPT prices. Limits are the newest Codex reported. */
+  codex: CodexUse;
+}
+
+export interface CodexUse {
+  replies: number;
+  tokens: number;
+  /** Percent of Codex's 5-hour and weekly limits used, newest first seen. */
+  fiveHour?: number;
+  week?: number;
+  limitsAt?: string;
 }
 
 /** One project's numbers in the window, for the All projects view. */
@@ -357,11 +369,30 @@ function family(model: string): string {
 /** Spend in the window, the one before it, models and priciest replies. */
 export function computeCost(projects: ProjectFiles[], from: number, now: number): CostCard {
   const span = now - from;
-  const cost: CostCard = { spend: 0, previous: 0, replies: 0, models: {}, priciest: [] };
+  const cost: CostCard = {
+    spend: 0,
+    previous: 0,
+    replies: 0,
+    models: {},
+    priciest: [],
+    codex: { replies: 0, tokens: 0 },
+  };
   const all: CostCard["priciest"] = [];
   for (const p of projects) {
     for (const t of p.tokens) {
       const ts = tokenTs(t);
+      if (t.agent === "codex") {
+        if (!inWindow(ts, from, now)) continue;
+        cost.codex.replies += 1;
+        cost.codex.tokens += t.input_tokens + t.output_tokens + (t.cache_read_input_tokens ?? 0);
+        const l = t.codex_limits;
+        if (l && ts && (!cost.codex.limitsAt || ts > cost.codex.limitsAt)) {
+          cost.codex.limitsAt = ts;
+          cost.codex.fiveHour = l.fiveHour;
+          cost.codex.week = l.week;
+        }
+        continue;
+      }
       const usd = estimateCostUsd(t);
       if (inWindow(ts, from, now)) {
         cost.spend += usd;

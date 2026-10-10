@@ -29,6 +29,7 @@ import { recordProject } from "../shared/project-registry.js";
 import { backupCommand, restoreCommand } from "./backup-command.js";
 import { cleanup } from "./cleanup.js";
 import { codexCommand } from "./codex-command.js";
+import { codexHookCommand } from "./codex-hook.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
 import { mcpBridgeCommand } from "./mcp-bridge.js";
@@ -278,8 +279,17 @@ export function buildProgram() {
     });
 
   prog
-    .command("codex", "Give Codex Synthra's map tools (once per machine).")
-    .option("--remove", "Take Synthra out of Codex's MCP list", false)
+    .command(
+      "hook <event>",
+      "Run one of Synthra's Codex hooks (session-start, pre-tool-use, stop). Codex runs it.",
+    )
+    .action(async (event: string) => {
+      await codexHookCommand(event);
+    });
+
+  prog
+    .command("codex", "Give Codex Synthra's map tools and hooks (once per machine).")
+    .option("--remove", "Take Synthra out of Codex", false)
     .action(async (opts: { remove?: boolean }) => {
       await codexCommand({ remove: opts.remove });
     });

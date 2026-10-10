@@ -198,10 +198,15 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     return c.json({ version, status: worstStatus(checks), checks });
   });
 
-  const beat = (hook: HookName) => noteHook(ctx.paths.heartbeat, hook, version);
+  // The heartbeat tells the doctor that Claude Code's hooks work. Codex's
+  // hooks (`syn hook`, v0.42) call the same routes with the via header and
+  // must not count: they would hide a broken Claude setup.
+  const beat = (hook: HookName, c: { req: { header(name: string): string | undefined } }) => {
+    if (!c.req.header(VIA_HEADER)) noteHook(ctx.paths.heartbeat, hook, version);
+  };
 
   app.get("/prime", async (c) => {
-    beat("start");
+    beat("start", c);
     return c.json(await handlePrime(ctx, port));
   });
 
@@ -211,7 +216,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   });
 
   app.post("/log", async (c) => {
-    beat("reply");
+    beat("reply", c);
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleLog(body, ctx));
   });
@@ -224,7 +229,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   });
 
   app.post("/gate", async (c) => {
-    beat("tools");
+    beat("tools", c);
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleGate(body, ctx));
   });
@@ -232,7 +237,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   // The Dispatcher: the UserPromptSubmit hook posts each prompt; a non-empty
   // hint is injected into the conversation as added context.
   app.post("/route", async (c) => {
-    beat("prompt");
+    beat("prompt", c);
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleRoute(body, ctx));
   });

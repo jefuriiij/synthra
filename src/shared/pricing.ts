@@ -99,10 +99,18 @@ export interface UsageRecord {
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
   model?: string;
+  /** "codex" for turns Codex's Stop hook logged (v0.42). */
+  agent?: string;
 }
+
+/** Models from other vendors, such as Codex's GPT models. Synthra has no
+ *  prices for them and a Codex plan is a flat fee, so they cost nothing here;
+ *  the fallback would have charged them as Sonnet. */
+const OTHER_VENDOR = /^(gpt|o\d|codex|chatgpt)/i;
 
 /** Approximate USD cost of a single usage record (one request). */
 export function estimateCostUsd(usage: UsageRecord): number {
+  if (usage.agent === "codex" || (usage.model && OTHER_VENDOR.test(usage.model))) return 0;
   const read = usage.cache_read_input_tokens ?? 0;
   const write = usage.cache_creation_input_tokens ?? 0;
   const id = usage.model ? parse(usage.model) : null;

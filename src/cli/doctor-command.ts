@@ -18,7 +18,13 @@ import { readHeartbeat } from "../server/heartbeat.js";
 import type { McpConnection } from "../server/mcp.js";
 import { probeHealth, sameRoot } from "../server/owner.js";
 import { claudePolicy } from "./claude-policy.js";
-import { codexConfigPath, codexEntry } from "./codex-command.js";
+import {
+  CODEX_HOOKS,
+  codexConfigPath,
+  codexEntry,
+  codexHooksInstalled,
+  codexHooksPath,
+} from "./codex-command.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
@@ -149,6 +155,8 @@ export interface DoctorCheckOptions {
   codexConnection?: McpConnection | null;
   /** Codex's config file. Tests point it elsewhere. */
   codexConfig?: string;
+  /** Codex's hooks file. Tests point it elsewhere. */
+  codexHooks?: string;
   startedAt?: string;
 }
 
@@ -308,41 +316,47 @@ async function checkConnection(
       };
 }
 
-/** Codex reaches Synthra through `syn mcp` (v0.41). No line at all without
- *  a Codex config: most people don't use Codex. */
+/** Codex reaches Synthra through `syn mcp` (v0.41) and `syn hook` (v0.42).
+ *  No line at all without a Codex config: most people don't use Codex. */
 async function checkCodex(
   connection: McpConnection | null,
   configFile: string,
+  hooksFile: string,
 ): Promise<DoctorCheck | null> {
   const label = "Codex";
-  if (connection) {
-    const who = connection.client === "codex-mcp-client" ? "Codex" : connection.client;
-    return {
-      status: "ok",
-      label,
-      detail: `${who}${connection.clientVersion ? ` ${connection.clientVersion}` : ""} uses Synthra's tools through \`syn mcp\` (last call ${ago(connection.lastSeen)})`,
-    };
-  }
   const entry = await codexEntry(configFile);
-  if (!entry) return null;
-  if (!entry.present) {
+  if (!connection && !entry) return null;
+  if (!connection && entry && !entry.present) {
     return {
       status: "ok",
       label,
-      detail: "Codex can use Synthra's map too: run `syn codex` once.",
+      detail: "Codex can use Synthra's map and hooks too: run `syn codex` once.",
     };
   }
-  if (entry.command !== undefined && entry.command !== "syn") {
+  if (entry?.command !== undefined && entry.command !== "syn") {
     return {
       status: "warn",
       label,
       detail: `Codex starts "${entry.command}" for Synthra, not \`syn mcp\`. Run \`syn codex\` to fix it.`,
     };
   }
+  const hooks = await codexHooksInstalled(hooksFile);
+  const hooksNote =
+    hooks?.length === Object.keys(CODEX_HOOKS).length
+      ? "hooks installed (Codex asks you to trust them once, in /hooks)"
+      : "no hooks yet: run `syn codex` again for memory and tracking";
+  if (connection) {
+    const who = connection.client === "codex-mcp-client" ? "Codex" : connection.client;
+    return {
+      status: "ok",
+      label,
+      detail: `${who}${connection.clientVersion ? ` ${connection.clientVersion}` : ""} uses Synthra's tools through \`syn mcp\` (last call ${ago(connection.lastSeen)}); ${hooksNote}`,
+    };
+  }
   return {
     status: "ok",
     label,
-    detail: "set up (`syn codex`); start a Codex session to use the map",
+    detail: `set up (\`syn codex\`), ${hooksNote}; start a Codex session to use the map`,
   };
 }
 
@@ -420,6 +434,7 @@ async function projectChecks(
   const codex = await checkCodex(
     opts.codexConnection ?? null,
     opts.codexConfig ?? codexConfigPath(),
+    opts.codexHooks ?? codexHooksPath(),
   );
   if (codex) checks.push(codex);
 

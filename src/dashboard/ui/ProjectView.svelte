@@ -105,6 +105,11 @@
       <div class="mt-1.5 text-[13px] text-muted-foreground">
         {fmt(c?.replies ?? 0)} replies{#if c && c.replies > 0} · {fmtCost(c.spend / c.replies)} a reply{/if}
       </div>
+      {#if c?.codex && c.codex.replies > 0}
+        <div class="mt-1 text-[13px] text-muted-foreground" title="Codex is a flat plan, so its replies aren't in the cost.">
+          Codex: {fmt(c.codex.replies)} replies · {fmt(c.codex.tokens)} tokens{#if c.codex.fiveHour !== undefined} · {Math.round(c.codex.fiveHour)}% of the 5-hour limit{/if}{#if c.codex.week !== undefined} · {Math.round(c.codex.week)}% of the week{/if}
+        </div>
+      {/if}
       {#if c && c.spend > 0}
         <div class="mb-2 mt-4 flex h-2 gap-[2px] overflow-hidden rounded-full">
           {#each models as m (m.key)}

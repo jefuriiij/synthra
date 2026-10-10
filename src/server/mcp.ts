@@ -92,8 +92,7 @@ export interface McpConnection {
  *  its own record, so a Codex session never hides Claude's from the doctor. */
 export type McpVia = "http" | "stdio";
 
-/** The header `syn mcp` sends with each message it forwards. */
-export const VIA_HEADER = "x-synthra-via";
+export { VIA_HEADER } from "../cli/project-root.js";
 
 const connections = new WeakMap<ServerContext, Partial<Record<McpVia, McpConnection>>>();
 

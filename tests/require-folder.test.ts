@@ -1,4 +1,4 @@
-// v0.41 — `syn codex` on 0.40.4 (no such command yet) made an empty `codex/`
+// v0.41: `syn codex` on 0.40.4 (no such command yet) made an empty `codex/`
 // folder and set Synthra up in it: any unknown word became a new project.
 // `syn <folder>`, scan, serve and dashboard now refuse a folder that isn't
 // there, and create nothing.

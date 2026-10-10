@@ -1,4 +1,4 @@
-// v0.41 — Codex reaches Synthra through `syn mcp`, a stdio bridge that finds
+// v0.41: Codex reaches Synthra through `syn mcp`, a stdio bridge that finds
 // the project's server from the folder Codex runs in. These check the bridge
 // with and without a server, across a restart on a new port, the read-only
 // marks Codex uses to skip its approval prompt, and the doctor's Codex line.

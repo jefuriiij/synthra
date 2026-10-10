@@ -186,7 +186,17 @@ Fifteen tools over HTTP MCP (named `mcp__synthra__*`). Claude calls them instead
 
 ### In Codex
 
-Run **`syn codex`** once. Codex then starts `syn mcp` in each session, and `syn mcp` finds the project's Synthra server from the folder Codex runs in, so one setup covers every project Synthra has mapped. The tools that only read (the map, `blast_radius`, `find_symbol` and the others) run without an approval prompt; the ones that write (`memory`, `skill_manage`, `context_remember`, `graph_register_edit`) ask first. Synthra's server must be running for the project: open it in VS Code with the extension, or run `syn .`. Codex already reads the rules and knowledge in `AGENTS.md`. Synthra's hooks (search stopping, tracking) don't run in Codex yet.
+Run **`syn codex`** once. Codex then starts `syn mcp` in each session, and `syn mcp` finds the project's Synthra server from the folder Codex runs in, so one setup covers every project Synthra has mapped. The tools that only read (the map, `blast_radius`, `find_symbol` and the others) run without an approval prompt; the ones that write (`memory`, `skill_manage`, `context_remember`, `graph_register_edit`) ask first. Synthra's server must be running for the project: open it in VS Code with the extension, or run `syn .`. Codex already reads the rules and knowledge in `AGENTS.md`.
+
+`syn codex` also adds three hooks to Codex's global `~/.codex/hooks.json` (other hooks there stay as they are). Codex asks you to trust new hooks once: type `/hooks` in Codex and trust Synthra's three.
+
+| Hook | What it does in Codex |
+|---|---|
+| `SessionStart` | Gives Codex the project memory, the notes about you and the "since you were last here" summary. Again after a compaction. |
+| `PreToolUse` (shell) | Records searches like `rg` for the dashboard. Codex has no Grep or Glob tool, so Synthra never blocks a search there. |
+| `Stop` | Logs the turn's tokens and how much of your Codex limits is used, and adds the memory and skill reminders. |
+
+The dashboard shows Codex replies, tokens and limits next to Claude's. They are never part of the spend: a Codex plan is a flat fee, and Synthra has no GPT prices.
 
 ---
 
@@ -201,9 +211,10 @@ syn . --full              # Re-parse every file, ignoring the cache.
 syn scan [path]           # Scan only: build the graph. (--full works here too)
 syn serve [path]          # Start only the MCP server.
 syn dashboard [path]      # Start only the dashboard (localhost:8901).
-syn codex                 # Give Codex Synthra's tools (once per machine).
+syn codex                 # Give Codex Synthra's tools and hooks (once per machine).
                           # --remove takes them out again.
 syn mcp                   # The tools over stdin/stdout, for Codex. Codex runs it.
+syn hook <event>          # One Codex hook. Codex runs it.
 syn doctor [path]         # Check this project's Synthra setup.
 syn doctor --report       # A redacted diagnostic to paste into a GitHub issue.
 syn remove [path]         # Take Synthra out of a project. Asks [y/N]; --yes skips it.

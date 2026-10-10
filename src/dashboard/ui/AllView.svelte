@@ -47,7 +47,9 @@
   <div class={tile + " col-span-12 sm:col-span-6 xl:col-span-3"}>
     <div class="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground/80">Replies</div>
     <div class="mt-1 font-mono text-[30px] font-medium leading-tight">{fmt(c?.replies ?? 0)}</div>
-    <div class="text-[13px] text-muted-foreground">in {busy} {busy === 1 ? "project" : "projects"}</div>
+    <div class="text-[13px] text-muted-foreground">
+      in {busy} {busy === 1 ? "project" : "projects"}{#if c?.codex && c.codex.replies > 0}<span title="Codex is a flat plan, so its replies aren't in the spend."> · plus {fmt(c.codex.replies)} in Codex{#if c.codex.fiveHour !== undefined} ({Math.round(c.codex.fiveHour)}% of its 5-hour limit){/if}</span>{/if}
+    </div>
   </div>
   <div class={tile + " col-span-12 sm:col-span-6 xl:col-span-3"}>
     <div class="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground/80">Map share</div>
