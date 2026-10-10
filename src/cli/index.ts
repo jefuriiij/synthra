@@ -33,6 +33,7 @@ import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
 import { mcpBridgeCommand } from "./mcp-bridge.js";
 import { removeCommand } from "./remove-command.js";
+import { requireFolder } from "./require-folder.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
 import { promptForUpdateOrLog, runStartupChangelogCheck } from "./self-update.js";
 import { serveCommand } from "./serve-command.js";
@@ -248,6 +249,7 @@ export function buildProgram() {
       false,
     )
     .action(async (path: string | undefined, opts: DefaultOpts) => {
+      if (!(await requireFolder(path ?? "."))) return;
       await defaultFlow(path ?? ".", opts);
     });
 
@@ -255,12 +257,14 @@ export function buildProgram() {
     .command("scan [path]", "Scan only — walk + parse + write graph.")
     .option("--full", "Re-parse every file, ignoring the incremental parse cache", false)
     .action(async (path: string | undefined, opts: { full?: boolean }) => {
+      if (!(await requireFolder(path ?? "."))) return;
       await scanCommand(path ?? ".", { full: opts.full });
     });
 
   prog
     .command("serve [path]", "Start the HTTP MCP server against a scanned project.")
     .action(async (path: string | undefined) => {
+      if (!(await requireFolder(path ?? "."))) return;
       await serveCommand(path ?? ".", { version: VERSION });
     });
 
@@ -283,6 +287,7 @@ export function buildProgram() {
   prog
     .command("dashboard [path]", "Run the token dashboard server (localhost:8901).")
     .action(async (path: string | undefined) => {
+      if (!(await requireFolder(path ?? "."))) return;
       await dashboardCommand(path ?? ".");
     });
 
