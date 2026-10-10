@@ -28,8 +28,10 @@ import { resolvePaths } from "../shared/paths.js";
 import { recordProject } from "../shared/project-registry.js";
 import { backupCommand, restoreCommand } from "./backup-command.js";
 import { cleanup } from "./cleanup.js";
+import { codexCommand } from "./codex-command.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
+import { mcpBridgeCommand } from "./mcp-bridge.js";
 import { removeCommand } from "./remove-command.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
 import { promptForUpdateOrLog, runStartupChangelogCheck } from "./self-update.js";
@@ -260,6 +262,22 @@ export function buildProgram() {
     .command("serve [path]", "Start the HTTP MCP server against a scanned project.")
     .action(async (path: string | undefined) => {
       await serveCommand(path ?? ".", { version: VERSION });
+    });
+
+  prog
+    .command(
+      "mcp",
+      "Synthra's tools over stdin/stdout, for MCP clients like Codex. Finds the project from the current folder.",
+    )
+    .action(async () => {
+      await mcpBridgeCommand(VERSION);
+    });
+
+  prog
+    .command("codex", "Give Codex Synthra's map tools (once per machine).")
+    .option("--remove", "Take Synthra out of Codex's MCP list", false)
+    .action(async (opts: { remove?: boolean }) => {
+      await codexCommand({ remove: opts.remove });
     });
 
   prog

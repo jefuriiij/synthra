@@ -18,6 +18,7 @@ import { readHeartbeat } from "../server/heartbeat.js";
 import type { McpConnection } from "../server/mcp.js";
 import { probeHealth, sameRoot } from "../server/owner.js";
 import { claudePolicy } from "./claude-policy.js";
+import { codexConfigPath, codexEntry } from "./codex-command.js";
 import { loadConfig } from "../shared/config.js";
 import { log } from "../shared/logger.js";
 import { resolvePaths } from "../shared/paths.js";
@@ -144,6 +145,10 @@ export interface DoctorCheckOptions {
   selfPort?: number;
   /** Server only: who connected to its MCP tools, and when it started. */
   connection?: McpConnection | null;
+  /** Server only: a client that came through `syn mcp` (Codex). */
+  codexConnection?: McpConnection | null;
+  /** Codex's config file. Tests point it elsewhere. */
+  codexConfig?: string;
   startedAt?: string;
 }
 
@@ -303,6 +308,44 @@ async function checkConnection(
       };
 }
 
+/** Codex reaches Synthra through `syn mcp` (v0.41). No line at all without
+ *  a Codex config: most people don't use Codex. */
+async function checkCodex(
+  connection: McpConnection | null,
+  configFile: string,
+): Promise<DoctorCheck | null> {
+  const label = "Codex";
+  if (connection) {
+    const who = connection.client === "codex-mcp-client" ? "Codex" : connection.client;
+    return {
+      status: "ok",
+      label,
+      detail: `${who}${connection.clientVersion ? ` ${connection.clientVersion}` : ""} uses Synthra's tools through \`syn mcp\` (last call ${ago(connection.lastSeen)})`,
+    };
+  }
+  const entry = await codexEntry(configFile);
+  if (!entry) return null;
+  if (!entry.present) {
+    return {
+      status: "ok",
+      label,
+      detail: "Codex can use Synthra's map too: run `syn codex` once.",
+    };
+  }
+  if (entry.command !== undefined && entry.command !== "syn") {
+    return {
+      status: "warn",
+      label,
+      detail: `Codex starts "${entry.command}" for Synthra, not \`syn mcp\`. Run \`syn codex\` to fix it.`,
+    };
+  }
+  return {
+    status: "ok",
+    label,
+    detail: "set up (`syn codex`); start a Codex session to use the map",
+  };
+}
+
 function ago(iso: string): string {
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
   return s < 90
@@ -372,6 +415,13 @@ async function projectChecks(
   if (selfPort !== undefined && opts.startedAt) {
     checks.push(await checkConnection(paths.heartbeat, opts.connection ?? null, opts.startedAt));
   }
+
+  // Codex, through `syn mcp`. Shown only to people who have Codex.
+  const codex = await checkCodex(
+    opts.codexConnection ?? null,
+    opts.codexConfig ?? codexConfigPath(),
+  );
+  if (codex) checks.push(codex);
 
   // Claude Code settings that switch hooks or MCP servers off.
   const policy = await claudePolicy(projectRoot).catch(() => []);

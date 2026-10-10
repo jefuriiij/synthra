@@ -99,6 +99,10 @@ Plus the MCP envelope methods: `initialize`, `notifications/initialized`, `tools
 
 **Tool loading (0.40+).** `tools/list` marks every tool except `graph_continue`, `graph_read` and `find_symbol` with `_meta: { "anthropic/alwaysLoad": false }`. With the setting "Keep map tools loaded" (`SYN_MAP_TOOLS_LOADED=1`), Synthra registers itself with `claude mcp add-json ... {"alwaysLoad": true}`, so those three tools stay loaded in every session and the rest stay behind tool search. Without it (the default), Claude Code defers all of Synthra's tools until Claude searches for them.
 
+**Read-only marks (0.41+).** The tools that only read carry `annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }`: `graph_continue`, `graph_read`, `context_recall`, `recent_activity`, `count_tokens`, `blast_radius`, `dead_code`, `find_symbol`, `duplicate_symbols`, `call_path`, `route_task`. Codex runs those without an approval prompt (checked on Codex 0.160). The four that write carry none.
+
+**stdio bridge for Codex (0.41+).** `syn mcp` speaks newline-delimited JSON-RPC on stdin/stdout. `syn codex` registers it in Codex's global list (`codex mcp add synthra -- syn mcp`). For each message the bridge finds the nearest folder at or above its working folder that holds `.synthra-graph`, looks up that project's live server (`checkOwner`: owner record plus `/health`), and forwards the message to `POST /mcp` with the header `x-synthra-via: stdio`. It sends the client's `initialize` again to a server instance that hasn't seen it (a restart, even on the same port). With no live server it answers `initialize`, `tools/list` and `ping` itself and returns `isError` for `tools/call`, with how to start Synthra. The server keeps one connection record per transport (`http` for Claude Code, `stdio` for the bridge); doctor shows the second as "Codex", and also when Codex's `config.toml` has no Synthra entry yet (with `syn codex` as the fix).
+
 ## Hook payloads
 
 The PreToolUse hook matches `Grep|Glob|Bash|Skill` (v0.33): a `Skill` call is observe-only — `/gate` always allows it and counts the use for the Curator when it is a skill Synthra wrote.

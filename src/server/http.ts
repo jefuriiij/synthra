@@ -28,7 +28,7 @@ import {
 } from "../learn/backup.js";
 import type { ServerContext } from "./context.js";
 import { type HookName, noteHook } from "./heartbeat.js";
-import { handleMcpRequest, mcpConnection } from "./mcp.js";
+import { handleMcpRequest, mcpConnection, VIA_HEADER } from "./mcp.js";
 import { checkOwner, claimOwnership, releaseOwnership } from "./owner.js";
 import { reserveFreePort, type PortReservation } from "./port.js";
 import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
@@ -192,6 +192,7 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
       environment: c.req.query("env") === "1",
       selfPort: port,
       connection: mcpConnection(ctx),
+      codexConnection: mcpConnection(ctx, "stdio"),
       startedAt,
     });
     return c.json({ version, status: worstStatus(checks), checks });
@@ -320,7 +321,10 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
 
   app.post("/mcp", async (c) => {
     const body = await c.req.json().catch(() => null);
-    const answer = await handleMcpRequest(body, ctx);
+    // `syn mcp` (the stdio bridge for Codex) says so, so its sessions get
+    // their own connection record.
+    const via = c.req.header(VIA_HEADER) === "stdio" ? "stdio" : "http";
+    const answer = await handleMcpRequest(body, ctx, via);
     // A notification is accepted with no body (MCP Streamable HTTP).
     return answer ? c.json(answer) : c.body(null, 202);
   });

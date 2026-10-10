@@ -87,14 +87,22 @@ export interface McpConnection {
   lastSeen: string;
 }
 
-const connections = new WeakMap<ServerContext, McpConnection>();
+/** How a client reached the tools: "http" straight to /mcp (Claude Code), or
+ *  "stdio" through `syn mcp` (Codex and other stdio-only clients). Each has
+ *  its own record, so a Codex session never hides Claude's from the doctor. */
+export type McpVia = "http" | "stdio";
 
-export function mcpConnection(ctx: ServerContext): McpConnection | null {
-  return connections.get(ctx) ?? null;
+/** The header `syn mcp` sends with each message it forwards. */
+export const VIA_HEADER = "x-synthra-via";
+
+const connections = new WeakMap<ServerContext, Partial<Record<McpVia, McpConnection>>>();
+
+export function mcpConnection(ctx: ServerContext, via: McpVia = "http"): McpConnection | null {
+  return connections.get(ctx)?.[via] ?? null;
 }
 
-function touch(ctx: ServerContext): void {
-  const c = connections.get(ctx);
+function touch(ctx: ServerContext, via: McpVia): void {
+  const c = connections.get(ctx)?.[via];
   if (c) c.lastSeen = nowIso();
 }
 
@@ -106,7 +114,10 @@ function touch(ctx: ServerContext): void {
  */
 export const MAP_TOOLS = new Set(["graph_continue", "graph_read", "find_symbol"]);
 
-function listedTools() {
+/** The tools as `tools/list` returns them. `syn mcp` answers with this
+ *  too while the project's server is down, so a client that starts first
+ *  still sees the tools. */
+export function listedTools() {
   return TOOLS.map((t) =>
     MAP_TOOLS.has(t.name) ? t : { ...t, _meta: { "anthropic/alwaysLoad": false } },
   );
@@ -160,9 +171,16 @@ function errorContent(message: string) {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
+// Tools that only read. MCP clients may run these without asking: Codex
+// runs a read-only tool with no approval prompt and asks for the rest (checked
+// on Codex 0.160). The tools that write (graph_register_edit, context_remember,
+// memory, skill_manage) carry no hint, so clients keep asking for those.
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
+
 const TOOLS = [
   {
     name: "graph_continue",
+    annotations: READ_ONLY,
     description:
       "Returns the project context most relevant to a query — function signatures, top function bodies, and linked test files. Use this BEFORE Grep/Glob. If `confidence` is 'high', do not call Grep/Glob for the same query.",
     inputSchema: {
@@ -178,6 +196,7 @@ const TOOLS = [
   },
   {
     name: "graph_read",
+    annotations: READ_ONLY,
     description:
       "Return the source code for a specific file or symbol. Target is either a project-relative file path (e.g. 'src/auth.ts') or 'file::symbol' (e.g. 'src/auth.ts::AuthService'). A symbol read also returns its dependency surface — the signatures of the symbols it calls (edit against these instead of guessing or re-reading their files) and the names of the symbols that call it.",
     inputSchema: {
@@ -341,6 +360,7 @@ const TOOLS = [
   },
   {
     name: "context_recall",
+    annotations: READ_ONLY,
     description:
       "Read previously-stored decisions/tasks/facts from the project's branch-aware context store. Defaults to the current branch.",
     inputSchema: {
@@ -358,6 +378,7 @@ const TOOLS = [
   },
   {
     name: "recent_activity",
+    annotations: READ_ONLY,
     description:
       "What has the human been doing in the editor recently — file saves, branch switches, and uncommitted-diff changes. Use this to check whether the static context pack may be stale (e.g. before answering a question about a file that was just edited).",
     inputSchema: {
@@ -374,6 +395,7 @@ const TOOLS = [
   },
   {
     name: "count_tokens",
+    annotations: READ_ONLY,
     description:
       "Estimate token count for a piece of text using a char/4 approximation. Accurate within ~10% for English + code. Useful for budgeting prompt content before sending.",
     inputSchema: {
@@ -386,6 +408,7 @@ const TOOLS = [
   },
   {
     name: "blast_radius",
+    annotations: READ_ONLY,
     description:
       "See what could break before an edit. A bare file target returns all files that depend on it transitively via imports, tests, and call edges. A 'file::symbol' target returns the exact caller SYMBOLS that transitively call it (name → file:line) plus the test files guarding the impact — the precise rename-safety view. Call edges are name-resolved (precise within a file, unique-name across files).",
     inputSchema: {
@@ -402,6 +425,7 @@ const TOOLS = [
   },
   {
     name: "dead_code",
+    annotations: READ_ONLY,
     description:
       "Return files in the project that no other file imports and no test file references — strong candidates for unused/orphaned code. File-level granularity; symbol-level dead code (unused exports, on top of the call graph) is a planned follow-up. Common entry-point patterns (main, index, app, CLI, bin/) are excluded heuristically.",
     inputSchema: {
@@ -413,6 +437,7 @@ const TOOLS = [
   },
   {
     name: "find_symbol",
+    annotations: READ_ONLY,
     description:
       "Find existing symbols by name BEFORE writing a new one — reuse beats re-implementing. Returns exact-name definitions (signatures + graph_read targets) or, if none, similarly-named symbols. 'No symbol matching … — safe to create' means it's genuinely new.",
     inputSchema: {
@@ -425,6 +450,7 @@ const TOOLS = [
   },
   {
     name: "duplicate_symbols",
+    annotations: READ_ONLY,
     description:
       "List symbol names defined in more than one file (functions/classes/types; methods excluded) — consolidation candidates for review. Advisory: duplicates may be intentional.",
     inputSchema: {
@@ -436,6 +462,7 @@ const TOOLS = [
   },
   {
     name: "call_path",
+    annotations: READ_ONLY,
     description:
       "Trace how one symbol reaches another through the call graph — the shortest chain of calls from 'from' to 'to'. Use to understand control flow ('how does this handler end up hitting the DB layer?'). Each of 'from'/'to' is a 'file::symbol' target or a bare symbol name when unique.",
     inputSchema: {
@@ -450,6 +477,7 @@ const TOOLS = [
   },
   {
     name: "route_task",
+    annotations: READ_ONLY,
     description:
       "Ask Synthra which installed subagent/skill best fits a task, and which model to run it on. Scores the task against every installed agent and skill (plus the project's language fingerprint). Use BEFORE starting a multi-step implementation task: plan on the primary model, then delegate execution to the recommended agent on a cheaper model (sonnet ≈ 5× cheaper than opus).",
     inputSchema: {
@@ -1821,6 +1849,7 @@ function nowIso(): string {
 export async function handleMcpRequest(
   body: unknown,
   ctx: ServerContext,
+  via: McpVia = "http",
 ): Promise<JsonRpcResponse | null> {
   if (!body || typeof body !== "object") {
     return err(null, ERR.invalidRequest, "Request body must be a JSON-RPC 2.0 object.");
@@ -1845,7 +1874,8 @@ export async function handleMcpRequest(
         };
         const protocol = negotiateProtocol(params.protocolVersion);
         const at = nowIso();
-        connections.set(ctx, {
+        const record = connections.get(ctx) ?? {};
+        record[via] = {
           client: typeof params.clientInfo?.name === "string" ? params.clientInfo.name : "unknown",
           ...(typeof params.clientInfo?.version === "string"
             ? { clientVersion: params.clientInfo.version }
@@ -1853,7 +1883,8 @@ export async function handleMcpRequest(
           protocol,
           at,
           lastSeen: at,
-        });
+        };
+        connections.set(ctx, record);
         return ok(id, {
           protocolVersion: protocol,
           capabilities: { tools: {} },
@@ -1862,7 +1893,7 @@ export async function handleMcpRequest(
       }
 
       case "tools/list":
-        touch(ctx);
+        touch(ctx, via);
         return ok(id, { tools: listedTools() });
 
       case "tools/call": {
@@ -1874,7 +1905,7 @@ export async function handleMcpRequest(
             ? (params.arguments as Record<string, unknown>)
             : {};
         void logToolCall(ctx, toolName);
-        touch(ctx);
+        touch(ctx, via);
         const result = await callTool(toolName, args, ctx);
         return ok(id, result);
       }

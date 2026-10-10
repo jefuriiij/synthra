@@ -184,6 +184,10 @@ Fifteen tools over HTTP MCP (named `mcp__synthra__*`). Claude calls them instead
 | `call_path(from, to, depth?)` | The shortest chain of calls from one symbol to another. |
 | `route_task(task)` | Which installed agent or skill fits a task, and which model to run it on (the Dispatcher). |
 
+### In Codex
+
+Run **`syn codex`** once. Codex then starts `syn mcp` in each session, and `syn mcp` finds the project's Synthra server from the folder Codex runs in, so one setup covers every project Synthra has mapped. The tools that only read (the map, `blast_radius`, `find_symbol` and the others) run without an approval prompt; the ones that write (`memory`, `skill_manage`, `context_remember`, `graph_register_edit`) ask first. Synthra's server must be running for the project: open it in VS Code with the extension, or run `syn .`. Codex already reads the rules and knowledge in `AGENTS.md`. Synthra's hooks (search stopping, tracking) don't run in Codex yet.
+
 ---
 
 ## Commands
@@ -197,6 +201,9 @@ syn . --full              # Re-parse every file, ignoring the cache.
 syn scan [path]           # Scan only: build the graph. (--full works here too)
 syn serve [path]          # Start only the MCP server.
 syn dashboard [path]      # Start only the dashboard (localhost:8901).
+syn codex                 # Give Codex Synthra's tools (once per machine).
+                          # --remove takes them out again.
+syn mcp                   # The tools over stdin/stdout, for Codex. Codex runs it.
 syn doctor [path]         # Check this project's Synthra setup.
 syn doctor --report       # A redacted diagnostic to paste into a GitHub issue.
 syn remove [path]         # Take Synthra out of a project. Asks [y/N]; --yes skips it.
