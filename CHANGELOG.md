@@ -7,6 +7,33 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.41.0] (2026-10-10)
+
+### Added
+
+- **Synthra's tools in Codex.** Run `syn codex` once: Codex then starts
+  `syn mcp` in each session, and `syn mcp` finds the project's Synthra server
+  from the folder Codex runs in. One setup covers every project Synthra has
+  mapped. The tools that only read (the map, `find_symbol`, `blast_radius`
+  and the others) run without an approval prompt; the ones that write
+  (memory, skills) ask first. Synthra's server must be running for the
+  project (VS Code with the extension, or `syn .`). `syn codex --remove`
+  takes it out. Search stopping and tracking don't run in Codex yet.
+- **Doctor has a Codex line.** It shows when Codex uses Synthra's tools, and
+  suggests `syn codex` when Codex is installed without it. A Codex session
+  never counts as a Claude session.
+
+### Fixed
+
+- **`syn <folder>` no longer creates a folder that isn't there.** Any word
+  Synthra didn't know as a command became a new project: `syn codex` on
+  0.40.4 made an empty `codex/` folder full of Synthra files, and a typo did
+  the same. `syn <folder>`, `syn scan`, `syn serve` and `syn dashboard` now
+  stop with a clear message. If you ran `syn codex` before updating, delete
+  the `codex` folder it made.
+
+---
+
 ## [0.40.4] (2026-10-10)
 
 ### Security
