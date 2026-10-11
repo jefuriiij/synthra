@@ -146,6 +146,29 @@ describe("which instruction files apply", () => {
     expect(docs).toEqual([{ readPath: "src/CLAUDE.md", text: "LINKED note" }]);
   });
 
+  // A security review: a cloned repo could link a CLAUDE.md, or its whole
+  // .claude folder, to a secret outside the project, and graph_read handed the
+  // secret to Claude. Claude Code asks first; Synthra skips it.
+  it("never follows a link to a file outside the project", async (t) => {
+    const outside = await mkdtemp(join(tmpdir(), "syn-rules-secret-"));
+    await write(outside, "credentials", "SECRET-KEY-123");
+    await write(outside, "rules/leak.md", rule('"**"', "SECRET-RULE-456"));
+    const root = await mkdtemp(join(tmpdir(), "syn-rules-evil-"));
+    await mkdir(join(root, "src"), { recursive: true });
+    try {
+      await symlink(join(outside, "credentials"), join(root, "src", "CLAUDE.md"), "file");
+      await mkdir(join(root, ".claude"), { recursive: true });
+      await symlink(join(outside, "rules"), join(root, ".claude", "rules"), "junction");
+    } catch {
+      t.skip(); // no symlink rights (Windows without developer mode)
+      return;
+    }
+    const home = await mkdtemp(join(tmpdir(), "syn-rules-evil-home-"));
+    const text = JSON.stringify(await instructionDocs(root, "src/a.ts", home));
+    expect(text).not.toContain("SECRET-KEY-123");
+    expect(text).not.toContain("SECRET-RULE-456");
+  });
+
   it("doesn't repeat a CLAUDE.md that is itself being read", async () => {
     const root = await mkdtemp(join(tmpdir(), "syn-rules-self-"));
     await write(root, "src/CLAUDE.md", "SRC note");

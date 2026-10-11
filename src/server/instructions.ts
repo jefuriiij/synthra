@@ -25,9 +25,9 @@
 // Any error leaves the section out: a read must never fail over it.
 
 import type { Dirent } from "node:fs";
-import { lstat, readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import ignore from "ignore";
 
 import { loadConfig } from "../shared/config.js";
@@ -174,11 +174,24 @@ export interface InstructionDoc {
 }
 
 /** A file's text when it is a small regular file. `follow` reads through a
- *  symlink: Claude Code follows a CLAUDE.md that links to AGENTS.md. */
-async function smallText(file: string, follow = false): Promise<string | null> {
+ *  symlink: Claude Code follows a CLAUDE.md that links to AGENTS.md.
+ *  `within` (a real path) keeps the file's real location inside that folder:
+ *  a cloned repo could ship `src/CLAUDE.md` linked to `~/.ssh/id_rsa`, or a
+ *  linked `.claude` folder, and its text would reach Claude. Claude Code asks
+ *  before loading a linked file from outside the project; Synthra can't ask,
+ *  so it skips it (found by a security review). */
+async function smallText(
+  file: string,
+  opts: { follow?: boolean; within?: string } = {},
+): Promise<string | null> {
   try {
-    const st = follow ? await stat(file) : await lstat(file);
+    const st = opts.follow ? await stat(file) : await lstat(file);
     if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
+    if (opts.within !== undefined) {
+      const real = pathKey(await realpath(file));
+      const base = pathKey(opts.within);
+      if (!real.startsWith(base.endsWith(sep) ? base : base + sep)) return null;
+    }
     return await readFile(file, "utf8");
   } catch {
     return null;
@@ -216,6 +229,9 @@ export async function instructionDocs(
 ): Promise<InstructionDoc[]> {
   const docs: InstructionDoc[] = [];
   const rel = relPath.replace(/\\/g, "/");
+  // The project's real location: its own files must stay inside it.
+  const realRoot = await realpath(projectRoot).catch(() => null);
+  if (realRoot === null) return docs;
   const folders = rel.split("/").slice(0, -1);
   for (let i = 1; i <= folders.length; i++) {
     const dir = folders.slice(0, i).join("/");
@@ -223,20 +239,29 @@ export async function instructionDocs(
       const readPath = `${dir}/${name}`;
       // Reading a CLAUDE.md itself: its text is already the answer.
       if (readPath === rel) continue;
-      const text = await smallText(join(projectRoot, dir, name), true);
+      const text = await smallText(join(projectRoot, dir, name), {
+        follow: true,
+        within: realRoot,
+      });
       if (text?.trim()) docs.push({ readPath, text: text.trim() });
     }
   }
   const projectRules = join(projectRoot, ".claude", "rules");
   const userRules = join(home, ".claude", "rules");
   // The same folder when the project is the home folder itself.
-  const roots: Array<[string, string]> = [[projectRules, ".claude/rules"]];
-  if (pathKey(userRules) !== pathKey(projectRules)) roots.push([userRules, "~/.claude/rules"]);
-  for (const [dir, shown] of roots) {
+  // The project's rules must really be in the project; the user's own folder
+  // is theirs (it may be a link to a dotfiles repo), as for Claude Code.
+  const roots: Array<[string, string, string | undefined]> = [
+    [projectRules, ".claude/rules", realRoot],
+  ];
+  if (pathKey(userRules) !== pathKey(projectRules)) {
+    roots.push([userRules, "~/.claude/rules", undefined]);
+  }
+  for (const [dir, shown, within] of roots) {
     // All at once: graph_read is called often, and one by one 50 rules took
     // about 29 ms a read.
     const files = await ruleFiles(dir);
-    const texts = await Promise.all(files.map((file) => smallText(join(dir, file))));
+    const texts = await Promise.all(files.map((file) => smallText(join(dir, file), { within })));
     files.forEach((file, i) => {
       const text = texts[i];
       if (!text) return;
