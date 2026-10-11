@@ -7,6 +7,25 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.43.0] (2026-10-11)
+
+### Fixed
+
+- **Claude now sees a file's rules when it reads through Synthra.** Claude
+  Code loads path rules (`.claude/rules` files with `paths:`) and the
+  `CLAUDE.md` files in a file's folders only when Claude uses its own Read,
+  Write or Edit. Synthra steers Claude to read code with `graph_read`, so
+  those rules never loaded: in a live test Claude read a file through
+  `graph_read`, saw no rules, and missed that the code broke one. `graph_read`
+  now adds a short "Rules for this file" section with the matching rules from
+  the project and from your own `~/.claude/rules`, and the `CLAUDE.md` and
+  `CLAUDE.local.md` files between the project root and the file. Patterns
+  match the way Claude Code matches them (checked live). The section stops at
+  2,000 characters and says where to read the rest; `SYN_READ_RULES_CHARS=0`
+  turns it off.
+
+---
+
 ## [0.42.0] (2026-10-10)
 
 ### Added
