@@ -7,6 +7,19 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.43.1] (2026-10-11)
+
+### Security
+
+- **The rules section in `graph_read` never follows a link out of the
+  project.** In 0.43.0, a cloned repo could ship `src/CLAUDE.md` as a link to
+  a secret outside the project (or link its `.claude` folder), and
+  `graph_read` put that file's text into Claude's context. Claude Code asks
+  before it loads such a file; Synthra now skips it. A `CLAUDE.md` that links
+  to `AGENTS.md` in the same project still works. Found by a security review.
+
+---
+
 ## [0.43.0] (2026-10-11)
 
 ### Fixed
