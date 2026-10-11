@@ -53,6 +53,7 @@ import pkgJson from "../../package.json" with { type: "json" };
 import { loadConfig } from "../shared/config.js";
 import { pathKey } from "../shared/paths.js";
 import type { ServerContext } from "./context.js";
+import { rulesFooter } from "./instructions.js";
 import { noteSkillSaved } from "./routes/nudge.js";
 import { renderRouteReport, scoreArsenal } from "./routes/route-match.js";
 import { graphExtCounts } from "./routes/route.js";
@@ -1324,8 +1325,13 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const facts = buildFactsFooter(fileNode.path, await safeRecallAll(ctx), graph);
   const factsBlock = facts ? `\n\n---\n${facts}` : "";
 
+  // Claude Code loads a file's path rules and nested CLAUDE.md on Read, not
+  // for an MCP read, so they come along here (v0.43, instructions.ts).
+  const rules = await rulesFooter(ctx.paths.projectRoot, fileNode.path, ctx.home);
+  const rulesBlock = rules ? `\n\n---\n${rules}` : "";
+
   if (!symbolName) {
-    return textContent(`# ${fileNode.path}\n\n${fileNode.content}${factsBlock}`);
+    return textContent(`# ${fileNode.path}\n\n${fileNode.content}${factsBlock}${rulesBlock}`);
   }
 
   const cleanSym = symbolName.trim();
@@ -1358,7 +1364,7 @@ async function graphRead(args: Record<string, unknown> | undefined, ctx: ServerC
   const testsBlock = tests ? `\n\n---\n${tests}` : "";
 
   return textContent(
-    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${testsBlock}${factsBlock}${editHint}`,
+    `# ${fileNode.path}::${symbol.name}  (L${symbol.start_line}-${symbol.end_line})\n\n${body}${depsBlock}${testsBlock}${factsBlock}${rulesBlock}${editHint}`,
   );
 }
 

@@ -14,6 +14,8 @@ export interface SynthraConfig {
   packBudgetTokens: number;
   gateHintMaxChars: number;
   readDepsMaxChars: number;
+  /** graph_read's "rules for this file" section, in characters; 0 turns it off. */
+  readRulesMaxChars: number;
   reindexDebounceMs: number;
   autoReindex: boolean;
   bashObserve: boolean;
@@ -65,6 +67,7 @@ export function loadConfig(): SynthraConfig {
     ),
     gateHintMaxChars: num("SYN_GATE_HINT_CHARS", 1200),
     readDepsMaxChars: num("SYN_READ_DEPS_CHARS", 900),
+    readRulesMaxChars: num("SYN_READ_RULES_CHARS", 2000),
     // Auto-reindex: re-run the incremental scan + swap the in-memory graph this
     // many ms after the last source-file change, so graph reads never go stale
     // mid-session. Set SYN_NO_AUTOREINDEX to disable entirely.

@@ -14,4 +14,7 @@ export interface ServerContext {
   /** Usage-learning runtime. Optional so test/CLI contexts can omit it; when
    *  absent, retrieval simply gets no usage boost (degrades to deterministic). */
   learn?: LearnRuntime;
+  /** The home folder whose `~/.claude/rules` graph_read checks. Tests set it;
+   *  the server uses the real one. */
+  home?: string;
 }

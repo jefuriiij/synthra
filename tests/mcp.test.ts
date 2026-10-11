@@ -93,7 +93,14 @@ describe("resolveFileTarget", () => {
 async function ctxWith(graph: GraphSchema): Promise<ServerContext> {
   const dir = await mkdtemp(join(tmpdir(), "syn-mcp-"));
   const paths = resolvePaths(dir);
-  return { paths, graph, symbolIndex: {}, activity: new ActivityStore(paths.activityLog) };
+  // home: the temp folder, so personal ~/.claude/rules never reach graph_read here.
+  return {
+    paths,
+    graph,
+    symbolIndex: {},
+    activity: new ActivityStore(paths.activityLog),
+    home: dir,
+  };
 }
 
 // Claude Code reads serverInfo from this handshake. It said "0.0.1" — a literal
