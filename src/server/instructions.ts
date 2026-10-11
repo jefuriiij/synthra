@@ -19,16 +19,19 @@
 // braces are expanded first (`*.{ts,tsx}`). `paths` can be a YAML list, an
 // inline `[...]` list or a comma-separated string.
 //
-// Limits: symlinked rules are skipped, `@imports` inside a CLAUDE.md are shown
+// Limits: symlinked rule files are skipped (a symlinked CLAUDE.md is followed,
+// as Claude Code does for one that links to AGENTS.md), `@imports` inside a CLAUDE.md are shown
 // as written, and the section is cut at `readRulesMaxChars` (0 turns it off).
 // Any error leaves the section out: a read must never fail over it.
 
-import { lstat, readdir, readFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import ignore from "ignore";
 
 import { loadConfig } from "../shared/config.js";
+import { pathKey } from "../shared/paths.js";
 
 const MAX_RULE_FILES = 200;
 const MAX_DEPTH = 6;
@@ -36,7 +39,8 @@ const MAX_FILE_BYTES = 32 * 1024;
 const MAX_PATTERNS = 256;
 const FM_MAX_LINES = 60;
 
-/** Split on commas outside braces and quotes. */
+/** Split on commas outside braces and quotes. A quote opens only at the start
+ *  of an item, so an apostrophe inside a path stays a plain character. */
 function splitTopLevel(s: string): string[] {
   const out: string[] = [];
   let depth = 0;
@@ -46,7 +50,7 @@ function splitTopLevel(s: string): string[] {
     if (quote) {
       if (ch === quote) quote = null;
       cur += ch;
-    } else if (ch === '"' || ch === "'") {
+    } else if ((ch === '"' || ch === "'") && cur.trim() === "") {
       quote = ch;
       cur += ch;
     } else if (ch === "{") {
@@ -73,33 +77,56 @@ const unquote = (s: string): string => {
     : t;
 };
 
-const items = (parts: string[]): string[] => parts.map(unquote).filter((p) => p.length > 0);
+const cleanPatterns = (parts: string[]): string[] => parts.map(unquote).filter((p) => p.length > 0);
+
+/** A YAML value without its trailing ` # comment` (a `#` inside quotes stays). */
+function dropComment(s: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i] as string;
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if ((ch === '"' || ch === "'") && s.slice(0, i).trim() === "") {
+      quote = ch;
+    } else if (ch === "#" && (i === 0 || /\s/.test(s[i - 1] as string))) {
+      return s.slice(0, i).trim();
+    }
+  }
+  return s.trim();
+}
+
+/** The items of a YAML block list (`- a` lines); comment lines are skipped. */
+function blockItems(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const l of lines) {
+    const item = /^\s*-\s+(.*)$/.exec(l);
+    if (item) out.push(dropComment(item[1] as string));
+    else if (l.trim() !== "" && !l.trim().startsWith("#")) break;
+  }
+  return out;
+}
+
+const FRONTMATTER = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/;
 
 /** A rule file's `paths` (null: none, or not readable) and its text without
- *  the frontmatter. */
+ *  the frontmatter. Not arsenal.ts's readFrontmatter: it joins a list with
+ *  ", ", which can't be split again around `{a,b}` braces. */
 export function parseRule(md: string): { paths: string[] | null; body: string } {
-  const m = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/.exec(md);
+  const m = FRONTMATTER.exec(md);
   if (!m) return { paths: null, body: md };
   const body = m[2] ?? "";
   const lines = (m[1] ?? "").split(/\r?\n/).slice(0, FM_MAX_LINES);
   const at = lines.findIndex((l) => /^paths:/.test(l));
   if (at < 0) return { paths: null, body };
-  const value = (lines[at] as string).slice("paths:".length).trim();
-  let paths: string[];
-  if (value.startsWith("[")) {
-    if (!value.endsWith("]")) return { paths: null, body };
-    paths = items(splitTopLevel(value.slice(1, -1)));
-  } else if (value === "") {
-    paths = [];
-    for (const l of lines.slice(at + 1)) {
-      const item = /^\s+-\s+(.*)$/.exec(l) ?? /^-\s+(.*)$/.exec(l);
-      if (item) paths.push(unquote((item[1] as string).replace(/\s+#.*$/, "")));
-      else if (l.trim() !== "") break;
-    }
-    paths = paths.filter((p) => p.length > 0);
-  } else {
-    paths = items(splitTopLevel(unquote(value)));
-  }
+  const value = dropComment((lines[at] as string).slice("paths:".length));
+  const raw = value.startsWith("[")
+    ? value.endsWith("]")
+      ? splitTopLevel(value.slice(1, -1))
+      : []
+    : value
+      ? splitTopLevel(unquote(value))
+      : blockItems(lines.slice(at + 1));
+  const paths = cleanPatterns(raw);
   return { paths: paths.length > 0 ? paths : null, body };
 }
 
@@ -146,9 +173,11 @@ export interface InstructionDoc {
   text: string;
 }
 
-async function smallText(file: string): Promise<string | null> {
+/** A file's text when it is a small regular file. `follow` reads through a
+ *  symlink: Claude Code follows a CLAUDE.md that links to AGENTS.md. */
+async function smallText(file: string, follow = false): Promise<string | null> {
   try {
-    const st = await lstat(file);
+    const st = follow ? await stat(file) : await lstat(file);
     if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
     return await readFile(file, "utf8");
   } catch {
@@ -161,7 +190,7 @@ async function ruleFiles(dir: string): Promise<string[]> {
   const found: string[] = [];
   const walk = async (rel: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH || found.length >= MAX_RULE_FILES) return;
-    let entries: import("node:fs").Dirent[];
+    let entries: Dirent[];
     try {
       entries = await readdir(join(dir, rel), { withFileTypes: true });
     } catch {
@@ -191,32 +220,42 @@ export async function instructionDocs(
   for (let i = 1; i <= folders.length; i++) {
     const dir = folders.slice(0, i).join("/");
     for (const name of ["CLAUDE.md", "CLAUDE.local.md"]) {
-      const text = await smallText(join(projectRoot, dir, name));
-      if (text?.trim()) docs.push({ readPath: `${dir}/${name}`, text: text.trim() });
+      const readPath = `${dir}/${name}`;
+      // Reading a CLAUDE.md itself: its text is already the answer.
+      if (readPath === rel) continue;
+      const text = await smallText(join(projectRoot, dir, name), true);
+      if (text?.trim()) docs.push({ readPath, text: text.trim() });
     }
   }
-  const roots: Array<[string, string]> = [[join(projectRoot, ".claude", "rules"), ".claude/rules"]];
+  const projectRules = join(projectRoot, ".claude", "rules");
   const userRules = join(home, ".claude", "rules");
-  if (userRules !== roots[0]?.[0]) roots.push([userRules, "~/.claude/rules"]);
+  // The same folder when the project is the home folder itself.
+  const roots: Array<[string, string]> = [[projectRules, ".claude/rules"]];
+  if (pathKey(userRules) !== pathKey(projectRules)) roots.push([userRules, "~/.claude/rules"]);
   for (const [dir, shown] of roots) {
-    for (const file of await ruleFiles(dir)) {
-      const text = await smallText(join(dir, file));
-      if (!text) continue;
+    // All at once: graph_read is called often, and one by one 50 rules took
+    // about 29 ms a read.
+    const files = await ruleFiles(dir);
+    const texts = await Promise.all(files.map((file) => smallText(join(dir, file))));
+    files.forEach((file, i) => {
+      const text = texts[i];
+      if (!text) return;
       const { paths, body } = parseRule(text);
       if (paths && body.trim() && rulePathsMatch(paths, rel)) {
         docs.push({ readPath: `${shown}/${file}`, text: body.trim() });
       }
-    }
+    });
   }
   return docs;
 }
 
 /** The section's text, cut at `max` characters of rule text. "" for none. */
+export const RULES_HEADER =
+  "📏 Rules for this file. Claude Code loads these when you Read it, but not for graph_read, so here they are:";
+
 export function buildRulesFooter(docs: InstructionDoc[], max: number): string {
   if (docs.length === 0 || max <= 0) return "";
-  const lines = [
-    "📏 Rules for this file. Claude Code loads these when you Read it, but not for graph_read, so here they are:",
-  ];
+  const lines = [RULES_HEADER];
   let left = max;
   for (const d of docs) {
     if (left <= 0) {

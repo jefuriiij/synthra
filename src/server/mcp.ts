@@ -198,7 +198,7 @@ const TOOLS = [
     name: "graph_read",
     annotations: READ_ONLY,
     description:
-      "Return the source code for a specific file or symbol. Target is either a project-relative file path (e.g. 'src/auth.ts') or 'file::symbol' (e.g. 'src/auth.ts::AuthService'). A symbol read also returns its dependency surface — the signatures of the symbols it calls (edit against these instead of guessing or re-reading their files) and the names of the symbols that call it.",
+      "Return the source code for a specific file or symbol. Target is either a project-relative file path (e.g. 'src/auth.ts') or 'file::symbol' (e.g. 'src/auth.ts::AuthService'). A symbol read also returns its dependency surface: the signatures of the symbols it calls (edit against these instead of guessing or re-reading their files) and the names of the symbols that call it. Every read also includes the CLAUDE.md files and path-scoped .claude/rules that apply to the file, which Claude Code doesn't load for this tool: follow them as you would after a Read.",
     inputSchema: {
       type: "object",
       properties: {

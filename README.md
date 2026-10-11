@@ -169,7 +169,7 @@ Fifteen tools over HTTP MCP (named `mcp__synthra__*`). Claude calls them instead
 | Tool | Purpose |
 |---|---|
 | `graph_continue(query)` | The context pack for a question: a confidence label, the files, signatures and top bodies. |
-| `graph_read(target)` | The source of `file.ts` or `file.ts::Symbol`. A symbol read also lists what it calls and who calls it. |
+| `graph_read(target)` | The source of `file.ts` or `file.ts::Symbol`. A symbol read also lists what it calls and who calls it. Every read also shows the rules that apply to the file: `.claude/rules` files whose `paths` match (yours in `~/.claude/rules` too) and the `CLAUDE.md` files in its folders. Claude Code loads those on its own Read, but not for an MCP tool. |
 | `graph_register_edit(files)` | Tells Synthra which files Claude edited, so they rank higher and nothing stale is served. |
 | `context_remember(text, kind)` | Saves a decision, task, next step, fact or blocker for this git branch, in `.synthra/`. |
 | `context_recall(kind?)` | Reads the saved notes (this branch by default). |
@@ -320,6 +320,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_SKILL_NUDGE_EVERY` | `25` | Ask Claude whether its work taught something a skill should hold after this many tool calls; `0` turns it off |
 | `SYN_CURATOR` | `1` | `0` turns the weekly Curator off ("Run now" still works) |
 | `SYN_ROUTE_HINTS` | _(unset)_ | `1` lets the Dispatcher add suggestions to the chat again |
+| `SYN_READ_RULES_CHARS` | `2000` | Size limit of the rules `graph_read` adds for a file; `0` turns them off |
 | `SYN_MAP_TOOLS_LOADED` | `0` | `1` keeps the three map tools (`graph_continue`, `graph_read`, `find_symbol`) loaded in every Claude session instead of behind tool search; takes effect when Synthra next starts |
 | `SYN_ROUTE_MIN_SCORE` | `5` | How sure the Dispatcher must be (higher is quieter) |
 | `SYN_NO_ROUTE` | _(unset)_ | `1` turns the Dispatcher off, logging included (`route_task` still works) |

@@ -4,7 +4,7 @@
 // matching cases below are the ones Claude Code itself matched in a live test.
 
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,7 @@ import {
   expandBraces,
   instructionDocs,
   parseRule,
+  RULES_HEADER,
   rulePathsMatch,
   rulesFooter,
 } from "../src/server/instructions.js";
@@ -58,6 +59,17 @@ describe("reading a rule's paths", () => {
     expect(parseRule("---\nname: x\n---\nbody").paths).toBeNull();
     expect(parseRule('---\npaths: ["a"\n---\nbody').paths).toBeNull();
     expect(parseRule("---\npaths:\n---\nbody").paths).toBeNull();
+  });
+
+  it("ignores YAML comments, and keeps apostrophes and quoted # signs", () => {
+    expect(parseRule('---\npaths: "src/**" # the API\n---\nx').paths).toEqual(["src/**"]);
+    expect(parseRule('---\npaths: ["a/**", "b/**"] # two\n---\nx').paths).toEqual(["a/**", "b/**"]);
+    expect(
+      parseRule(
+        '---\npaths:\n  # first the API\n  - "src/api/**"\n  - "docs/a #b.md" # quoted\n---\nx',
+      ).paths,
+    ).toEqual(["src/api/**", "docs/a #b.md"]);
+    expect(parseRule(rule("it's/*.ts, lib/**", "x")).paths).toEqual(["it's/*.ts", "lib/**"]);
   });
 
   it("strips the frontmatter, with CRLF and a BOM", () => {
@@ -121,6 +133,34 @@ describe("which instruction files apply", () => {
     ]);
   });
 
+  it("follows a CLAUDE.md that links elsewhere, as Claude Code does", async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "syn-rules-link-"));
+    await write(root, "src/AGENTS.md", "LINKED note");
+    try {
+      await symlink(join(root, "src", "AGENTS.md"), join(root, "src", "CLAUDE.md"), "file");
+    } catch {
+      t.skip(); // no symlink rights (Windows without developer mode)
+      return;
+    }
+    const docs = await instructionDocs(root, "src/a.ts", root);
+    expect(docs).toEqual([{ readPath: "src/CLAUDE.md", text: "LINKED note" }]);
+  });
+
+  it("doesn't repeat a CLAUDE.md that is itself being read", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-rules-self-"));
+    await write(root, "src/CLAUDE.md", "SRC note");
+    expect(await instructionDocs(root, "src/CLAUDE.md", root)).toEqual([]);
+  });
+
+  it("lists rules once when the project is the home folder, whatever the letter case", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-rules-home-same-"));
+    await write(root, ".claude/rules/a.md", rule('"**"', "A rule"));
+    const home = process.platform === "win32" ? root.toUpperCase() : root;
+    expect((await instructionDocs(root, "x.ts", home)).map((d) => d.readPath)).toEqual([
+      ".claude/rules/a.md",
+    ]);
+  });
+
   it("finds nothing, and never throws, without any of them", async () => {
     const root = await mkdtemp(join(tmpdir(), "syn-rules-none-"));
     expect(await instructionDocs(root, "a/b.ts", root)).toEqual([]);
@@ -140,7 +180,7 @@ describe("the section's text", () => {
       [{ readPath: ".claude/rules/api.md", text: "Validate input." }],
       2000,
     );
-    expect(out).toContain("Claude Code loads these when you Read it, but not for graph_read");
+    expect(out.startsWith(RULES_HEADER)).toBe(true);
     expect(out).toContain("### .claude/rules/api.md\nValidate input.");
     expect(buildRulesFooter([], 2000)).toBe("");
     expect(buildRulesFooter([{ readPath: "a", text: "b" }], 0)).toBe("");
@@ -161,7 +201,8 @@ describe("the section's text", () => {
   });
 
   it("has no em or en dashes of its own", () => {
-    expect(buildRulesFooter([{ readPath: "a", text: "b" }], 10)).not.toMatch(/[–—]/);
+    const dashes = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`);
+    expect(buildRulesFooter([{ readPath: "a", text: "b" }], 10)).not.toMatch(dashes);
   });
 });
 
@@ -246,7 +287,8 @@ describe("graph_read adds the rules", () => {
     const root = await mkdtemp(join(tmpdir(), "syn-rules-read-none-"));
     await write(root, ".claude/rules/ui.md", rule('"src/ui/**"', "UI rule"));
     const text = await read(await ctxFor(root), "src/api/orders.ts");
-    expect(text).toBe("# src/api/orders.ts\n\nexport function createOrder() {\n  return 1;\n}\n");
+    expect(text).not.toContain(RULES_HEADER);
+    expect(text).not.toContain("UI rule");
   });
 
   it("can be switched off", async () => {
