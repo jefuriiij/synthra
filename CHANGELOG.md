@@ -7,6 +7,28 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.45.0] (2026-10-15)
+
+### Added
+
+- **Checks before each commit.** Claude Code runs a skill named `verify`
+  right before each commit (2.1.286 and later). In a project with documented
+  checks and no `verify` skill yet, Synthra now offers one, once, in the
+  Learning tab, built from the project's own commands:
+  - `package.json` scripts: type check, `check`, lint and tests, in that
+    order, with the project's package manager (npm, pnpm, yarn or bun);
+  - Python: ruff, mypy and pytest from `pyproject.toml`, or `test_*.py` files
+    run with `unittest` (or pytest when a requirements file names it);
+  - Rust (`cargo check`, `cargo test`) and Go (`go vet`, `go test`);
+  - a Makefile's `check`, `lint` and `test`, when nothing else lists them.
+
+  It always waits for your OK, even with approval off, and it is never
+  offered again in that project, whatever you answer. The Curator never
+  archives it. Note: a project `verify` skill replaces Claude Code's own
+  `/verify` (which starts and drives your app) when you type it.
+
+---
+
 ## [0.44.0] (2026-10-15)
 
 ### Fixed
