@@ -185,6 +185,18 @@ describe("runCurator", () => {
     expect(again).toMatchObject({ archived: 0, proposed: 0 });
   });
 
+  // v0.45: verify runs before each commit, so a quiet project's never looks used.
+  it("never archives the verify skill", async () => {
+    const paths = await setup();
+    const p = await learned(paths, "verify", T0);
+    process.env.SYN_SKILL_APPROVAL = "0";
+    expect(await runCurator(paths, { now: T0 + 90 * DAY })).toMatchObject({
+      archived: 0,
+      stale: 0,
+    });
+    expect(await exists(p)).toBe(true);
+  });
+
   it("never touches a pinned skill", async () => {
     const paths = await setup();
     const p = await learned(paths, "keeper", T0);

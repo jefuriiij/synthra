@@ -680,7 +680,11 @@ export interface CreateInput {
   reason?: string;
 }
 
-export async function createSkill(paths: SynthraPaths, input: CreateInput): Promise<Outcome> {
+export async function createSkill(
+  paths: SynthraPaths,
+  input: CreateInput,
+  opts: Pick<SubmitOptions, "mustWait"> = {},
+): Promise<Outcome> {
   const draft: SkillDraft = {
     name: input.name,
     description: input.description.trim(),
@@ -705,18 +709,22 @@ export async function createSkill(paths: SynthraPaths, input: CreateInput): Prom
       error: `A new skill named "${input.name}" is already waiting for the user's OK. Don't propose it twice.`,
     };
   }
-  return submit(paths, {
-    id: newId(),
-    ts: new Date().toISOString(),
-    action: "create",
-    scope: input.scope,
-    name: input.name,
-    path,
-    project: paths.projectRoot,
-    before: null,
-    after: renderSkill(draft),
-    ...(input.reason ? { reason: input.reason } : {}),
-  });
+  return submit(
+    paths,
+    {
+      id: newId(),
+      ts: new Date().toISOString(),
+      action: "create",
+      scope: input.scope,
+      name: input.name,
+      path,
+      project: paths.projectRoot,
+      before: null,
+      after: renderSkill(draft),
+      ...(input.reason ? { reason: input.reason } : {}),
+    },
+    opts,
+  );
 }
 
 /** What a change is: to SKILL.md in part (patch) or whole (edit), or to a

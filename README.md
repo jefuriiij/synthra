@@ -67,6 +67,7 @@ Ran it in the wrong folder? `syn remove` takes everything out again (see [Comman
 - **You decide.** A new or changed skill waits in the extension's **Learning** tab. See the change, then Approve or Reject. A merge comes as one card with Approve all.
 - **A gentle reminder.** After a long stretch of work (25 tool calls), Synthra asks Claude whether the work taught something a skill should hold. "No skill to save" is a normal answer.
 - **The Curator** keeps skills tidy. Once a week it marks skills Synthra wrote that nobody used for 14 days, and offers to archive the ones unused for 30. Nothing is deleted: add a skill to your favorites to keep it, or restore it any time.
+- **Checks before each commit.** Claude Code runs a skill named `verify` right before each commit (2.1.286+). In a project with documented checks and no `verify` skill yet, Synthra offers one, once: built from its `package.json` scripts (type check, `check`, lint, tests, in that order, with your package manager), its Python, Rust or Go tools, or its Makefile. It waits in the Learning tab for your OK even when approval is off, and the Curator never archives it. A `verify` skill replaces Claude Code's own `/verify` (which starts and drives your app) when you type it.
 
 ### Claude writes safer code
 

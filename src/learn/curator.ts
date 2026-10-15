@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { loadConfig } from "../shared/config.js";
 import { type SynthraPaths, sameRoot } from "../shared/paths.js";
 import { log } from "../shared/logger.js";
+import { VERIFY_SKILL } from "./verify-skill.js";
 import {
   type Outcome,
   type SkillInfo,
@@ -282,7 +283,9 @@ async function runOnce(paths: SynthraPaths, opts: RunOptions): Promise<CuratorRu
   };
 
   for (const a of ages) {
-    if (a.pinned) continue;
+    // A `verify` skill runs before each commit, not through the Skill tool every
+    // week: a project committed to rarely would look unused (v0.45).
+    if (a.pinned || a.skill.name === VERIFY_SKILL) continue;
     if (a.daysUnused >= ARCHIVE_DAYS) {
       if (waiting.has(a.skill.path)) continue;
       const text = await readFile(a.skill.path, "utf8").catch(() => null);

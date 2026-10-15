@@ -14,6 +14,7 @@ import { checkLocalJsonPost } from "../dashboard/origin-guard.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import { runCurator } from "../learn/curator.js";
+import { offerVerifySkill } from "../learn/verify-skill.js";
 import { LearnRuntime } from "../learn/runtime.js";
 import { loadConfig } from "../shared/config.js";
 import { forbiddenHostMessage, isAllowedHost } from "../shared/host-guard.js";
@@ -344,6 +345,8 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
 
 /** The Curator's first look after start, then how often it checks again. */
 const CURATOR_FIRST_MS = 60_000;
+/** When the one-time `verify` skill offer runs after start. */
+const VERIFY_OFFER_MS = 45_000;
 const CURATOR_EVERY_MS = 6 * 60 * 60 * 1000;
 
 /** How many ports to try when another server wins the race for the one we
@@ -495,6 +498,13 @@ export async function startServer(
       log.warn(`curator: ${err instanceof Error ? err.message : String(err)}`),
     );
   const curatorFirst = setTimeout(curate, CURATOR_FIRST_MS);
+  // The `verify` skill: offered once per project, off the startup path.
+  const verifyOffer = setTimeout(() => {
+    void offerVerifySkill(paths).then((r) => {
+      if (r === "offered") log.info("verify skill proposed: it waits in the Learning tab");
+    });
+  }, VERIFY_OFFER_MS);
+  verifyOffer.unref();
   const curatorEvery = setInterval(curate, CURATOR_EVERY_MS);
   curatorFirst.unref();
   curatorEvery.unref();
@@ -506,6 +516,7 @@ export async function startServer(
     url,
     async stop() {
       clearTimeout(curatorFirst);
+      clearTimeout(verifyOffer);
       clearInterval(curatorEvery);
       reindexer?.stop();
       await fileWatcher.stop().catch(() => undefined);
