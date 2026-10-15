@@ -98,10 +98,19 @@ export interface UsageRecord {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  /** The part of cache_creation_input_tokens written to the 1-hour cache
+   *  (Stop hook 0.44+). Older entries lack it and count at the 5-minute rate. */
+  cache_creation_1h_input_tokens?: number;
   model?: string;
   /** "codex" for turns Codex's Stop hook logged (v0.42). */
   agent?: string;
 }
+
+/** A 1-hour cache write costs 2x the base input price for every model; the
+ *  5-minute one 1.25x (pricing page, checked 2026-10-15). Claude Code writes
+ *  its caches for 1 hour, so pricing them all at 5 minutes read write cost
+ *  about 37% low. */
+const CACHE_1H_FACTOR = 2;
 
 /** Models from other vendors, such as Codex's GPT models. Synthra has no
  *  prices for them and a Codex plan is a flat fee, so they cost nothing here;
@@ -119,10 +128,12 @@ export function estimateCostUsd(usage: UsageRecord): number {
     id.version === "5.5" &&
     usage.input_tokens + read + write > HAIKU_5_5_TIER_TOKENS;
   const price = long ? HAIKU_5_5_LONG : pricingFor(usage.model);
+  const write1h = Math.min(write, Math.max(0, usage.cache_creation_1h_input_tokens ?? 0));
   return (
     (usage.input_tokens / 1_000_000) * price.input +
     (usage.output_tokens / 1_000_000) * price.output +
     (read / 1_000_000) * price.cacheRead +
-    (write / 1_000_000) * price.cacheCreate
+    ((write - write1h) / 1_000_000) * price.cacheCreate +
+    (write1h / 1_000_000) * price.input * CACHE_1H_FACTOR
   );
 }

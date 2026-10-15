@@ -21,6 +21,8 @@ export interface TokenLogEntry {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  /** Of the cache writes, those kept for 1 hour (Stop hook 0.44+). */
+  cache_creation_1h_input_tokens?: number;
   model: string;
   description?: string;
   project: string;

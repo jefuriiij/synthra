@@ -133,11 +133,14 @@ The hook reads `$hookInput.transcript_path`, parses recent assistant turns out o
   "output_tokens": 4870,
   "cache_creation_input_tokens": 53177,
   "cache_read_input_tokens": 454496,
+  "cache_creation_1h_input_tokens": 53177,
   "model": "claude-sonnet-4-6",
   "description": "auto",
   "project": "C:\\Users\\Jeff\\..."
 }
 ```
+
+`cache_creation_1h_input_tokens` (0.44+) is the part of the cache writes kept for 1 hour, summed from `usage.cache_creation.ephemeral_1h_input_tokens`. The dashboard prices those at 2x the input price and the rest at the 5-minute rate (1.25x); entries without the field count at the 5-minute rate.
 
 Uses an offset file (`<transcript>.stopoffset`) to avoid double-counting on resume.
 

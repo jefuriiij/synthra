@@ -104,4 +104,21 @@ describe("estimateCostUsd", () => {
       }),
     ).toBeCloseTo(24, 5);
   });
+
+  // v0.44: Claude Code writes its caches for 1 hour, which costs 2x input, and
+  // Synthra priced every write at the 5-minute 1.25x (pricing page 2026-10-15).
+  it("prices 1-hour cache writes at 2x input, the rest at the 5-minute rate", () => {
+    const write = (oneHour?: number) =>
+      estimateCostUsd({
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_input_tokens: 1_000_000,
+        ...(oneHour === undefined ? {} : { cache_creation_1h_input_tokens: oneHour }),
+        model: "claude-opus-5-5",
+      });
+    expect(write()).toBeCloseTo(5, 5); // older entries: 5-minute rate
+    expect(write(1_000_000)).toBeCloseTo(8, 5); // Opus 5.5 1-hour write
+    expect(write(400_000)).toBeCloseTo(0.6 * 5 + 0.4 * 8, 5);
+    expect(write(9_000_000)).toBeCloseTo(8, 5); // never more than the writes
+  });
 });

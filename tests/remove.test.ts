@@ -71,6 +71,23 @@ describe("removeSynthra — full removal (the accidental `syn .` case)", () => {
     expect(result.kept).toEqual([]);
   });
 
+  // v0.44: an interrupted atomic write left `synthra-pre-tool-use.ps1.6552.10.tmp`
+  // behind in a real project, and `syn remove` kept it.
+  it("removes temp copies of its hook scripts, and nothing else in the folder", async () => {
+    const root = await tmpProject();
+    const paths = resolvePaths(root);
+    await seedHooks(paths);
+    const leftover = join(paths.claudeHooksDir, "synthra-pre-tool-use.ps1.6552.10.tmp");
+    const mine = join(paths.claudeHooksDir, "my-own-hook.ps1.1.1.tmp");
+    await writeFile(leftover, "x", "utf8");
+    await writeFile(mine, "x", "utf8");
+
+    await removeSynthra(root);
+
+    expect(await exists(leftover)).toBe(false);
+    expect(await exists(mine)).toBe(true);
+  });
+
   it("is a safe no-op on a project without Synthra", async () => {
     const root = await tmpProject();
     await writeFile(join(root, "app.ts"), "export {};\n", "utf8");

@@ -40,7 +40,7 @@ if (Test-Path $offsetFile) {
 $sessionId = [IO.Path]::GetFileNameWithoutExtension($transcript)
 
 $lines = Get-Content -Path $transcript
-$inT = 0; $outT = 0; $cc = 0; $cr = 0; $model = ""
+$inT = 0; $outT = 0; $cc = 0; $cr = 0; $c1h = 0; $model = ""
 $delegations = New-Object System.Collections.ArrayList
 $toolCalls = 0
 $readCalls = 0
@@ -75,6 +75,8 @@ foreach ($line in $lines) {
     $outT += [int]($usage.output_tokens              | ForEach-Object { if ($_) { $_ } else { 0 } })
     $cc   += [int]($usage.cache_creation_input_tokens | ForEach-Object { if ($_) { $_ } else { 0 } })
     $cr   += [int]($usage.cache_read_input_tokens     | ForEach-Object { if ($_) { $_ } else { 0 } })
+    # The part of the cache writes kept for 1 hour, which costs 2x input, not 1.25x (v0.44).
+    $c1h  += [int]($usage.cache_creation.ephemeral_1h_input_tokens | ForEach-Object { if ($_) { $_ } else { 0 } })
     if ($e.message.model) { $model = $e.message.model }
 }
 
@@ -87,6 +89,7 @@ $payloadMap = @{
     output_tokens               = $outT
     cache_creation_input_tokens = $cc
     cache_read_input_tokens     = $cr
+    cache_creation_1h_input_tokens = $c1h
     model                       = $model
     description                 = "synthra-stop-hook"
     project                     = $root

@@ -166,6 +166,21 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
       }
     }
   }
+  // Temp copies an interrupted atomic write left behind
+  // (`synthra-pre-tool-use.ps1.6552.10.tmp`): ours by name, so they go too.
+  try {
+    for (const name of await readdir(paths.claudeHooksDir)) {
+      const leftover = HOOK_BASENAMES.some(
+        (base) => name.startsWith(`${base}.ps1.`) || name.startsWith(`${base}.sh.`),
+      );
+      if (leftover && name.endsWith(".tmp")) {
+        await unlink(join(paths.claudeHooksDir, name));
+        hooksRemoved += 1;
+      }
+    }
+  } catch {
+    // no hooks folder
+  }
   if (hooksRemoved > 0) {
     result.removed.push(`.claude/hooks/synthra-* (${hooksRemoved} script(s))`);
     try {

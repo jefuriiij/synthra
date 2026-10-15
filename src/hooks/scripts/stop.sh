@@ -51,11 +51,12 @@ USAGE=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
   | jq -s '
       map(select(.message.usage != null) | .message)
       | reduce .[] as $m (
-          {in:0, out:0, cc:0, cr:0, model:""};
+          {in:0, out:0, cc:0, cr:0, c1h:0, model:""};
           .in    += ($m.usage.input_tokens // 0)
           | .out += ($m.usage.output_tokens // 0)
           | .cc  += ($m.usage.cache_creation_input_tokens // 0)
           | .cr  += ($m.usage.cache_read_input_tokens // 0)
+          | .c1h += ($m.usage.cache_creation.ephemeral_1h_input_tokens // 0)
           | .model = ($m.model // .model)
         )
     ' 2>/dev/null)
@@ -94,13 +95,15 @@ IN=$(printf '%s' "$USAGE" | jq -r '.in // 0')
 OUT=$(printf '%s' "$USAGE" | jq -r '.out // 0')
 CC=$(printf '%s' "$USAGE" | jq -r '.cc // 0')
 CR=$(printf '%s' "$USAGE" | jq -r '.cr // 0')
+# The part of the cache writes kept for 1 hour, which costs 2x input, not 1.25x (v0.44).
+C1H=$(printf '%s' "$USAGE" | jq -r '.c1h // 0')
 MODEL=$(printf '%s' "$USAGE" | jq -r '.model // ""')
 
 if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then exit 0; fi
 
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --arg m "$MODEL" --arg p "$ROOT" --argjson d "$DELEG" --argjson rc "$READS" \
-    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc}
+  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --argjson c1h "$C1H" --arg m "$MODEL" --arg p "$ROOT" --argjson d "$DELEG" --argjson rc "$READS" \
+    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, cache_creation_1h_input_tokens:$c1h, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc}
      + (if ($d | length) > 0 then {delegations:$d} else {} end)')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 

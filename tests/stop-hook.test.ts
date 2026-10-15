@@ -35,6 +35,9 @@ describe("stop hook delegation scan — script parity", () => {
     expect(sh).toContain('{decision:"block", reason:$r}');
     expect(sh).toContain("delegations:$d");
     expect(sh).toContain("session_id");
+    // v0.44: the 1-hour cache writes, as stop.ps1 sends them.
+    expect(sh).toContain(".c1h += ($m.usage.cache_creation.ephemeral_1h_input_tokens // 0)");
+    expect(sh).toContain("cache_creation_1h_input_tokens:$c1h");
   });
 });
 
@@ -91,7 +94,12 @@ async function runStopHook(
     timestamp: "2026-07-15T10:00:00.000Z",
     message: {
       model: "claude-fable-5",
-      usage: { input_tokens: 5, output_tokens: 7 },
+      usage: {
+        input_tokens: 5,
+        output_tokens: 7,
+        cache_creation_input_tokens: 30,
+        cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 20 },
+      },
       content: [
         { type: "text", text: "delegating" },
         { type: "tool_use", name: "Read", input: { file_path: "src/app.ts" } },
@@ -164,6 +172,11 @@ function expectUsageAndDelegation({ bodies }: HookRun): void {
   };
   expect(log.input_tokens).toBe(5);
   expect(log.output_tokens).toBe(7);
+  // v0.44: the 1-hour part of the cache writes, priced at 2x input.
+  expect((log as { cache_creation_input_tokens?: number }).cache_creation_input_tokens).toBe(30);
+  expect((log as { cache_creation_1h_input_tokens?: number }).cache_creation_1h_input_tokens).toBe(
+    20,
+  );
   expect(log.read_calls).toBe(1);
   // PS 5.1 may collapse a single-element array to an object — accept both.
   const dl = Array.isArray(log.delegations) ? log.delegations : [log.delegations];
