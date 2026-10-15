@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.44.0] (2026-10-15)
+
+### Fixed
+
+- **The dashboard's cost counts 1-hour cache writes right.** Claude Code
+  keeps its prompt cache for 1 hour, and a 1-hour cache write costs 2 times
+  the input price (Opus 5.5: $8 per million). Synthra priced every cache
+  write at the 5-minute rate (1.25 times, $5), so cost read low: on a real
+  session, $448 before and $513 now (14% more). The Stop hook now passes the
+  1-hour part of the writes, which the transcript already records. Replies
+  logged before this version keep the old rate. Run **Synthra: Restart** (or
+  `syn .`) so each project gets the new hook.
+- **`syn remove` also deletes temp copies of its hook scripts** that an
+  interrupted write left in `.claude/hooks`, such as
+  `synthra-pre-tool-use.ps1.6552.10.tmp`. Other files there stay.
+
+---
+
 ## [0.43.1] (2026-10-11)
 
 ### Security
