@@ -8,6 +8,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { ServerContext } from "../context.js";
+import { newSubagentUsage } from "./subagent-usage.js";
 
 /** One subagent dispatch the Stop hook found in the transcript. */
 export interface DelegationEvent {
@@ -38,6 +39,12 @@ export interface LogEntry {
   delegations?: DelegationEvent[];
   /** v0.34+: Read tool calls in the reply (whole-file reads). */
   read_calls?: number;
+  /** v0.46+: the main transcript, so the session's subagent transcripts next
+   *  to it can be counted too (not stored). */
+  transcript_path?: string;
+  /** Set on entries logged from a subagent's transcript: its agent id. They
+   *  count as cost, never as replies. */
+  subagent?: string;
 }
 
 export interface LogResponse {
@@ -51,7 +58,7 @@ export async function handleLog(entry: LogEntry, ctx: ServerContext): Promise<Lo
   }
 
   const written_at = new Date().toISOString();
-  const { delegations, ...tokenEntry } = entry;
+  const { delegations, transcript_path, ...tokenEntry } = entry;
   await mkdir(dirname(ctx.paths.tokenLog), { recursive: true });
 
   // PowerShell 5.1's ConvertTo-Json collapses a single-element array into a
@@ -66,6 +73,23 @@ export async function handleLog(entry: LogEntry, ctx: ServerContext): Promise<Lo
   if (entry.input_tokens > 0 || entry.output_tokens > 0) {
     const record = { ...tokenEntry, written_at };
     await appendFile(ctx.paths.tokenLog, JSON.stringify(record) + "\n", "utf8");
+  }
+
+  // What the session's subagents used since the last Stop: their own files.
+  const subs = await newSubagentUsage(ctx, transcript_path).catch(() => []);
+  if (subs.length > 0) {
+    const lines = subs
+      .map((u) =>
+        JSON.stringify({
+          ...u,
+          description: "synthra-subagent",
+          project: entry.project,
+          written_at,
+        }),
+      )
+      .map((l) => `${l}\n`)
+      .join("");
+    await appendFile(ctx.paths.tokenLog, lines, "utf8");
   }
 
   if (events.length > 0) {

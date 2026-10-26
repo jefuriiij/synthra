@@ -38,6 +38,10 @@ describe("stop hook delegation scan — script parity", () => {
     // v0.44: the 1-hour cache writes, as stop.ps1 sends them.
     expect(sh).toContain(".c1h += ($m.usage.cache_creation.ephemeral_1h_input_tokens // 0)");
     expect(sh).toContain("cache_creation_1h_input_tokens:$c1h");
+    // v0.46: the transcript path for subagent cost, and one bad line no longer
+    // drops the whole reply.
+    expect(sh).toContain("transcript_path:$t");
+    expect(sh).toContain("jq -cR 'fromjson? // empty'");
   });
 });
 
@@ -172,6 +176,8 @@ function expectUsageAndDelegation({ bodies }: HookRun): void {
   };
   expect(log.input_tokens).toBe(5);
   expect(log.output_tokens).toBe(7);
+  // v0.46: the transcript path, so the server counts subagents too.
+  expect((log as { transcript_path?: string }).transcript_path).toMatch(/sess-1234.jsonl$/);
   // v0.44: the 1-hour part of the cache writes, priced at 2x input.
   expect((log as { cache_creation_input_tokens?: number }).cache_creation_input_tokens).toBe(30);
   expect((log as { cache_creation_1h_input_tokens?: number }).cache_creation_1h_input_tokens).toBe(

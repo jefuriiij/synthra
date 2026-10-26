@@ -30,6 +30,9 @@ export interface TokenLogEntry {
   read_calls?: number;
   /** "codex" for a turn Codex's Stop hook logged (0.42+). */
   agent?: string;
+  /** A subagent's usage, logged from its own transcript (0.46+): its agent id.
+   *  Cost, not a turn. */
+  subagent?: string;
   /** Percent of Codex's 5-hour and weekly limits used, as Codex reported. */
   codex_limits?: { fiveHour?: number; week?: number };
 }
@@ -367,7 +370,7 @@ function summarize(p: ProjectFiles): ProjectStats {
     path: p.path,
     name: p.name,
     last_seen: p.last_seen,
-    total_turns: p.tokens.length,
+    total_turns: p.tokens.filter((t) => !t.subagent).length,
     total_input_tokens: totalIn,
     total_output_tokens: totalOut,
     total_cache_read: totalCacheRead,

@@ -93,6 +93,8 @@ $payloadMap = @{
     model                       = $model
     description                 = "synthra-stop-hook"
     project                     = $root
+    # So the server can count this session's subagent transcripts too (v0.46).
+    transcript_path             = $transcript
     read_calls                  = $readCalls
 }
 if ($delegations.Count -gt 0) { $payloadMap.delegations = $delegations }

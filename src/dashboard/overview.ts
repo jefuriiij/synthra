@@ -396,10 +396,13 @@ export function computeCost(projects: ProjectFiles[], from: number, now: number)
       const usd = estimateCostUsd(t);
       if (inWindow(ts, from, now)) {
         cost.spend += usd;
-        cost.replies += 1;
         const fam = family(t.model ?? "");
         cost.models[fam] = (cost.models[fam] ?? 0) + usd;
-        all.push({ ts: ts as string, project: p.name, model: t.model ?? "", cost: usd });
+        // A subagent's work (v0.46) is cost, not a reply of its own.
+        if (!t.subagent) {
+          cost.replies += 1;
+          all.push({ ts: ts as string, project: p.name, model: t.model ?? "", cost: usd });
+        }
       } else if (inWindow(ts, from - span, from)) {
         cost.previous += usd;
       }

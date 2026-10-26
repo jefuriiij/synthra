@@ -121,7 +121,7 @@ Response:
 { "decision": "block" | "allow", "reason": "..." }
 ```
 
-If `block`, the hook script exits 2 with the reason on stderr; Claude treats exit 2 as a denial.
+If `block`, the hook prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"..."}}` and exits 0; Claude Code reads that JSON as the denial. Any failure (no server, a bad port file) also exits 0 with no output, so the tool call goes ahead.
 
 ### Stop → POST `/log`
 
@@ -143,6 +143,8 @@ The hook reads `$hookInput.transcript_path`, parses recent assistant turns out o
 `cache_creation_1h_input_tokens` (0.44+) is the part of the cache writes kept for 1 hour, summed from `usage.cache_creation.ephemeral_1h_input_tokens`. The dashboard prices those at 2x the input price and the rest at the 5-minute rate (1.25x); entries without the field count at the 5-minute rate.
 
 Uses an offset file (`<transcript>.stopoffset`) to avoid double-counting on resume.
+
+**Subagents (0.46+).** The payload also carries `transcript_path` (never stored). The server then reads the session's subagent transcripts, `<transcript dir>/<session id>/subagents/agent-<id>.jsonl`, from a byte offset kept per file in `.synthra-graph/subagent_offsets.json` (newest 500 files), and appends one token entry per file and model with `subagent: "<id>"` and `description: "synthra-subagent"`. The dashboard counts those as cost, never as replies. Before Claude Code 2.1.307, streamed subagent replies recorded placeholder usage, so older numbers can be off. `stop.sh` parses lines one by one (`jq -cR 'fromjson? // empty'`), so a line that isn't JSON is skipped instead of losing the turn.
 
 After `/log` and `/context-update`, the hook POSTs `{ "stop_hook_active": <bool>, "tool_calls": <n> }` to `/nudge` (v0.33) — `tool_calls` counts the `tool_use` blocks since the last Stop, for the skill nudge. When the answer has a `reason`, the hook prints `{"decision":"block","reason":"…"}` and exits 0 — Claude Code then keeps Claude for one more step and hands it the reason.
 

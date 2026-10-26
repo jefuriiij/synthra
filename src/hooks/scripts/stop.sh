@@ -47,7 +47,12 @@ if [ "$TOTAL_LINES" -le "$START_OFFSET" ]; then exit 0; fi
 
 SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 
-USAGE=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+# The new lines, parsed one by one: a line that isn't JSON is dropped, not the
+# whole reply. Before v0.46 one bad line (Claude Code 2.1.309 fixed previews
+# cut through an emoji) made `jq -s` fail and the turn was never logged.
+NEW_LINES=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null | jq -cR 'fromjson? // empty' 2>/dev/null)
+
+USAGE=$(printf '%s\n' "$NEW_LINES" \
   | jq -s '
       map(select(.message.usage != null) | .message)
       | reduce .[] as $m (
@@ -62,7 +67,7 @@ USAGE=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
     ' 2>/dev/null)
 
 # Subagent delegations in the same window: Task/Agent tool_use content blocks.
-DELEG=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+DELEG=$(printf '%s\n' "$NEW_LINES" \
   | jq -c --arg s "$SESSION_ID" '
       . as $e
       | ($e.message.content // [])
@@ -77,12 +82,12 @@ DELEG=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
 DELEG=${DELEG:-[]}
 
 # Tool calls in this window, for the skill nudge (v0.33): every tool_use block.
-TOOLS=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+TOOLS=$(printf '%s\n' "$NEW_LINES" \
   | jq -c '(.message.content // []) | if type == "array" then .[] else empty end | select(.type == "tool_use") | 1' 2>/dev/null \
   | wc -l | tr -d ' ')
 case "$TOOLS" in ''|*[!0-9]*) TOOLS=0 ;; esac
 # Whole-file reads in this window, for the dashboard's "how Claude found code".
-READS=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null \
+READS=$(printf '%s\n' "$NEW_LINES" \
   | jq -c '(.message.content // []) | if type == "array" then .[] else empty end | select(.type == "tool_use" and .name == "Read") | 1' 2>/dev/null \
   | wc -l | tr -d ' ')
 case "$READS" in ''|*[!0-9]*) READS=0 ;; esac
@@ -102,8 +107,8 @@ MODEL=$(printf '%s' "$USAGE" | jq -r '.model // ""')
 if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then exit 0; fi
 
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --argjson c1h "$C1H" --arg m "$MODEL" --arg p "$ROOT" --argjson d "$DELEG" --argjson rc "$READS" \
-    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, cache_creation_1h_input_tokens:$c1h, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc}
+  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --argjson c1h "$C1H" --arg m "$MODEL" --arg p "$ROOT" --arg t "$TRANSCRIPT" --argjson d "$DELEG" --argjson rc "$READS" \
+    '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, cache_creation_1h_input_tokens:$c1h, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc, transcript_path:$t}
      + (if ($d | length) > 0 then {delegations:$d} else {} end)')" \
   "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
 
