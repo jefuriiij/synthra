@@ -275,6 +275,12 @@ describe("Capabilities panel", () => {
             item({ name: "taste", scope: "personal", third_party: "L/taste", update: "available" }),
             item({ name: "brutal", scope: "personal", third_party: "L/taste" }),
             item({ name: "gone", scope: "personal", third_party: "a/b", update: "moved" }),
+            item({
+              name: "kit",
+              scope: "personal",
+              third_party: "a/b",
+              removed_upstream: ["taste-skill"],
+            }),
           ],
         },
       }),
@@ -283,7 +289,7 @@ describe("Capabilities panel", () => {
     expect(yours?.children?.map((n) => [n.label, n.description])).toEqual([
       ["mine", undefined],
       ["L/taste", "2 · 1 update"],
-      ["a/b", "1"],
+      ["a/b", "2"],
     ]);
     const taste = yours?.children?.[1]?.children;
     expect(taste?.map((n) => [n.label, n.description])).toEqual([
@@ -291,6 +297,8 @@ describe("Capabilities panel", () => {
       ["brutal", undefined],
     ]);
     expect(yours?.children?.[2]?.children?.[0]?.description).toBe("moved in its repo");
+    // v0.46: its repo dropped it: said so, and never counted as an update.
+    expect(yours?.children?.[2]?.children?.[1]?.description).toBe("removed from its repo");
   });
 
   it("says when the scan failed instead of showing nothing", () => {

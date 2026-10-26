@@ -100,6 +100,9 @@ export interface PanelItem {
   update?: UpdateState;
   /** Installed from GitHub: set to "Don't update". */
   held?: true;
+  /** Installed from GitHub, and its repo no longer has it: the skills the repo
+   *  has now. Never an update (v0.46). */
+  removed_upstream?: string[];
   /** Installed from GitHub: may be checked and updated here, under this
    *  name (its name in the lock file). */
   updatable?: string;
@@ -324,6 +327,7 @@ async function withFacts(
     item.scope === "personal" && lockName && facts.updatable.has(lockName) ? lockName : undefined;
   const update = updatable ? facts.updates.state.get(updatable) : undefined;
   const held = updatable ? facts.updates.held.has(updatable) : false;
+  const removedUpstream = updatable ? facts.updates.removed.get(updatable) : undefined;
   const u = facts.usage.get(key);
   const stale = facts.stale.get(key);
   const { files, more } = await supportFor(dir, scannedAt);
@@ -343,6 +347,7 @@ async function withFacts(
     ...(updatable ? { updatable } : {}),
     ...(update && !held ? { update } : {}),
     ...(held ? { held: true as const } : {}),
+    ...(removedUpstream ? { removed_upstream: removedUpstream } : {}),
   };
 }
 

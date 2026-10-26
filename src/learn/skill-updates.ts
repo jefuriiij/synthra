@@ -89,8 +89,13 @@ export function folderOf(skillPath: string): string {
 export interface UpdateCheck {
   checkedAt: string;
   /** Per skill: the lock's hash when checked, and the hash on GitHub. `latest`
-   *  null = its folder isn't in its repo any more (moved or removed). */
-  skills: Record<string, { installed: string; latest: string | null; branch: string }>;
+   *  null = its folder isn't in its repo any more: moved, or with `gone`,
+   *  removed (no skill folder of that name anywhere in the repo); `gone`
+   *  lists the skills the repo has now (v0.46). */
+  skills: Record<
+    string,
+    { installed: string; latest: string | null; branch: string; gone?: string[] }
+  >;
   /** Sources that couldn't be checked, with why. */
   errors: Record<string, string>;
 }
@@ -139,6 +144,11 @@ export interface UpdateFacts {
   errors: string[];
   /** Skill name → its state; only skills with something to say. */
   state: Map<string, UpdateState>;
+  /** Skills their repo no longer has, with the skills it has now. Not an
+   *  update: there is nothing to update to, and `npx skills update` changes
+   *  nothing (Leonxlnx/taste-skill folded six skills into one on 2026-10-19,
+   *  and "Update 6" stayed up forever). */
+  removed: Map<string, string[]>;
   held: Set<string>;
 }
 
@@ -149,7 +159,7 @@ export async function updateFacts(paths: SynthraPaths): Promise<UpdateFacts> {
     readHolds(state),
     readLockEntries(skillLockPath(paths, "global")),
   ]);
-  const out: UpdateFacts = { errors: [], state: new Map(), held };
+  const out: UpdateFacts = { errors: [], state: new Map(), removed: new Map(), held };
   if (!check) return out;
   out.checkedAt = check.checkedAt;
   out.errors = groupErrors(check.errors);
@@ -157,7 +167,8 @@ export async function updateFacts(paths: SynthraPaths): Promise<UpdateFacts> {
     const c = check.skills[e.name];
     // Updated (or reinstalled) since the check: the lock moved on.
     if (!c || c.installed !== e.folderHash) continue;
-    if (c.latest === null) out.state.set(e.name, "moved");
+    if (c.latest === null && c.gone) out.removed.set(e.name, c.gone);
+    else if (c.latest === null) out.state.set(e.name, "moved");
     else if (c.latest !== e.folderHash) out.state.set(e.name, "available");
   }
   return out;
@@ -319,7 +330,19 @@ export interface CheckResult {
   checked: number;
   available: number;
   moved: number;
+  /** Skills their repo no longer has (v0.46). */
+  removed: number;
   errors: string[];
+}
+
+/** A skill whose folder left its repo: moved when a skill folder of the same
+ *  name (its old folder's, or the skill's own) is still there, else removed.
+ *  Removed: the skills the repo has now, by folder name (null = moved). */
+export function goneFrom(skillDirs: string[], folder: string, name: string): string[] | null {
+  const base = (p: string) => p.split("/").pop() ?? p;
+  const wanted = new Set([base(folder), name].map((x) => x.toLowerCase()));
+  if (skillDirs.some((d) => d !== folder && wanted.has(base(d).toLowerCase()))) return null;
+  return [...new Set(skillDirs.map((d) => base(d) || "(the repo itself)"))].sort().slice(0, 8);
 }
 
 /** Ask GitHub for each source's tree once, compare every skill's folder hash,
@@ -341,7 +364,7 @@ export async function checkUpdates(
     const k = `${e.source}\n${e.ref ?? ""}`;
     bySource.set(k, [...(bySource.get(k) ?? []), e]);
   }
-  const result: CheckResult = { checked: 0, available: 0, moved: 0, errors: [] };
+  const result: CheckResult = { checked: 0, available: 0, moved: 0, removed: 0, errors: [] };
   // A repo that can't be checked now keeps what the last check found.
   const before = await readCheck(state);
   for (const list of bySource.values()) {
@@ -359,6 +382,10 @@ export async function checkUpdates(
     const folders = new Map(
       got.tree.tree.filter((x) => x.type === "tree").map((x) => [x.path, x.sha]),
     );
+    // The folders that hold a SKILL.md: where a missing skill could have gone.
+    const skillDirs = got.tree.tree
+      .filter((x) => x.type === "blob" && (x.path === "SKILL.md" || x.path.endsWith("/SKILL.md")))
+      .map((x) => folderOf(x.path));
     for (const e of list) {
       const folder = folderOf(e.skillPath);
       const latest = folder ? folders.get(folder) : got.tree.sha;
@@ -366,13 +393,16 @@ export async function checkUpdates(
         check.errors[e.source] = "the repo is too big for GitHub to list";
         continue;
       }
+      const gone = latest === undefined ? goneFrom(skillDirs, folder, e.name) : null;
       check.skills[e.name] = {
         installed: e.folderHash,
         latest: latest ?? null,
         branch: got.branch,
+        ...(gone ? { gone } : {}),
       };
       result.checked++;
-      if (latest === undefined) result.moved++;
+      if (gone) result.removed++;
+      else if (latest === undefined) result.moved++;
       else if (latest !== e.folderHash) result.available++;
     }
   }

@@ -59,6 +59,8 @@ export interface PanelItem {
   held?: true;
   /** Installed from GitHub: its name in the lock file, for updates. */
   updatable?: string;
+  /** Installed from GitHub, and its repo no longer has it (0.46+). */
+  removed_upstream?: string[];
 }
 
 export interface PanelDelegation {
@@ -465,7 +467,13 @@ function itemNode(kind: string, i: PanelItem): PanelNode {
     i.synthra ? "by Synthra" : "",
     i.pinned ? "favorite" : "",
     i.stale_days !== undefined ? `unused ${i.stale_days} days` : "",
-    i.update === "available" ? "update available" : i.update === "moved" ? "moved in its repo" : "",
+    i.update === "available"
+      ? "update available"
+      : i.update === "moved"
+        ? "moved in its repo"
+        : i.removed_upstream
+          ? "removed from its repo"
+          : "",
     i.commands ? plural(i.commands, "command") : "",
     kind === "agents" ? (i.meta?.model ?? "") : "",
     kind === "mcp" ? (i.meta?.type ?? "") : "",

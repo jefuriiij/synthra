@@ -134,6 +134,9 @@ export interface CapabilityRow {
   update?: "available" | "moved";
   /** Set to "Don't update". */
   held?: boolean;
+  /** Its repo no longer has it (Synthra 0.46+): the skills the repo has now.
+   *  Never an update: there is nothing to update to. */
+  removedUpstream?: string[];
 }
 
 export interface PluginRow {

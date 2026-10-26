@@ -497,6 +497,7 @@ export class SynthraPanels implements vscode.Disposable {
       checked?: number;
       available?: number;
       moved?: number;
+      removed?: number;
       errors?: string[];
     }>(`http://127.0.0.1:${port}/skills/updates/check`, {}, 90_000);
     this.refresh({ fresh: true });
@@ -516,6 +517,7 @@ export class SynthraPanels implements vscode.Disposable {
     const parts = [
       n ? `${n} update${n === 1 ? "" : "s"}` : errors.length ? "" : "Everything is up to date",
       b.moved ? `${b.moved} moved in ${b.moved === 1 ? "its" : "their"} repo` : "",
+      b.removed ? `${b.removed} removed from ${b.removed === 1 ? "its" : "their"} repo` : "",
       `${b.checked ?? 0} installed skill${b.checked === 1 ? "" : "s"} checked`,
     ];
     return {

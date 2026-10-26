@@ -131,12 +131,17 @@ describe("installed-skill updates", () => {
         sha: h("9"),
         tree: [
           { path: "skills/fresh", type: "tree", sha: h("5") },
+          { path: "skills/fresh/SKILL.md", type: "blob", sha: h("a") },
           { path: "skills/same", type: "tree", sha: h("2") },
+          { path: "skills/same/SKILL.md", type: "blob", sha: h("b") },
+          // "gone" moved into another folder: same folder name, new place.
+          { path: "skills/design/gone", type: "tree", sha: h("6") },
+          { path: "skills/design/gone/SKILL.md", type: "blob", sha: h("c") },
         ],
       },
     });
     const r = await checkUpdates(paths, { fetch: gh.fetch, token: null, ghApi: null });
-    expect(r).toMatchObject({ checked: 3, available: 1, moved: 1 });
+    expect(r).toMatchObject({ checked: 3, available: 1, moved: 1, removed: 0 });
     expect(r.errors).toEqual(["not found (private, renamed or deleted) (b/private)"]);
     // One tree for a/skills; b/private tries its three branch names.
     expect(gh.calls.filter((u) => u.includes("a/skills"))).toHaveLength(1);
@@ -152,6 +157,52 @@ describe("installed-skill updates", () => {
     });
     f = await updateFacts(paths);
     expect(Object.fromEntries(f.state)).toEqual({ gone: "moved" });
+  });
+
+  // v0.46: Leonxlnx/taste-skill folded six skills into one; the six showed
+  // "moved in its repo" and an Update button that could never do anything.
+  it("tells a skill its repo removed from one that moved, and never offers it as an update", async () => {
+    const { home, paths, ctx } = await machine();
+    await lock(home, {
+      "design-taste-frontend": entry("o/taste", "skills/taste-skill/SKILL.md", h("1")),
+      brandkit: entry("o/taste", "skills/brandkit/SKILL.md", h("2")),
+      "minimalist-ui": entry("o/taste", "skills/minimalist-skill/SKILL.md", h("3")),
+    });
+    for (const name of ["design-taste-frontend", "brandkit", "minimalist-ui"]) {
+      await put(
+        join(home, ".claude", "skills", name, "SKILL.md"),
+        `---
+name: ${name}
+description: x
+---
+`,
+      );
+    }
+    const gh = github({
+      "o/taste@HEAD": {
+        sha: h("9"),
+        tree: [
+          { path: "skills/taste-skill", type: "tree", sha: h("5") },
+          { path: "skills/taste-skill/SKILL.md", type: "blob", sha: h("a") },
+          { path: "skills/taste-skill/references", type: "tree", sha: h("b") },
+        ],
+      },
+    });
+    const r = await checkUpdates(paths, { fetch: gh.fetch, token: null, ghApi: null });
+    expect(r).toMatchObject({ checked: 3, available: 1, moved: 0, removed: 2 });
+    const f = await updateFacts(paths);
+    expect(Object.fromEntries(f.state)).toEqual({ "design-taste-frontend": "available" });
+    expect(Object.fromEntries(f.removed)).toEqual({
+      brandkit: ["taste-skill"],
+      "minimalist-ui": ["taste-skill"],
+    });
+    // The panel: no update for a removed skill, and what the repo has now.
+    const panels = await handlePanels(ctx, { homeDir: home, fresh: true });
+    const caps = panels.capabilities.skills.filter((i) => i.updatable);
+    const by = Object.fromEntries(caps.map((i) => [i.name, i]));
+    expect(by.brandkit?.update).toBeUndefined();
+    expect(by.brandkit?.removed_upstream).toEqual(["taste-skill"]);
+    expect(by["design-taste-frontend"]?.update).toBe("available");
   });
 
   it("when GitHub's hourly limit is used up: asks gh, else keeps the last results and says why once", async () => {

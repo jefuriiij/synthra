@@ -242,6 +242,7 @@ function capabilitiesTab(p: PanelsPayload, keys: Keys): CapabilitiesTab {
       ...(i.updatable ? { updatable: i.updatable } : {}),
       ...(i.update ? { update: i.update } : {}),
       ...(i.held ? { held: true } : {}),
+      ...(i.removed_upstream ? { removedUpstream: i.removed_upstream } : {}),
     };
   };
 

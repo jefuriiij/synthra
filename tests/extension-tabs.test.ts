@@ -321,6 +321,11 @@ describe("Capabilities tab", () => {
             }),
             skill("kept", { third_party: "Leonxlnx/taste-skill", updatable: "kept", held: true }),
             skill("gone", { third_party: "a/b", updatable: "gone", update: "moved" }),
+            skill("kit", {
+              third_party: "a/b",
+              updatable: "kit",
+              removed_upstream: ["taste-skill"],
+            }),
           ],
           updates: { checked_at: "2026-10-04T10:00:00.000Z", errors: ["c/d: not found"] },
         },
@@ -336,6 +341,9 @@ describe("Capabilities tab", () => {
     });
     expect(row("kept")).toMatchObject({ group: "Leonxlnx/taste-skill", held: true });
     expect(row("gone")).toMatchObject({ group: "a/b", update: "moved" });
+    // v0.46: removed from its repo: no update, and what the repo has now.
+    expect(row("kit")).toMatchObject({ group: "a/b", removedUpstream: ["taste-skill"] });
+    expect(row("kit")?.update).toBeUndefined();
     expect(row("mine")?.updatable).toBeUndefined();
     expect(c?.updates).toEqual({
       checkedAt: Date.parse("2026-10-04T10:00:00.000Z"),

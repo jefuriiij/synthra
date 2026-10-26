@@ -30,6 +30,11 @@
   const mine = $derived(rows.filter((r) => r.synthra).length);
   const favorites = $derived(rows.filter((r) => r.favorite).length);
   const hasUpdate = (r: CapabilityRow) => r.update !== undefined && !r.held;
+  /** A skill its repo removed: why there is no Update, and what is there now. */
+  const removedTitle = (r: CapabilityRow) => {
+    const now = r.removedUpstream?.length ? ` It has ${r.removedUpstream.join(", ")} now.` : "";
+    return `${r.thirdParty ?? "Its repo"} no longer has this skill, so there is nothing to update to.${now} Your copy keeps working; delete it when you no longer want it.`;
+  };
   const updates = $derived(rows.filter(hasUpdate).length);
   const inGroup = (r: CapabilityRow, g: string) =>
     g === "all" ||
@@ -477,6 +482,7 @@
   {#if r.synthra}<span class="tag syn-tag"><Icon name="sparkle" size={10} /> Synthra</span>{/if}
   {#if r.update === "available" && !r.held}<span class="tag syn-tag"><Icon name="update" size={10} /> update</span>{/if}
   {#if r.update === "moved" && !r.held}<span class="tag warn-tag" title="Its folder isn't where it was in its repo. Update finds where it went.">moved in its repo</span>{/if}
+  {#if r.removedUpstream}<span class="tag" title={removedTitle(r)}>removed from its repo</span>{/if}
   {#if r.held}<span class="tag" title="You set it to Don't update."><Icon name="hold" size={10} /> kept</span>{/if}
   {#if r.linkedTo}<span class="tag" title="A link to {r.linkedTo}"><Icon name="link" size={11} /> linked</span>{/if}
   {#if r.favorite}<span class="tag"><Icon name="star-full" size={10} class="fav" /> favorite</span>{/if}
