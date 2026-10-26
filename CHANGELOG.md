@@ -7,6 +7,31 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.46.0] (2026-10-27)
+
+### Fixed
+
+- **The dashboard counts what subagents cost.** Claude Code keeps each
+  subagent's work in its own file, which Synthra never read: over 30 days
+  on a real machine, $810 of $15,131 (5.4%) never reached the dashboard.
+  The Stop hook now tells the server where the session's transcript is,
+  and the server reads the subagent files next to it, each new line once.
+  Subagent work counts as cost, never as a reply. Run **Synthra: Restart**
+  (or `syn .`) so each project gets the new hook.
+- **A skill its repo removed is no longer offered as an update.** When an
+  author folds skills into one (as `Leonxlnx/taste-skill` did), Capabilities
+  called the old ones "moved in its repo" and showed an Update that could
+  never change anything, so "6 updates" stayed forever. Synthra now tells
+  moved (the repo still has a skill folder of that name) from removed (it
+  doesn't): a removed skill has no Update and isn't counted. Your copy keeps
+  working. Click **Check for updates** once to refresh the labels. With
+  extension 0.38.0, it says "removed from its repo" and what the repo has
+  now.
+- **Linux and macOS: one broken transcript line no longer loses a reply.**
+  The Stop hook now skips just that line.
+
+---
+
 ## [0.45.0] (2026-10-15)
 
 ### Added

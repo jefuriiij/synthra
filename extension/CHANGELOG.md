@@ -3,6 +3,18 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## 0.38.0 (2026-10-27)
+
+These come with Synthra 0.46.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
+
+- **"Removed from its repo" for skills their repo dropped.** In
+  Capabilities, a skill installed with `npx skills` that its GitHub repo no
+  longer has now says so, with no Update button and not counted in the
+  updates. Hover the label to see what the repo has now. Your copy keeps
+  working. "Moved in its repo" now means only a skill that really moved.
+- **Check for updates says how many were removed** from their repo.
+
 ## 0.37.0 (2026-10-07)
 
 These come with Synthra 0.39.0. The extension offers the update, or run
