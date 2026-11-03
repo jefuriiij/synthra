@@ -7,6 +7,17 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.49.2] (2026-11-03)
+
+### Fixed
+
+- **Restore reads a skill's frontmatter more strictly.** The 0.49.1 check
+  could be fooled by a frontmatter block that is indented as a whole, a
+  lone carriage return, or a `---` line with a space after it. Now any
+  shape it can't be sure of makes the new skill wait for your OK.
+
+---
+
 ## [0.49.1] (2026-11-03)
 
 ### Fixed
