@@ -7,6 +7,24 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.47.0] (2026-11-03)
+
+### Fixed
+
+- **The primer always fits.** Claude Code 2.1.314 cuts what a PreCompact
+  hook prints at 10,000 characters, and on Linux and macOS Synthra's own
+  hooks cut the primer at 8,000 bytes, wherever that fell. A busy project's
+  primer measured 7,848 bytes, right at the edge. Synthra now keeps it under
+  9,000 bytes itself: your memory files come through whole, the "since you
+  were last here" summary is shortened by whole lines when it must be, and
+  a note says where to find the rest. Run **Synthra: Restart** (or `syn .`)
+  so each project gets the updated hooks.
+- **Model names written with a dot get their real price.** Behind some LLM
+  gateways a model id reads `claude-opus-4.8`; Synthra priced that as Opus 4
+  (three times too high) and `claude-haiku-5.5` as Haiku 4.5 (ten times).
+
+---
+
 ## [0.46.0] (2026-10-27)
 
 ### Fixed
