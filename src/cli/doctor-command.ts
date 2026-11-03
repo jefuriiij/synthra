@@ -35,6 +35,31 @@ export interface DoctorCheck {
   status: CheckStatus;
   label: string;
   detail: string;
+  /** "restart": restarting Synthra (what `syn .` does on start) fixes this,
+   *  so the IDE extension may do it by itself (v0.48). Absent: it needs the
+   *  user (a new Claude session, a policy, a broken settings file). */
+  fix?: "restart";
+}
+
+/** The problems a restart fixes: every port-file problem, and the setup
+ *  pieces `syn .` rewrites on start (hooks, .mcp.json, the CLAUDE.md block, a
+ *  missing map) when the check's own advice is to run it. Not a settings file
+ *  that won't parse (Synthra never overwrites it), an empty map (a rescan
+ *  finds nothing new), or anything about Claude, policies or tools. */
+const RESTART_LABELS = new Set(["MCP registration", "Graph", "CLAUDE.md policy", "Hooks"]);
+const RESTART_ADVICE = /Restart Synthra|run `syn \.`|re-run `syn \.`|re-run `syn scan`/i;
+
+export function markRestartFixes(checks: DoctorCheck[]): DoctorCheck[] {
+  for (const c of checks) {
+    if (c.status === "ok") continue;
+    if (
+      c.label === "MCP server" ||
+      (RESTART_LABELS.has(c.label) && RESTART_ADVICE.test(c.detail))
+    ) {
+      c.fix = "restart";
+    }
+  }
+  return checks;
 }
 
 const ICON: Record<CheckStatus, string> = { ok: "✅", warn: "⚠️", fail: "❌" };
@@ -179,7 +204,7 @@ export async function runDoctorChecks(
   if (opts.environment !== false) await environmentChecks(checks, cfg.claudeBin);
 
   await projectChecks(checks, projectRoot, paths, opts.selfPort, opts);
-  return checks;
+  return markRestartFixes(checks);
 }
 
 async function environmentChecks(checks: DoctorCheck[], claudeBin: string): Promise<void> {

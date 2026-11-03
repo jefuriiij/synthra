@@ -8,6 +8,8 @@ export interface DoctorCheck {
   status: Health;
   label: string;
   detail: string;
+  /** Synthra 0.48+: "restart" when restarting Synthra fixes it. */
+  fix?: "restart";
 }
 
 /** `GET /doctor` on the running server (CLI 0.32+). */
@@ -106,4 +108,42 @@ export function problemSignature(checks: DoctorCheck[]): string {
  */
 export function shouldNotify(signature: string, lastNotified: string | undefined): boolean {
   return signature !== "" && signature !== (lastNotified ?? "");
+}
+
+// ─── automatic repair ────────────────────────────────────────────────────────
+
+/** The same problems are repaired by themselves at most this often. */
+export const AUTO_REPAIR_COOLDOWN_MS = 30 * 60_000;
+
+export interface AutoRepairTry {
+  signature: string;
+  at: number;
+}
+
+/**
+ * Whether to restart Synthra by itself for these checks (extension 0.39): only
+ * for problems the server marks as fixed by a restart, never twice for the
+ * same set within the cooldown, so a problem a restart doesn't fix can't loop.
+ * The ones that need the user still get the popup.
+ */
+export function shouldAutoRepair(v: {
+  checks: DoctorCheck[];
+  enabled: boolean;
+  last: AutoRepairTry | undefined;
+  now: number;
+}): { repair: false } | { repair: true; signature: string; problems: DoctorCheck[] } {
+  if (!v.enabled) return { repair: false };
+  const problems = v.checks.filter((c) => c.status !== "ok" && c.fix === "restart");
+  if (problems.length === 0) return { repair: false };
+  const signature = problemSignature(problems);
+  if (v.last && v.last.signature === signature && v.now - v.last.at < AUTO_REPAIR_COOLDOWN_MS) {
+    return { repair: false };
+  }
+  return { repair: true, signature, problems };
+}
+
+/** After an automatic restart: which of the problems it was for are gone. */
+export function fixedBy(before: DoctorCheck[], after: DoctorCheck[]): DoctorCheck[] {
+  const still = new Set(after.filter((c) => c.status !== "ok").map((c) => c.label));
+  return before.filter((c) => !still.has(c.label));
 }

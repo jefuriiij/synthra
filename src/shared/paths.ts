@@ -48,6 +48,9 @@ export interface SynthraPaths {
   parseCache: string;
   mcpPort: string;
   mcpOwner: string;
+  /** The port this project's server last had (v0.48): tried first on the
+   *  next start, so open Claude chats keep their connection. */
+  lastPort: string;
   mcpServerLog: string;
   mcpServerErrLog: string;
   contextStore: string;
@@ -127,6 +130,7 @@ export function resolvePaths(
     parseCache: join(graphDir, "parse_cache.json"),
     mcpPort: join(graphDir, "mcp_port"),
     mcpOwner: join(graphDir, "mcp_owner.json"),
+    lastPort: join(graphDir, "last_port"),
     mcpServerLog: join(graphDir, "mcp_server.log"),
     mcpServerErrLog: join(graphDir, "mcp_server.err.log"),
     contextStore: join(contextDir, "context-store.json"),

@@ -2,6 +2,8 @@
 // /gate, /activity) and serves the loaded graph from memory. The MCP-protocol
 // envelope (/mcp endpoint, JSON-RPC) is wired in M3.
 
+import { readFile } from "node:fs/promises";
+
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
@@ -389,6 +391,7 @@ async function bindServer(
   ctx: ServerContext,
   version: string,
   explicitPort: number | undefined,
+  preferredPort?: number,
 ): Promise<{ port: number; nodeServer: NodeServer }> {
   const attempts = explicitPort ? 1 : BIND_ATTEMPTS;
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -396,7 +399,12 @@ async function bindServer(
     if (explicitPort) {
       port = explicitPort;
     } else {
-      const reservation: PortReservation = await reserveFreePort();
+      // The first try asks for the last port; a lost race asks for any.
+      const reservation: PortReservation = await reserveFreePort(
+        undefined,
+        undefined,
+        attempt === 1 ? preferredPort : undefined,
+      );
       port = reservation.port;
       await reservation.release();
     }
@@ -444,7 +452,13 @@ export async function startServer(
 
   const ctx = await loadContext(paths);
   const version = options.version ?? "unknown";
-  const { port, nodeServer } = await bindServer(ctx, version, options.port);
+  const lastPort = Number(await readFile(paths.lastPort, "utf8").catch(() => ""));
+  const { port, nodeServer } = await bindServer(
+    ctx,
+    version,
+    options.port,
+    Number.isInteger(lastPort) && lastPort > 0 ? lastPort : undefined,
+  );
 
   // Only now — with the port genuinely ours — tell the hooks where we are.
   await claimOwnership(paths, port, version);

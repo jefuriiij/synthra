@@ -297,6 +297,11 @@
           "minimum": 0,
           "description": "How often to re-check Synthra's health while it runs (the status bar turns yellow or red when something is wrong). 0 turns polling off; a check still runs at start and when the window regains focus. The health light needs Synthra 0.32+."
         },
+        "synthra.autoRepair": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the health check finds a problem a restart fixes (the port file, .mcp.json, the hooks, the CLAUDE.md block, a missing map), restart Synthra by itself and say what it fixed. At most once per problem every 30 minutes. Needs Synthra 0.48+."
+        },
         "synthra.checkForUpdates": {
           "type": "boolean",
           "default": true,

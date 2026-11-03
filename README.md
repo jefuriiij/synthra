@@ -101,7 +101,7 @@ Savings depend on the work. A refactor leans on the graph much more than a marku
 | **Agents** | The helper agents Claude started this week, and the task it gave each one. |
 | **Settings** | The memory and skill reminders, the memory size limits, skill approval and the Curator. **Back up** and **Restore** for a new device. |
 
-The status bar item shows whether Synthra runs. Click it to open the dashboard. When it is yellow or red, it lists what is wrong and offers **Repair**. Technical notes for the extension are in [`docs/EXTENSION.md`](./docs/EXTENSION.md).
+The status bar item shows whether Synthra runs. Click it to open the dashboard. When it is yellow or red, it lists what is wrong and offers **Repair**. Problems a restart fixes (the port file, `.mcp.json`, the hooks, the CLAUDE.md block, a missing map) are repaired by themselves: Synthra restarts on its own, keeps its port so open Claude chats keep working, and says what it fixed. At most once per problem every 30 minutes; `synthra.autoRepair` turns it off. Technical notes for the extension are in [`docs/EXTENSION.md`](./docs/EXTENSION.md).
 
 ---
 

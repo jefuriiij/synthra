@@ -110,6 +110,8 @@ export async function claimOwnership(
   );
   // Four bytes in one syscall can't tear, and the hooks want exactly this shape.
   await writeTextAtomic(paths.mcpPort, String(port));
+  // Kept after a stop (unlike mcp_port): the next start tries it first.
+  await writeTextAtomic(paths.lastPort, String(port)).catch(() => undefined);
   return record;
 }
 

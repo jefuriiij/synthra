@@ -32,9 +32,13 @@ import * as vscode from "vscode";
 
 import {
   adviseUpdate,
+  type AutoRepairTry,
+  type DoctorCheck,
   type DoctorReport,
+  fixedBy,
   type Health,
   problemSignature,
+  shouldAutoRepair,
   shouldNotify,
   worstOf,
 } from "./logic";
@@ -95,6 +99,10 @@ let panelsKey = "";
 let health: DoctorReport | null = null;
 /** The CLI predates /doctor (< 0.32): no light, no polling, no errors. */
 let healthUnsupported = false;
+/** The last automatic repair, and the problems it restarted Synthra for:
+ *  checked on the next health report to say what it fixed. */
+let autoRepairLast: AutoRepairTry | undefined;
+let autoRepairPending: DoctorCheck[] | null = null;
 let healthTimer: ReturnType<typeof setInterval> | null = null;
 let lastHealthAt = 0;
 /** When `health` was last filled in — shown in the health list's title, so an
@@ -414,7 +422,49 @@ async function checkHealth(full: boolean, opts: { quiet?: boolean } = {}): Promi
   health = report;
   healthCheckedAt = new Date();
   render();
+  if (reportAutoRepair(report)) return;
+  if (maybeAutoRepair(report)) return;
   await maybeNotifyHealth(report, opts.quiet === true);
+}
+
+/**
+ * Restart Synthra by itself for problems a restart fixes (extension 0.39,
+ * Synthra 0.48+ marks them): the port file, .mcp.json, the hooks, the
+ * CLAUDE.md block, a missing map. Once per set of problems per 30 minutes,
+ * so one a restart doesn't fix falls through to the usual popup next time.
+ */
+function maybeAutoRepair(report: DoctorReport): boolean {
+  const d = shouldAutoRepair({
+    checks: report.checks,
+    enabled: config().get<boolean>("autoRepair", true),
+    last: autoRepairLast,
+    now: Date.now(),
+  });
+  if (!d.repair) return false;
+  autoRepairLast = { signature: d.signature, at: Date.now() };
+  autoRepairPending = d.problems;
+  out.appendLine(
+    `[ext] auto-repair: restarting for ${d.problems.map((c) => `${c.label} (${c.detail})`).join("; ")}`,
+  );
+  void repair();
+  return true;
+}
+
+/** The first report after an automatic restart: say what it fixed. Problems
+ *  still there go on to the usual popup. */
+function reportAutoRepair(report: DoctorReport): boolean {
+  const before = autoRepairPending;
+  if (!before) return false;
+  autoRepairPending = null;
+  const fixed = fixedBy(before, report.checks);
+  if (fixed.length > 0) {
+    out.appendLine(`[ext] auto-repair fixed: ${fixed.map((c) => c.label).join(", ")}`);
+    void vscode.window.showInformationMessage(
+      `Synthra repaired itself: ${fixed.map((c) => c.label).join(", ")}. (Synthra: Show log has the details.)`,
+    );
+  }
+  // Something left: let the usual notice tell the user.
+  return report.checks.every((c) => c.status === "ok");
 }
 
 /** Checks that only `?env=1` returns — carried between light polls. */

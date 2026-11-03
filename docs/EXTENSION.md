@@ -86,6 +86,8 @@ So the extension runs it for you. It asks the running server for its doctor chec
 
 **Repair** restarts Synthra. A managed start *is* `syn .` — it reinstalls hooks, refreshes the CLAUDE.md policy block and re-registers MCP — which is the fix for nearly every doctor warning.
 
+**Automatic repair (extension 0.39, Synthra 0.48+).** The server marks each doctor check a restart fixes with `fix: "restart"`: every MCP server (port file) problem, and the MCP registration, Hooks, CLAUDE.md policy and Graph warnings whose advice is to run `syn .`. Not a `settings.local.json` that won't parse, an empty map, or anything about Claude, policies or tools. When a health report has such problems, the extension restarts Synthra by itself, logs why, and on the next report shows "Synthra repaired itself: <checks>". The same set of problems is repaired at most once per 30 minutes (`AUTO_REPAIR_COOLDOWN_MS`), so one a restart doesn't fix falls through to the usual Repair / Details popup. The server remembers its port in `.synthra-graph/last_port` and tries it first on the next start, so a restart keeps the address open Claude chats use. `synthra.autoRepair: false` turns it off.
+
 A popup appears only for a problem you haven't been told about yet. A warning you can't fix right now won't nag you on every window open; the status bar keeps telling the truth either way.
 
 ## Updates

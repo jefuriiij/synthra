@@ -20,8 +20,14 @@ export interface PortReservation {
 export async function reserveFreePort(
   start = PORT_RANGE_START,
   end = PORT_RANGE_END,
+  preferred?: number,
 ): Promise<PortReservation> {
-  for (let port = start; port <= end; port++) {
+  // The port this project had last time first: a restart then keeps the
+  // address that open Claude chats and .mcp.json already use (v0.48).
+  const order =
+    preferred !== undefined && preferred >= start && preferred <= end ? [preferred] : [];
+  for (let p = start; p <= end; p++) if (p !== preferred) order.push(p);
+  for (const port of order) {
     const held = await hold(port);
     if (held) {
       return {
