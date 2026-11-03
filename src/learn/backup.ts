@@ -251,16 +251,51 @@ export function remapPath(p: string, oldHome: string, newHome: string): string {
   return join(newHome, ...path.slice(from.length + 1).split("/"));
 }
 
+/** A byte-order mark, from its code: the formatter writes the character itself. */
+const BOM = new RegExp(`^${String.fromCharCode(0xfeff)}`);
+
+/** Folders a skill's notes live in: a file there is read, never run. */
+const NOTE_DIRS = ["references/", "templates/"];
+/** Top-level frontmatter keys that only describe a skill. Any other key
+ *  (hooks, allowed-tools, model, ...) can change what it may do. */
+const PLAIN_KEYS = /^(?:name|description|license|version|metadata)\s*:/;
+
+/** A file listed twice (any case), which the check and the write could read
+ *  differently, or null. */
+export function duplicateFile(files: BackupFile[]): string | null {
+  const seen = new Set<string>();
+  for (const f of files) {
+    const k = (safeRel(f.path) ?? f.path).toLowerCase();
+    if (seen.has(k)) return f.path;
+    seen.add(k);
+  }
+  return null;
+}
+
 /**
- * Whether a skill that isn't here yet must wait for the user's OK: it has
- * files under scripts/ (code), or its SKILL.md frontmatter gives it hooks or
- * tool permissions. Everything else is notes and goes live as it was.
+ * Whether a skill that isn't here yet must wait for the user's OK. It goes
+ * live only when it is plainly notes: every file is text and is SKILL.md or
+ * under references/ or templates/ (exact case: on Windows "Scripts/" is the
+ * scripts folder), and every top-level frontmatter line is one that only
+ * describes the skill. Checked line by line, not through a parser, so a key
+ * a parser skips (quoted, past its line cap) still counts (v0.49.1).
  */
 export function newSkillMustWait(files: BackupFile[]): boolean {
-  if (files.some((f) => safeRel(f.path)?.startsWith("scripts/"))) return true;
+  for (const f of files) {
+    const rel = safeRel(f.path);
+    if (rel === null) continue; // never written: writeInto refuses it
+    if (typeof f.text !== "string") return true;
+    if (rel !== "SKILL.md" && !NOTE_DIRS.some((d) => rel.startsWith(d))) return true;
+  }
   const md = files.find((f) => f.path === "SKILL.md")?.text ?? "";
-  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md)?.[1] ?? "";
-  return /^(?:hooks|allowed-tools)\s*:/m.test(front);
+  const lines = md.replace(BOM, "").split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return false;
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+  if (end < 0) return true;
+  return lines.slice(1, end).some((l) => {
+    if (!l.trim() || l.startsWith(" ") || /^#/.test(l)) return false;
+    return !PLAIN_KEYS.test(l);
+  });
 }
 
 /** Write a backup file under `root`, refusing any path that would leave it. */
@@ -320,6 +355,11 @@ export async function restoreBackup(
     const files = s.files.filter(
       (f): f is BackupFile => !!f && typeof f === "object" && typeof f.path === "string",
     );
+    const twice = duplicateFile(files);
+    if (twice) {
+      report.skipped.push({ name: s.name, why: `it lists ${twice} twice` });
+      continue;
+    }
     if (files.some((f) => typeof f.text === "string" && INVISIBLE.test(f.text))) {
       report.skipped.push({ name: s.name, why: "it contains invisible control characters" });
       continue;
@@ -384,9 +424,11 @@ export async function restoreBackup(
       if (!rel) continue;
       const abs = join(dir, ...rel.split("/"));
       if (typeof f.text !== "string") {
-        // Binary: only added when missing; a proposal holds text only. Never
-        // one under scripts/: a program nobody approved.
-        if (!rel.startsWith("scripts/") && !(await exists(abs))) await writeInto(dir, f);
+        // Binary: only added when missing; a proposal holds text only. Only
+        // in a notes folder (exact case): anywhere else it may be a program
+        // nobody approved (v0.49.1).
+        const notes = NOTE_DIRS.some((d) => rel.startsWith(d));
+        if (notes && !(await exists(abs))) await writeInto(dir, f);
         continue;
       }
       const current = await readText(abs);

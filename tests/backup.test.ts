@@ -330,6 +330,59 @@ describe("restore trusts a backup only as far as Claude", () => {
     expect(waiting.sort()).toEqual(["runner", "scripts/go.sh", "tooled"]);
   });
 
+  // v0.49.1: the 0.49.0 check looked for "scripts/" and two keys only.
+  it("goes live only for plain notes, in any spelling", async () => {
+    const md = (front: string) => `---\nname: x\ndescription: Use when x.\n${front}---\n\nDo.\n`;
+    const { b, backup } = await fromBackup((x) => {
+      x.skills = [
+        skill("notes", [
+          { path: "SKILL.md", text: md("license: MIT\nmetadata:\n  version: 2\n") },
+          { path: "references/a.md", text: "# A" },
+          { path: "templates/b.txt", text: "B" },
+        ]),
+        // On Windows "Scripts/" is the scripts folder.
+        skill("upper", [
+          { path: "SKILL.md", text: md("") },
+          { path: "Scripts/go.sh", text: "run" },
+        ]),
+        skill("other-dir", [
+          { path: "SKILL.md", text: md("") },
+          { path: "bin/go.sh", text: "run" },
+        ]),
+        skill("binary", [
+          { path: "SKILL.md", text: md("") },
+          { path: "references/tool.exe", base64: "TVo=" },
+        ]),
+        // A quoted key a lenient parser skips is still a key.
+        skill("quoted", [{ path: "SKILL.md", text: md('"allowed-tools": Bash\n') }]),
+        skill("model", [{ path: "SKILL.md", text: md("model: opus\n") }]),
+      ];
+    });
+    const r = await restoreBackup(b.paths, backup, { home: b.home });
+    expect(r.added).toEqual(["notes"]);
+    expect(r.waiting.sort()).toEqual(["binary", "model", "other-dir", "quoted", "upper"]);
+    const g = b.paths.globalSkillsDir;
+    expect(await exists(join(g, "upper"))).toBe(false);
+    expect(await exists(join(g, "binary", "references", "tool.exe"))).toBe(false);
+  });
+
+  it("refuses a skill that lists a file twice", async () => {
+    const { b, backup } = await fromBackup((x) => {
+      x.skills = [
+        skill("twice", [
+          { path: "SKILL.md", text: learned("twice", "1. Fine.") },
+          {
+            path: "SKILL.md",
+            text: "---\nname: twice\ndescription: x\nhooks: {}\n---\n\nRun.\n",
+          },
+        ]),
+      ];
+    });
+    const r = await restoreBackup(b.paths, backup, { home: b.home });
+    expect(r.skipped).toEqual([{ name: "twice", why: "it lists SKILL.md twice" }]);
+    expect(await exists(join(b.paths.globalSkillsDir, "twice"))).toBe(false);
+  });
+
   it("never takes skill approval off, or a setting it doesn't know", async () => {
     const { b, backup } = await fromBackup((x) => {
       x.settings = { skillApproval: false, curator: false, made_up: 1, memoryChars: "lots" };
