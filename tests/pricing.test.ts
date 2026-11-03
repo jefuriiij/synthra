@@ -121,4 +121,19 @@ describe("estimateCostUsd", () => {
     expect(write(400_000)).toBeCloseTo(0.6 * 5 + 0.4 * 8, 5);
     expect(write(9_000_000)).toBeCloseTo(8, 5); // never more than the writes
   });
+
+  // v0.47: gateways spell model ids with a dot; the dot made Opus 4.8 Opus 4
+  // (three times the price) and Haiku 5.5 Haiku 4.5 (ten times).
+  it("reads a version written with a dot like one written with a dash", () => {
+    for (const [dotted, dashed] of [
+      ["claude-opus-4.8", "claude-opus-4-8"],
+      ["anthropic/claude-opus-4.8", "claude-opus-4-8"],
+      ["claude-sonnet-5.5", "claude-sonnet-5-5"],
+      ["claude-haiku-5.5", "claude-haiku-5-5"],
+    ]) {
+      expect(pricingFor(dotted), dotted).toEqual(pricingFor(dashed));
+    }
+    // A dated id still reads as its major version only.
+    expect(pricingFor("claude-opus-4-20250514")).toEqual(pricingFor("claude-opus-4"));
+  });
 });

@@ -24,7 +24,7 @@ if ! command -v jq >/dev/null 2>&1; then exit 0; fi
 
 PRIMER=$(curl -sS --max-time 3 "http://127.0.0.1:$PORT/prime" 2>/dev/null \
   | jq -r '.primer // empty' 2>/dev/null \
-  | head -c 8000)
+  | head -c 9500)
 
 if [ -n "$PRIMER" ]; then
   printf '%s\n' "$PRIMER"

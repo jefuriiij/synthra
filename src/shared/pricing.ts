@@ -75,7 +75,11 @@ const cmp = (a: string, b: string) => {
  * A trailing date or provider suffix is not a version.
  */
 function parse(model: string): { family: string; version: string } | null {
-  const m = /claude-(fable|mythos|opus|sonnet|haiku)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/i.exec(model);
+  // `claude-opus-4-8`, or `claude-opus-4.8` as gateways spell it (v0.47: the
+  // dot made it Opus 4, three times the price).
+  const m = /claude-(fable|mythos|opus|sonnet|haiku)-(\d{1,2})(?:[-.](\d{1,2}))?(?!\d)/i.exec(
+    model,
+  );
   if (!m?.[1] || !m[2]) return null;
   return { family: m[1].toLowerCase(), version: m[3] ? `${m[2]}.${m[3]}` : m[2] };
 }

@@ -25,6 +25,57 @@ export interface PrimeResponse {
 // the graph pack's own ~4000-token budget — they don't compete.
 const RESUME_PRIMER_MAX_CHARS = 2720;
 
+/**
+ * The whole primer stays under this many UTF-8 bytes (v0.47). Claude Code cuts
+ * a PreCompact hook's output at 10,000 characters (2.1.314), and the bash
+ * hooks cut at 9,500 bytes; a cut there falls anywhere, even mid-character.
+ * Measured on a real project: 7,848 bytes, near the old 8,000-byte bash cut.
+ * So the server fits it: the knowledge files first, then the resume digest,
+ * trimmed by whole lines, with a note saying what was left out.
+ */
+export const PRIMER_MAX_BYTES = 9000;
+
+const SEP = "\n\n---\n\n";
+const CUT_NOTE =
+  "[Synthra shortened this to fit Claude Code's limit for hook output. context_recall, recent_activity and memory (action read) have the rest.]";
+
+const bytes = (t: string) => Buffer.byteLength(t, "utf8");
+
+/** `text` cut to whole lines that fit in `max` bytes. */
+function cutToBytes(text: string, max: number): string {
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split("\n")) {
+    const n = bytes(line) + 1;
+    if (used + n > max) break;
+    kept.push(line);
+    used += n;
+  }
+  return kept.join("\n").trimEnd();
+}
+
+/** The primer, within `max` bytes: digest, knowledge, legacy, in that order
+ *  on the page, but the knowledge files are the last thing cut. Exported for
+ *  tests. */
+export function fitPrimer(
+  digest: string | null,
+  knowledge: string,
+  legacy: string,
+  max: number = PRIMER_MAX_BYTES,
+): string {
+  const full = [digest, knowledge, legacy].filter((p): p is string => !!p).join(SEP);
+  if (bytes(full) <= max) return full;
+  const fixed = bytes(knowledge) + bytes(legacy) + bytes(CUT_NOTE) + 3 * bytes(SEP);
+  const room = max - fixed;
+  if (digest && room >= 200) {
+    const short = cutToBytes(digest, room);
+    if (short) return [short, CUT_NOTE, knowledge, legacy].join(SEP);
+  }
+  // No room for the digest at all: the knowledge files, cut if they must be.
+  const roomK = max - bytes(legacy) - bytes(CUT_NOTE) - 2 * bytes(SEP);
+  return [CUT_NOTE, cutToBytes(knowledge, roomK), legacy].join(SEP);
+}
+
 const MAX_FILES = 15;
 const MAX_COMMITS = 5;
 const MAX_BULLETS = 3;
@@ -173,11 +224,10 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
   const legacy = legacyPrimer(ctx);
 
   const knowledge = await knowledgeBlock(ctx);
-  const tail = `${knowledge}\n\n---\n\n${legacy}`;
 
   const snap = await readSession(ctx.paths.sessionState);
   if (!snap || !hasContent(snap)) {
-    return { primer: tail, port };
+    return { primer: fitPrimer(null, knowledge, legacy), port };
   }
 
   const branchNow = await currentBranch(ctx.paths.projectRoot);
@@ -187,5 +237,5 @@ export async function handlePrime(ctx: ServerContext, port: number): Promise<Pri
     changedSymbolLines = changedSymbolsSection(ranges, graph);
   }
   const digest = buildResumeDigest(snap, branchNow, changedSymbolLines);
-  return { primer: `${digest}\n\n---\n\n${tail}`, port };
+  return { primer: fitPrimer(digest, knowledge, legacy), port };
 }
