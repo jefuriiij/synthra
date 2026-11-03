@@ -7,6 +7,21 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.48.0] (2026-11-03)
+
+### Added
+
+- **Synthra repairs itself.** The health check now marks the problems a
+  restart fixes: the port file, `.mcp.json`, the hooks, the CLAUDE.md
+  block, a missing map. Extension 0.39 restarts Synthra by itself for them
+  and says what it fixed, at most once per problem every 30 minutes. What
+  needs you (a new Claude session, a policy, a settings file that won't
+  parse) still shows the Repair / Details popup.
+- **A restart keeps its port.** The server remembers its last port and
+  tries it first, so open Claude chats keep Synthra's tools after a restart.
+
+---
+
 ## [0.47.0] (2026-11-03)
 
 ### Fixed

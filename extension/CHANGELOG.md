@@ -3,6 +3,19 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## 0.39.0 (2026-11-03)
+
+These come with Synthra 0.48.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
+
+- **Synthra repairs itself.** When the health light would turn yellow or
+  red for something a restart fixes (the port file, `.mcp.json`, the hooks,
+  the CLAUDE.md block, a missing map), the extension restarts Synthra by
+  itself and shows "Synthra repaired itself: ...". At most once per
+  problem every 30 minutes, so it never loops; anything it can't fix still
+  gets the Repair / Details popup. Turn it off with the `synthra.autoRepair`
+  setting.
+
 ## 0.38.0 (2026-10-27)
 
 These come with Synthra 0.46.0. The extension offers the update, or run
