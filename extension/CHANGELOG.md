@@ -3,6 +3,19 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## 0.40.0 (2026-11-03)
+
+These come with Synthra 0.49.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
+
+- **Automatic repair tries once.** 0.39 restarted Synthra again every 30
+  minutes for a problem a restart doesn't fix. Now each set of problems
+  gets one try, then the Repair / Details popup. A window that uses
+  another window's server doesn't restart it.
+- **Restart and Repair no longer lose the new server.** When an old
+  server had to be forced to stop, its late exit could wipe the new
+  server's state in the status bar.
+
 ## 0.39.0 (2026-11-03)
 
 These come with Synthra 0.48.0. The extension offers the update, or run

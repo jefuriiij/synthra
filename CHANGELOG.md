@@ -7,6 +7,41 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.49.0] (2026-11-03)
+
+Fixes from a full audit of Synthra.
+
+### Fixed
+
+- **Accents and symbols on Windows.** PowerShell 5.1 read Synthra's
+  replies as Latin-1 and wrote them in the console code page, so the
+  primer and hints reached Claude garbled ("café → ≈" became "cafÃ© â â").
+  Your prompts with accents reached Synthra garbled too. The server now
+  says UTF-8, and the hooks read and write UTF-8. Each project gets the new
+  hooks the next time Synthra starts there (`syn .`, or the extension).
+- **Map tools take Windows paths.** `graph_read("src\auth.ts")` and full
+  `C:\...` paths said "file not found", so Claude fell back to Read.
+- **The Grep gate can't freeze Synthra.** A long search pattern made of
+  hyphenated words took seconds to check, and every hook waited meanwhile.
+- **Usage made while Synthra was down is no longer lost.** The Stop hook
+  marked turns as sent before it knew the send worked.
+- **`c:\` and `C:\` are one project.** The dashboard showed 0 for the
+  current project, and the Curator could miss a favorite or a use and
+  suggest archiving the skill.
+- **Restore trusts a backup only as far as Claude.** A new skill with
+  scripts or tool permissions waits for your OK, a skill or USER.md note
+  with hidden characters is left out, a backup can't turn "New skills wait
+  for my OK" off, and a `settings.json` that won't parse is left alone.
+- **`syn remove` keeps what is yours.** It kept removing `.gitignore` lines
+  you wrote yourself, changed the file's line endings, replaced a
+  symlinked CLAUDE.md with a plain file, and missed an AGENTS.md left on
+  its own.
+- **Hooks work in a folder with `[` or `]` in its name** on Windows.
+- **Docs:** the skill nudge default (25), route counts, the `removed`
+  field of the update check, and the `synthra.autoRepair` setting.
+
+---
+
 ## [0.48.0] (2026-11-03)
 
 ### Added
