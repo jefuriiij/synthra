@@ -7,6 +7,21 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.49.1] (2026-11-03)
+
+### Fixed
+
+- **Restore checks a new skill more closely.** 0.49.0 held a new skill
+  for your OK when it had a `scripts/` folder or `hooks` / `allowed-tools`
+  in its frontmatter. That missed `Scripts/` (the same folder on
+  Windows), other folders, binary files, and a key in quotes. Now a new
+  skill from a backup goes live only when it is plain notes: text files,
+  `SKILL.md` or under `references/` or `templates/`, and frontmatter that
+  only describes it. Anything else waits for your OK. A skill that lists
+  the same file twice is skipped.
+
+---
+
 ## [0.49.0] (2026-11-03)
 
 Fixes from a full audit of Synthra.
