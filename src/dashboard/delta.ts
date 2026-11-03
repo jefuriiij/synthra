@@ -567,7 +567,7 @@ async function computeDashboardDataUncached(
         (a.total_input_tokens + a.total_output_tokens),
     );
 
-  const activeFiles = loaded.find((p) => p.path === activePath) ?? {
+  const activeFiles = loaded.find((p) => sameRoot(p.path, activePath)) ?? {
     path: activePath,
     name: activeName,
     last_seen: null,

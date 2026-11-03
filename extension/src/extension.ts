@@ -32,12 +32,12 @@ import * as vscode from "vscode";
 
 import {
   adviseUpdate,
-  type AutoRepairTry,
   type DoctorCheck,
   type DoctorReport,
   fixedBy,
   type Health,
   problemSignature,
+  restartProblems,
   shouldAutoRepair,
   shouldNotify,
   worstOf,
@@ -99,9 +99,10 @@ let panelsKey = "";
 let health: DoctorReport | null = null;
 /** The CLI predates /doctor (< 0.32): no light, no polling, no errors. */
 let healthUnsupported = false;
-/** The last automatic repair, and the problems it restarted Synthra for:
- *  checked on the next health report to say what it fixed. */
-let autoRepairLast: AutoRepairTry | undefined;
+/** The problem set the last automatic repair was for, and the problems it
+ *  restarted Synthra for: checked on the next health report to say what it
+ *  fixed. */
+let autoRepairLast: string | undefined;
 let autoRepairPending: DoctorCheck[] | null = null;
 let healthTimer: ReturnType<typeof setInterval> | null = null;
 let lastHealthAt = 0;
@@ -430,18 +431,20 @@ async function checkHealth(full: boolean, opts: { quiet?: boolean } = {}): Promi
 /**
  * Restart Synthra by itself for problems a restart fixes (extension 0.39,
  * Synthra 0.48+ marks them): the port file, .mcp.json, the hooks, the
- * CLAUDE.md block, a missing map. Once per set of problems per 30 minutes,
- * so one a restart doesn't fix falls through to the usual popup next time.
+ * CLAUDE.md block, a missing map. Once per set of problems, so one a restart
+ * doesn't fix falls through to the usual popup and stays there. The set is
+ * forgotten when those problems are gone, so a later return is tried again.
  */
 function maybeAutoRepair(report: DoctorReport): boolean {
+  if (restartProblems(report.checks).length === 0) autoRepairLast = undefined;
   const d = shouldAutoRepair({
     checks: report.checks,
     enabled: config().get<boolean>("autoRepair", true),
     last: autoRepairLast,
-    now: Date.now(),
+    adopted: state.kind === "running" && state.info.alreadyRunning,
   });
   if (!d.repair) return false;
-  autoRepairLast = { signature: d.signature, at: Date.now() };
+  autoRepairLast = d.signature;
   autoRepairPending = d.problems;
   out.appendLine(
     `[ext] auto-repair: restarting for ${d.problems.map((c) => `${c.label} (${c.detail})`).join("; ")}`,
@@ -862,6 +865,8 @@ async function start(explicit: boolean): Promise<void> {
     buffered += text;
     const m = READY_RE.exec(buffered);
     if (!m?.[1]) return;
+    // A server stop() gave up on can still print late: it is not ours now.
+    if (child !== proc) return;
     try {
       const info = JSON.parse(m[1]) as ReadyInfo;
       sawReady = true;
@@ -897,6 +902,7 @@ async function start(explicit: boolean): Promise<void> {
     const notFound = (err as NodeJS.ErrnoException).code === "ENOENT";
     const message = notFound ? "Synthra isn't installed yet (no `syn` command)." : err.message;
     out.appendLine(`[ext] error: ${notFound ? `\`${bin}\` not found on PATH` : message}`);
+    if (child !== proc) return;
     child = null;
     state = { kind: "failed", folder, message };
     render();
@@ -906,6 +912,10 @@ async function start(explicit: boolean): Promise<void> {
 
   proc.on("exit", (code, signal) => {
     out.appendLine(`[ext] syn exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
+    // stop() forces a server that ignores it after a few seconds and moves on.
+    // Its exit can come after Repair or Restart started a new server, and
+    // before extension 0.40 it wiped the new server's state.
+    if (child !== proc) return;
     child = null;
     healthGen++;
     stopHealthPolling();

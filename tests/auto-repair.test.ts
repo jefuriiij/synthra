@@ -1,7 +1,7 @@
 // v0.48 (extension 0.39): the health light turned yellow or red for problems a
 // restart fixes, and the user had to click Repair. The server now marks those
-// checks, the extension restarts Synthra by itself (once per problem set per
-// 30 minutes) and says what it fixed, and a restart keeps the port, so open
+// checks, the extension restarts Synthra by itself (once per problem set, since
+// extension 0.40; 0.39 retried every 30 minutes) and says what it fixed, and a restart keeps the port, so open
 // Claude chats keep Synthra's tools.
 
 import { describe, expect, it } from "vitest";
@@ -13,12 +13,7 @@ import { type DoctorCheck, markRestartFixes } from "../src/cli/doctor-command.js
 import { startServer } from "../src/server/http.js";
 import { reserveFreePort } from "../src/server/port.js";
 import { resolvePaths } from "../src/shared/paths.js";
-import {
-  AUTO_REPAIR_COOLDOWN_MS,
-  fixedBy,
-  shouldAutoRepair,
-  type DoctorCheck as ExtCheck,
-} from "../extension/src/logic.js";
+import { fixedBy, shouldAutoRepair, type DoctorCheck as ExtCheck } from "../extension/src/logic.js";
 
 const check = (label: string, detail: string, status: DoctorCheck["status"] = "warn") => ({
   status,
@@ -61,45 +56,54 @@ describe("which problems a restart fixes", () => {
 describe("deciding to repair by itself", () => {
   const port: ExtCheck = { status: "fail", label: "MCP server", detail: "x", fix: "restart" };
   const claude: ExtCheck = { status: "warn", label: "Claude connection", detail: "y" };
-  const now = 1_000_000_000;
 
   it("repairs problems a restart fixes, and only those", () => {
-    const d = shouldAutoRepair({ checks: [port, claude], enabled: true, last: undefined, now });
+    const d = shouldAutoRepair({
+      checks: [port, claude],
+      enabled: true,
+      last: undefined,
+      adopted: false,
+    });
     expect(d).toMatchObject({ repair: true, problems: [port] });
-    expect(shouldAutoRepair({ checks: [claude], enabled: true, last: undefined, now }).repair).toBe(
+    expect(
+      shouldAutoRepair({ checks: [claude], enabled: true, last: undefined, adopted: false }).repair,
+    ).toBe(false);
+  });
+
+  it("never loops: the same problems get one try, new ones get their own", () => {
+    const first = shouldAutoRepair({
+      checks: [port],
+      enabled: true,
+      last: undefined,
+      adopted: false,
+    });
+    if (!first.repair) throw new Error("expected a repair");
+    const last = first.signature;
+    // Extension 0.39 tried again after 30 minutes, all day long. Now never.
+    expect(shouldAutoRepair({ checks: [port], enabled: true, last, adopted: false }).repair).toBe(
       false,
+    );
+    const hooks: ExtCheck = { status: "warn", label: "Hooks", detail: "z", fix: "restart" };
+    expect(shouldAutoRepair({ checks: [hooks], enabled: true, last, adopted: false }).repair).toBe(
+      true,
     );
   });
 
-  it("never loops: the same problems wait out the cooldown, new ones don't", () => {
-    const first = shouldAutoRepair({ checks: [port], enabled: true, last: undefined, now });
-    if (!first.repair) throw new Error("expected a repair");
-    const last = { signature: first.signature, at: now };
+  it("leaves a server another window owns alone", () => {
+    // Restarting here adopts that same server again: nothing would change.
     expect(
-      shouldAutoRepair({ checks: [port], enabled: true, last, now: now + 60_000 }).repair,
+      shouldAutoRepair({ checks: [port], enabled: true, last: undefined, adopted: true }).repair,
     ).toBe(false);
-    expect(
-      shouldAutoRepair({
-        checks: [port],
-        enabled: true,
-        last,
-        now: now + AUTO_REPAIR_COOLDOWN_MS + 1,
-      }).repair,
-    ).toBe(true);
-    const hooks: ExtCheck = { status: "warn", label: "Hooks", detail: "z", fix: "restart" };
-    expect(
-      shouldAutoRepair({ checks: [hooks], enabled: true, last, now: now + 60_000 }).repair,
-    ).toBe(true);
   });
 
   it("does nothing when switched off, or on an older Synthra without the mark", () => {
-    expect(shouldAutoRepair({ checks: [port], enabled: false, last: undefined, now }).repair).toBe(
-      false,
-    );
+    expect(
+      shouldAutoRepair({ checks: [port], enabled: false, last: undefined, adopted: false }).repair,
+    ).toBe(false);
     const old: ExtCheck = { status: "fail", label: "MCP server", detail: "x" };
-    expect(shouldAutoRepair({ checks: [old], enabled: true, last: undefined, now }).repair).toBe(
-      false,
-    );
+    expect(
+      shouldAutoRepair({ checks: [old], enabled: true, last: undefined, adopted: false }).repair,
+    ).toBe(false);
   });
 
   it("says which problems the restart fixed", () => {

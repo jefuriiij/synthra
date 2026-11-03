@@ -101,7 +101,7 @@ Savings depend on the work. A refactor leans on the graph much more than a marku
 | **Agents** | The helper agents Claude started this week, and the task it gave each one. |
 | **Settings** | The memory and skill reminders, the memory size limits, skill approval and the Curator. **Back up** and **Restore** for a new device. |
 
-The status bar item shows whether Synthra runs. Click it to open the dashboard. When it is yellow or red, it lists what is wrong and offers **Repair**. Problems a restart fixes (the port file, `.mcp.json`, the hooks, the CLAUDE.md block, a missing map) are repaired by themselves: Synthra restarts on its own, keeps its port so open Claude chats keep working, and says what it fixed. At most once per problem every 30 minutes; `synthra.autoRepair` turns it off. Technical notes for the extension are in [`docs/EXTENSION.md`](./docs/EXTENSION.md).
+The status bar item shows whether Synthra runs. Click it to open the dashboard. When it is yellow or red, it lists what is wrong and offers **Repair**. Problems a restart fixes (the port file, `.mcp.json`, the hooks, the CLAUDE.md block, a missing map) are repaired by themselves: Synthra restarts on its own, keeps its port so open Claude chats keep working, and says what it fixed. It tries once per set of problems; `synthra.autoRepair` turns it off. Technical notes for the extension are in [`docs/EXTENSION.md`](./docs/EXTENSION.md).
 
 ---
 
@@ -327,7 +327,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 | `SYN_NO_ROUTE` | _(unset)_ | `1` turns the Dispatcher off, logging included (`route_task` still works) |
 | `SYN_NO_AUTOREINDEX` | _(unset)_ | `1` stops the rescan after edits |
 | `SYN_NO_BASH_OBSERVE` | _(unset)_ | `1` stops watching Bash searches |
-| `SYN_NO_UPDATE_CHECK` | `0` | `1` skips the daily update check |
+| `SYN_NO_UPDATE_CHECK` | `0` | `1` skips the update check on each `syn .` |
 | `SYN_DASHBOARD_DEDUPE` | `1` | `0` shows every raw token-log entry |
 | `SYN_DASHBOARD_RECENT_N` | _(unset)_ | Recent replies in the dashboard's raw `/data` payload (500 when unset) |
 | `SYN_ACTIVITY_LOG_MAX_BYTES` | `524288` | Size cap for `activity.jsonl`; `0` removes the cap |

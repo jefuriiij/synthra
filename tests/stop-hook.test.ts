@@ -53,6 +53,8 @@ interface HookRun {
   bodies: Record<string, unknown[]>;
   /** What it printed — what Claude Code reads as the hook's answer. */
   stdout: string;
+  /** The .stopoffset it left: how many transcript lines count as sent. */
+  offset: string | null;
 }
 
 /**
@@ -69,9 +71,15 @@ async function runStopHook(
     /** Run from a subfolder, with CLAUDE_PROJECT_DIR naming the project the way
      *  Claude Code does after Claude cd's into it. */
     fromSubfolder?: boolean;
+    /** The status /log answers with (200 by default). */
+    logStatus?: number;
+    /** The project folder's name starts with this (v0.49: "[" and "]"). */
+    prefix?: string;
+    /** The delegation's description (v0.49: accents and arrows). */
+    description?: string;
   } = {},
 ): Promise<HookRun> {
-  const proj = await mkdtemp(join(tmpdir(), "syn-stop-e2e-"));
+  const proj = await mkdtemp(join(tmpdir(), opts.prefix ?? "syn-stop-e2e-"));
   await mkdir(join(proj, ".synthra-graph"), { recursive: true });
 
   const bodies: Record<string, unknown[]> = { "/log": [], "/context-update": [], "/nudge": [] };
@@ -84,7 +92,8 @@ async function runStopHook(
       } catch {
         // ignore
       }
-      res.writeHead(200, { "content-type": "application/json" });
+      const status = req.url === "/log" ? (opts.logStatus ?? 200) : 200;
+      res.writeHead(status, { "content-type": "application/json; charset=UTF-8" });
       res.end(req.url === "/nudge" ? JSON.stringify(opts.nudge ?? {}) : "{}");
     });
   });
@@ -113,7 +122,7 @@ async function runStopHook(
           input: {
             subagent_type: "svelte-file-editor",
             model: "sonnet",
-            description: "Build the card",
+            description: opts.description ?? "Build the card",
             prompt: "build it",
           },
         },
@@ -143,7 +152,11 @@ async function runStopHook(
     p.stdin?.end();
   });
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  return { bodies, stdout };
+  const offset = await readFile(`${transcript}.stopoffset`, "utf8").then(
+    (t) => t.trim(),
+    () => null,
+  );
+  return { bodies, stdout, offset };
 }
 
 const REASON = "[Synthra memory check - every 10 replies] Save what you learned.";
@@ -217,6 +230,23 @@ describe.runIf(process.platform === "win32")("stop.ps1 live e2e (Windows)", () =
   it("still logs when Claude has cd'd into a subfolder", async () => {
     expectUsageAndDelegation(await runStopHook("powershell.exe", PS1, { fromSubfolder: true }));
   }, 20_000);
+
+  // v0.49: PowerShell 5.1 read the transcript in the ANSI code page, sent
+  // bodies as Latin-1, and took "[v2]" in a folder name for a wildcard.
+  it("keeps accents intact, in a folder with [ and ] in its name", async () => {
+    const run = await runStopHook("powershell.exe", PS1, {
+      prefix: "syn stop [v2] ",
+      description: "Café → card",
+    });
+    const log = run.bodies["/log"]?.[0] as { delegations?: unknown };
+    const dl = Array.isArray(log?.delegations) ? log.delegations : [log?.delegations];
+    expect((dl[0] as { description?: string }).description).toBe("Café → card");
+  }, 20_000);
+
+  it("marks the turns sent only when /log took them", async () => {
+    expect((await runStopHook("powershell.exe", PS1, { logStatus: 500 })).offset).toBeNull();
+    expect((await runStopHook("powershell.exe", PS1)).offset).toBe("2");
+  }, 20_000);
 });
 
 describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
@@ -233,6 +263,12 @@ describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
     it("still logs when Claude has cd'd into a subfolder", async () => {
       const run = await runStopHook("bash", [join(SCRIPTS, "stop.sh")], { fromSubfolder: true });
       expectUsageAndDelegation(run);
+    }, 20_000);
+
+    it("marks the turns sent only when /log took them", async () => {
+      const sh = [join(SCRIPTS, "stop.sh")];
+      expect((await runStopHook("bash", sh, { logStatus: 500 })).offset).toBeNull();
+      expect((await runStopHook("bash", sh)).offset).toBe("2");
     }, 20_000);
   },
 );

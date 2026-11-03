@@ -50,7 +50,9 @@ SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 # The new lines, parsed one by one: a line that isn't JSON is dropped, not the
 # whole reply. Before v0.46 one bad line (Claude Code 2.1.309 fixed previews
 # cut through an emoji) made `jq -s` fail and the turn was never logged.
-NEW_LINES=$(tail -n +$((START_OFFSET + 1)) "$TRANSCRIPT" 2>/dev/null | jq -cR 'fromjson? // empty' 2>/dev/null)
+# Only the lines wc counted: a last line with no newline yet is one Claude Code
+# is still writing, and reading it now counted it twice (v0.49).
+NEW_LINES=$(sed -n "$((START_OFFSET + 1)),${TOTAL_LINES}p" "$TRANSCRIPT" 2>/dev/null | jq -cR 'fromjson? // empty' 2>/dev/null)
 
 USAGE=$(printf '%s\n' "$NEW_LINES" \
   | jq -s '
@@ -94,8 +96,6 @@ case "$READS" in ''|*[!0-9]*) READS=0 ;; esac
 DELEG_N=$(printf '%s' "$DELEG" | jq 'length' 2>/dev/null)
 DELEG_N=${DELEG_N:-0}
 
-printf '%s' "$TOTAL_LINES" > "$OFFSET_FILE"
-
 IN=$(printf '%s' "$USAGE" | jq -r '.in // 0')
 OUT=$(printf '%s' "$USAGE" | jq -r '.out // 0')
 CC=$(printf '%s' "$USAGE" | jq -r '.cc // 0')
@@ -104,13 +104,24 @@ CR=$(printf '%s' "$USAGE" | jq -r '.cr // 0')
 C1H=$(printf '%s' "$USAGE" | jq -r '.c1h // 0')
 MODEL=$(printf '%s' "$USAGE" | jq -r '.model // ""')
 
-if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then exit 0; fi
+if [ "$IN" = "0" ] && [ "$OUT" = "0" ] && [ "$DELEG_N" = "0" ]; then
+  printf '%s' "$TOTAL_LINES" > "$OFFSET_FILE"
+  exit 0
+fi
 
-curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \
-  --data "$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --argjson c1h "$C1H" --arg m "$MODEL" --arg p "$ROOT" --arg t "$TRANSCRIPT" --argjson d "$DELEG" --argjson rc "$READS" \
+PAYLOAD=$(jq -nc --argjson i "$IN" --argjson o "$OUT" --argjson cc "$CC" --argjson cr "$CR" --argjson c1h "$C1H" --arg m "$MODEL" --arg p "$ROOT" --arg t "$TRANSCRIPT" --argjson d "$DELEG" --argjson rc "$READS" \
     '{input_tokens:$i, output_tokens:$o, cache_creation_input_tokens:$cc, cache_read_input_tokens:$cr, cache_creation_1h_input_tokens:$c1h, model:$m, description:"synthra-stop-hook", project:$p, read_calls:$rc, transcript_path:$t}
-     + (if ($d | length) > 0 then {delegations:$d} else {} end)')" \
-  "http://127.0.0.1:$PORT/log" >/dev/null 2>&1
+     + (if ($d | length) > 0 then {delegations:$d} else {} end)' 2>/dev/null)
+
+# The offset moves on only when the server took the turns, so usage made while
+# Synthra was down is sent the next time instead of being lost (v0.49). Lines
+# that can't make a payload never will: move past them.
+if [ -z "$PAYLOAD" ]; then
+  printf '%s' "$TOTAL_LINES" > "$OFFSET_FILE"
+elif curl -sSf --max-time 3 -X POST -H "Content-Type: application/json" \
+  --data "$PAYLOAD" "http://127.0.0.1:$PORT/log" >/dev/null 2>&1; then
+  printf '%s' "$TOTAL_LINES" > "$OFFSET_FILE"
+fi
 
 # Refresh CONTEXT.md from the branch-scoped store.
 curl -sS --max-time 3 -X POST -H "Content-Type: application/json" \

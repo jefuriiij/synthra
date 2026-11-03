@@ -9,7 +9,7 @@
 // Spec: https://modelcontextprotocol.io/specification
 
 import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { tokenizeQuery } from "../graph/rank.js";
 import { retrieve } from "../graph/retrieve.js";
@@ -1105,7 +1105,27 @@ function matchRememberedFacts(
 // rather than guessing. (#11)
 export type FileTargetResult = { node: FileNode } | { ambiguous: string[] } | { none: true };
 
-export function resolveFileTarget(graph: GraphSchema, filePath: string): FileTargetResult {
+/**
+ * A path the way the graph writes it: "/" between folders, relative to the
+ * project root, no leading "./". Claude on Windows often passes "src\a.ts" or
+ * the full "C:\...\src\a.ts", and before v0.49 both were "not in the graph".
+ */
+export function graphPathOf(root: string, raw: string): string {
+  let p = raw.trim().replace(/\\/g, "/");
+  const fold = (s: string) => (process.platform === "linux" ? s : s.toLowerCase());
+  for (const r of new Set([root, resolve(root)])) {
+    const base = r.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (base && fold(p).startsWith(`${fold(base)}/`)) {
+      p = p.slice(base.length + 1);
+      break;
+    }
+  }
+  while (p.startsWith("./")) p = p.slice(2);
+  return p;
+}
+
+export function resolveFileTarget(graph: GraphSchema, rawPath: string): FileTargetResult {
+  const filePath = graphPathOf(graph.root, rawPath);
   const files = graph.nodes.filter((n): n is FileNode => n.kind === "file");
   const exact = files.find((n) => n.path === filePath);
   if (exact) return { node: exact };
@@ -1254,11 +1274,14 @@ function factLine(entry: ContextEntry, graph: GraphSchema): string {
   return `- [${entry.type}] ${content}${date}${staleNote}`;
 }
 
-function entryLinksFile(entry: ContextEntry, filePath: string): boolean {
+function entryLinksFile(entry: ContextEntry, filePath: string, root: string): boolean {
   if (entry.anchors?.some((a) => a.path === filePath)) return true;
   // files[] holds caller-supplied paths — accept exact or suffix matches, the
   // same leniency resolveFileTarget gives graph_read targets.
-  return entry.files.some((f) => f === filePath || filePath.endsWith(`/${f}`));
+  return entry.files.some((raw) => {
+    const f = graphPathOf(root, raw);
+    return f === filePath || filePath.endsWith(`/${f}`);
+  });
 }
 
 /**
@@ -1272,7 +1295,7 @@ export function buildFactsFooter(
   entries: ContextEntry[],
   graph: GraphSchema,
 ): string {
-  const linked = entries.filter((e) => entryLinksFile(e, filePath));
+  const linked = entries.filter((e) => entryLinksFile(e, filePath, graph.root));
   if (linked.length === 0) return "";
   const newestFirst = linked.slice().reverse(); // store is append-ordered
   const shown = newestFirst.slice(0, FACTS_MAX);
@@ -1407,17 +1430,15 @@ async function graphRegisterEdit(args: Record<string, unknown> | undefined, ctx:
     : [];
   const now = Date.now();
   for (const f of files) {
-    const file = f as string;
-    editedFiles.set(file, now);
     // An edit is the strongest relevance signal — record it (weight 2). Resolve
     // to the canonical graph path so it keys to the same node the ranker scores;
-    // a new/renamed file simply logs its raw path and decays out if unmatched.
-    const resolved = resolveFileTarget(ctx.graph, file);
-    await logAccess(ctx, {
-      ts: nowIso(),
-      path: "node" in resolved ? resolved.node.path : file,
-      source: "register_edit",
-    });
+    // a new/renamed file simply logs its own path and decays out if unmatched.
+    // The tracked edits use the same path, so a "C:\..." one still boosts
+    // ranking and reads as "src/a.ts" in the next primer (v0.49).
+    const resolved = resolveFileTarget(ctx.graph, f as string);
+    const path = "node" in resolved ? resolved.node.path : graphPathOf(ctx.graph.root, f as string);
+    editedFiles.set(path, now);
+    await logAccess(ctx, { ts: nowIso(), path, source: "register_edit" });
   }
   pruneEdits(now);
   return textContent(

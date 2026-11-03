@@ -22,7 +22,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { loadConfig } from "../shared/config.js";
-import { type SynthraPaths, sameRoot } from "../shared/paths.js";
+import { type SynthraPaths, pathKey, sameRoot } from "../shared/paths.js";
 import { log } from "../shared/logger.js";
 import { VERIFY_SKILL } from "./verify-skill.js";
 import {
@@ -196,7 +196,17 @@ export async function skillAges(paths: SynthraPaths, now = Date.now()): Promise<
     readUsage(paths.skillState),
     readPins(paths.skillState),
   ]);
+  // Keyed with pathKey: a window opened as "c:\..." writes these records, a
+  // server started as "C:\..." reads them. With exact strings a favorite looked
+  // unpinned and a used skill unused, and was proposed for the archive (v0.49).
   const touched = new Map<string, number>();
+  const pinned = new Set([...pins].map(pathKey));
+  const usageOf = new Map<string, NonNullable<Usage[string]>[]>();
+  for (const [p, u] of Object.entries(usage)) {
+    if (!u) continue;
+    const k = pathKey(p);
+    usageOf.set(k, [...(usageOf.get(k) ?? []), u]);
+  }
   for (const e of ledger) {
     // Not activity: a proposal turned down, or the archive itself. Except a
     // rejected ARCHIVE — that is the user saying "keep it", which restarts
@@ -205,17 +215,19 @@ export async function skillAges(paths: SynthraPaths, now = Date.now()): Promise<
     if (e.action === "reject" && e.rejected !== "archive") continue;
     const t = Date.parse(e.ts);
     // A change to a support file is activity for the skill it belongs to.
-    const key = skillMdOf(e);
+    const key = pathKey(skillMdOf(e));
     if (Number.isFinite(t)) touched.set(key, Math.max(touched.get(key) ?? 0, t));
   }
   const unseen: string[] = [];
   const out: SkillAge[] = [];
   for (const s of skills.filter((x) => x.learned)) {
-    const u = usage[s.path] ?? {};
+    const k = pathKey(s.path);
     const candidates = [
-      touched.get(s.path) ?? 0,
-      u.lastUsed ? Date.parse(u.lastUsed) : 0,
-      u.firstSeen ? Date.parse(u.firstSeen) : 0,
+      touched.get(k) ?? 0,
+      ...(usageOf.get(k) ?? []).flatMap((u) => [
+        u.lastUsed ? Date.parse(u.lastUsed) : 0,
+        u.firstSeen ? Date.parse(u.firstSeen) : 0,
+      ]),
     ].filter((n) => Number.isFinite(n));
     let lastActive = Math.max(0, ...candidates);
     if (lastActive === 0) {
@@ -227,7 +239,7 @@ export async function skillAges(paths: SynthraPaths, now = Date.now()): Promise<
       skill: s,
       lastActive,
       daysUnused: Math.floor((now - lastActive) / DAY),
-      pinned: pins.has(s.path),
+      pinned: pinned.has(k),
     });
   }
   if (unseen.length) {

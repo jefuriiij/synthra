@@ -61,6 +61,8 @@ import {
   handleUpdateDiff,
 } from "./routes/skill-updates.js";
 
+export const JSON_UTF8 = "application/json; charset=UTF-8";
+
 export interface ServerHandle {
   port: number;
   url: string;
@@ -161,6 +163,15 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
       }
     }
     await next();
+  });
+
+  // Hono sends JSON with no charset. PowerShell 5.1 then reads it as Latin-1,
+  // and every accent or arrow in the primer reached Claude as junk (v0.49).
+  app.use("*", async (c, next) => {
+    await next();
+    if (c.res.headers.get("content-type") === "application/json") {
+      c.res.headers.set("content-type", JSON_UTF8);
+    }
   });
 
   app.get("/", (c) =>

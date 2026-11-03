@@ -21,11 +21,17 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { readSkillLock } from "../dashboard/arsenal.js";
-import { charCount, parseKnowledge, readKnowledge } from "../memory/knowledge.js";
+import {
+  INVISIBLE,
+  charCount,
+  cleanEntry,
+  parseKnowledge,
+  readKnowledge,
+} from "../memory/knowledge.js";
 import { loadConfig } from "../shared/config.js";
 import { readJsonFile, updateTextFile, writeJsonAtomic } from "../shared/json-store.js";
 import { type SynthraPaths, pathKey } from "../shared/paths.js";
-import { settingsPath } from "../shared/settings.js";
+import { SETTINGS, coerce, settingsPath } from "../shared/settings.js";
 import { type Usage, mergeUsage, readPins, readUsage, setPin } from "./curator.js";
 import {
   type Proposal,
@@ -245,6 +251,18 @@ export function remapPath(p: string, oldHome: string, newHome: string): string {
   return join(newHome, ...path.slice(from.length + 1).split("/"));
 }
 
+/**
+ * Whether a skill that isn't here yet must wait for the user's OK: it has
+ * files under scripts/ (code), or its SKILL.md frontmatter gives it hooks or
+ * tool permissions. Everything else is notes and goes live as it was.
+ */
+export function newSkillMustWait(files: BackupFile[]): boolean {
+  if (files.some((f) => safeRel(f.path)?.startsWith("scripts/"))) return true;
+  const md = files.find((f) => f.path === "SKILL.md")?.text ?? "";
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md)?.[1] ?? "";
+  return /^(?:hooks|allowed-tools)\s*:/m.test(front);
+}
+
 /** Write a backup file under `root`, refusing any path that would leave it. */
 async function writeInto(root: string, f: BackupFile): Promise<boolean> {
   const rel = safeRel(f.path);
@@ -297,6 +315,15 @@ export async function restoreBackup(
       continue;
     }
     const dir = join(paths.globalSkillsDir, s.name);
+    // A null or broken entry threw halfway through before v0.49, after the
+    // skills before it were already written.
+    const files = s.files.filter(
+      (f): f is BackupFile => !!f && typeof f === "object" && typeof f.path === "string",
+    );
+    if (files.some((f) => typeof f.text === "string" && INVISIBLE.test(f.text))) {
+      report.skipped.push({ name: s.name, why: "it contains invisible control characters" });
+      continue;
+    }
     const here = await findSkill(paths, s.name, "global");
     if (!here) {
       if (await exists(dir)) {
@@ -306,8 +333,40 @@ export async function restoreBackup(
         });
         continue;
       }
+      // A backup can come from anywhere. A new skill with scripts or extra
+      // powers in its frontmatter waits for the user's OK, the same as one
+      // Claude writes (v0.49); before, a restore put it live unseen.
+      if (newSkillMustWait(files)) {
+        let n = 0;
+        for (const f of files) {
+          const rel = safeRel(f.path);
+          if (!rel || typeof f.text !== "string") continue;
+          const isSkill = rel === "SKILL.md";
+          await submit(
+            paths,
+            {
+              id: newId(),
+              ts: new Date().toISOString(),
+              action: "create",
+              scope: "global",
+              name: s.name,
+              path: join(dir, ...rel.split("/")),
+              ...(isSkill ? {} : { file: rel }),
+              project: paths.projectRoot,
+              before: null,
+              after: f.text,
+              reason: `From your backup of ${day}. It has scripts or tool permissions, so it waits for your OK.`,
+            },
+            { mustWait: true },
+          );
+          n++;
+        }
+        if (n) report.waiting.push(s.name);
+        else report.skipped.push({ name: s.name, why: "no files could be restored" });
+        continue;
+      }
       let n = 0;
-      for (const f of s.files) if (await writeInto(dir, f)) n++;
+      for (const f of files) if (await writeInto(dir, f)) n++;
       if (n) report.added.push(s.name);
       else report.skipped.push({ name: s.name, why: "no files could be restored" });
       continue;
@@ -320,13 +379,14 @@ export async function restoreBackup(
     // The same skill with other texts: each difference waits for the user.
     let changes = 0;
     let unsure = 0;
-    for (const f of s.files) {
+    for (const f of files) {
       const rel = safeRel(f.path);
       if (!rel) continue;
       const abs = join(dir, ...rel.split("/"));
       if (typeof f.text !== "string") {
-        // Binary: only added when missing; a proposal holds text only.
-        if (!(await exists(abs))) await writeInto(dir, f);
+        // Binary: only added when missing; a proposal holds text only. Never
+        // one under scripts/: a program nobody approved.
+        if (!rel.startsWith("scripts/") && !(await exists(abs))) await writeInto(dir, f);
         continue;
       }
       const current = await readText(abs);
@@ -364,12 +424,21 @@ export async function restoreBackup(
   if (typeof b.userMemory === "string" && b.userMemory.trim()) {
     const limit = loadConfig().userChars;
     const key = (e: string) => e.replace(/\s+/g, " ").trim().toLowerCase();
-    const incoming = parseKnowledge(b.userMemory).entries;
+    // USER.md goes into every session of every project: each note passes the
+    // same check a note Claude saves does (no hidden characters, no secrets).
+    const all = parseKnowledge(b.userMemory).entries;
+    const incoming = all.flatMap((e) => {
+      const c = cleanEntry(e);
+      return "text" in c ? [c.text] : [];
+    });
+    const asIs = incoming.length === all.length && !INVISIBLE.test(b.userMemory);
     await mkdir(dirname(paths.userMemory), { recursive: true });
     await updateTextFile(paths.userMemory, (current) => {
       if (current === null) {
         report.userNotes = incoming.length;
-        return b.userMemory;
+        if (asIs) return b.userMemory as string;
+        if (!incoming.length) return null;
+        return `${incoming.map((e) => `- ${e.split("\n").join("\n  ")}`).join("\n")}\n`;
       }
       const have = new Set(parseKnowledge(current).entries.map(key));
       const add = incoming.filter((e) => !have.has(key(e)));
@@ -386,15 +455,27 @@ export async function restoreBackup(
   if (b.settings && typeof b.settings === "object") {
     const path = settingsPath(home);
     const now = await readJsonFile<Record<string, unknown>>(path);
-    const mine = now.status === "ok" ? now.data : {};
-    const merged = { ...mine };
-    for (const [k, v] of Object.entries(b.settings)) {
-      if (!(k in mine)) {
+    // A settings file that won't parse is the user's to fix, never replaced.
+    const mine = now.status === "ok" ? now.data : now.status === "missing" ? {} : null;
+    if (mine === null) {
+      report.skipped.push({
+        name: "settings",
+        why: `${path} is not valid JSON; fix it, then restore again`,
+      });
+    } else {
+      const merged = { ...mine };
+      for (const [k, raw] of Object.entries(b.settings)) {
+        if (k in mine) continue;
+        // Only settings this version knows, with a value it accepts. And a
+        // backup may turn "New skills wait for my OK" on, never off.
+        const def = SETTINGS.find((d) => d.key === k);
+        const v = def ? coerce(def, raw) : undefined;
+        if (v === undefined || (k === "skillApproval" && v !== true)) continue;
         merged[k] = v;
         report.settings.push(k);
       }
+      if (report.settings.length) await writeJsonAtomic(path, merged);
     }
-    if (report.settings.length) await writeJsonAtomic(path, merged);
   }
 
   // Favorites and use counts, under this machine's home folder.

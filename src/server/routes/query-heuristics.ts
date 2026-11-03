@@ -11,7 +11,13 @@ export function looksLikeNonSymbolQuery(pattern: string): boolean {
   if (/<\/?[a-zA-Z]/.test(pattern)) return true;
   // Hyphenated attribute assignment: "data-tour=", "aria-label=" ('-' is not a
   // valid identifier char, so this is markup, not a symbol).
-  if (/[a-zA-Z][\w-]*-[\w-]*\s*=/.test(pattern)) return true;
+  // One hyphenated word right before "=". The old /[\w-]*-[\w-]*\s*=/ could
+  // match the word two ways at every "-", so a long "a-a-a-..." pattern with no
+  // "=" took seconds and froze every hook while it ran (v0.49). Starting only
+  // where a word starts keeps it to one pass.
+  for (const m of pattern.matchAll(/(?<![\w-])[a-zA-Z][\w-]*\s*=/g)) {
+    if (m[0].includes("-")) return true;
+  }
   // CSS rule / object brace: ".content{", "{ color"
   if (/\{/.test(pattern)) return true;
   // Escaped-dot class / member selector: "\.filter-bar", "\.gs"

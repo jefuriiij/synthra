@@ -112,34 +112,32 @@ export function shouldNotify(signature: string, lastNotified: string | undefined
 
 // ─── automatic repair ────────────────────────────────────────────────────────
 
-/** The same problems are repaired by themselves at most this often. */
-export const AUTO_REPAIR_COOLDOWN_MS = 30 * 60_000;
-
-export interface AutoRepairTry {
-  signature: string;
-  at: number;
-}
-
 /**
  * Whether to restart Synthra by itself for these checks (extension 0.39): only
- * for problems the server marks as fixed by a restart, never twice for the
- * same set within the cooldown, so a problem a restart doesn't fix can't loop.
- * The ones that need the user still get the popup.
+ * for problems the server marks as fixed by a restart, and only once for the
+ * same set. Extension 0.39 tried again every 30 minutes, so a problem a
+ * restart doesn't fix restarted Synthra all day (extension 0.40). `last` is the
+ * set tried last; the caller forgets it when the restart problems are gone.
+ * A window that adopted another window's server (`adopted`) never restarts:
+ * its restart adopts the same server again and fixes nothing.
  */
 export function shouldAutoRepair(v: {
   checks: DoctorCheck[];
   enabled: boolean;
-  last: AutoRepairTry | undefined;
-  now: number;
+  last: string | undefined;
+  adopted: boolean;
 }): { repair: false } | { repair: true; signature: string; problems: DoctorCheck[] } {
-  if (!v.enabled) return { repair: false };
-  const problems = v.checks.filter((c) => c.status !== "ok" && c.fix === "restart");
+  if (!v.enabled || v.adopted) return { repair: false };
+  const problems = restartProblems(v.checks);
   if (problems.length === 0) return { repair: false };
   const signature = problemSignature(problems);
-  if (v.last && v.last.signature === signature && v.now - v.last.at < AUTO_REPAIR_COOLDOWN_MS) {
-    return { repair: false };
-  }
+  if (signature === v.last) return { repair: false };
   return { repair: true, signature, problems };
+}
+
+/** The failing checks a restart fixes. */
+export function restartProblems(checks: DoctorCheck[]): DoctorCheck[] {
+  return checks.filter((c) => c.status !== "ok" && c.fix === "restart");
 }
 
 /** After an automatic restart: which of the problems it was for are gone. */

@@ -300,7 +300,7 @@
         "synthra.autoRepair": {
           "type": "boolean",
           "default": true,
-          "description": "When the health check finds a problem a restart fixes (the port file, .mcp.json, the hooks, the CLAUDE.md block, a missing map), restart Synthra by itself and say what it fixed. At most once per problem every 30 minutes. Needs Synthra 0.48+."
+          "description": "When the health check finds a problem a restart fixes (the port file, .mcp.json, the hooks, the CLAUDE.md block, a missing map), restart Synthra by itself and say what it fixed. Once per set of problems. Needs Synthra 0.48+."
         },
         "synthra.checkForUpdates": {
           "type": "boolean",

@@ -14,7 +14,7 @@ import { readFile, readdir, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { writeJsonAtomic, writeTextAtomic } from "../shared/json-store.js";
 import { basename, join, resolve } from "node:path";
 
-import { AGENTS_TITLE, rulesSkeleton, stripAgentsBlock } from "../hooks/agents-md.js";
+import { AGENTS_TITLE, rulesSkeleton, stripAgentsBlock, writeTarget } from "../hooks/agents-md.js";
 import { isSynthraOnlyClaudeMd, stripPolicyBlock } from "../hooks/claude-md.js";
 import { ourHookCounts, stripOurHooks, type HooksConfig } from "../hooks/hooks-config.js";
 import { loadConfig } from "../shared/config.js";
@@ -59,17 +59,30 @@ async function readIfExists(path: string): Promise<string | null> {
   }
 }
 
-/** Strip Synthra's appended entries (and their `# added by synthra…` comment
- *  lines) from a .gitignore body. Returns the remaining content. */
+/**
+ * Strip Synthra's appended entries (and their `# added by synthra…` comment
+ * lines) from a .gitignore body. Returns the remaining content, with the
+ * file's own line endings.
+ *
+ * `syn .` adds an entry only when the user doesn't ignore it yet, always under
+ * its comment. So an entry is ours only right after that comment, except one
+ * naming Synthra's own folders, which nobody else writes. Before v0.49 a
+ * `.mcp.json` line the user had before Synthra was removed too, and their
+ * `.mcp.json` (with local ports in it) showed up to be committed.
+ */
 export function stripGitignoreEntries(content: string): string {
   const entries = new Set(GITIGNORE_ENTRIES.map((e) => e.entry));
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  let afterComment = false;
   const lines = content.split(/\r?\n/).filter((line) => {
     const t = line.trim();
-    if (entries.has(t)) return false;
-    if (t.startsWith("# added by synthra")) return false;
+    const wasAfter = afterComment;
+    afterComment = t.startsWith("# added by synthra");
+    if (afterComment) return false;
+    if (entries.has(t) && (wasAfter || t.startsWith(".synthra"))) return false;
     return true;
   });
-  return lines.join("\n");
+  return lines.join(eol);
 }
 
 /**
@@ -107,7 +120,8 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
       await unlink(paths.gitignore);
       result.removed.push(".gitignore (was synthra-only)");
     } else {
-      await writeTextAtomic(paths.gitignore, stripped.trimEnd() + "\n");
+      const eol = gitignore.includes("\r\n") ? "\r\n" : "\n";
+      await writeTextAtomic(paths.gitignore, stripped.trimEnd() + eol);
       result.kept.push(".gitignore (synthra entries stripped)");
     }
   }
@@ -126,7 +140,9 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
         await unlink(paths.claudeMd);
         result.removed.push("CLAUDE.md (was synthra-generated)");
       } else {
-        await writeTextAtomic(paths.claudeMd, remainder.trimEnd() + "\n");
+        // Through the link, as `syn .` writes it: an atomic write on the link
+        // itself replaced it with a plain file (v0.49).
+        await writeTextAtomic(await writeTarget(paths.claudeMd), remainder.trimEnd() + "\n");
         result.kept.push("CLAUDE.md (policy block stripped, your content kept)");
       }
     }
@@ -150,7 +166,7 @@ export async function removeSynthra(projectRootRaw: string): Promise<RemovalResu
       await unlink(paths.agentsMd);
       result.removed.push("AGENTS.md (was synthra-generated)");
     } else {
-      await writeTextAtomic(paths.agentsMd, remainder.trimEnd() + "\n");
+      await writeTextAtomic(await writeTarget(paths.agentsMd), remainder.trimEnd() + "\n");
       result.kept.push("AGENTS.md (synthra block stripped, your content kept)");
     }
   }
@@ -265,6 +281,10 @@ async function inventory(projectRoot: string, paths: SynthraPaths): Promise<stri
   if (gitignore?.includes("added by synthra")) found.push(".gitignore  (synthra entries)");
   const claudeMd = await readIfExists(paths.claudeMd);
   if (claudeMd?.includes("synthra-policy")) found.push("CLAUDE.md  (synthra policy block)");
+  // Missing before v0.49: when only AGENTS.md was left, remove said "nothing
+  // to remove" and the block stayed.
+  const agentsMd = await readIfExists(paths.agentsMd);
+  if (agentsMd?.includes("synthra-agents")) found.push("AGENTS.md  (synthra block)");
   // Same path-based detection the removal itself uses — the `meta` marker alone
   // went missing whenever Claude Code rewrote the file, which left the hooks off
   // this "about to delete" list even though they were there and were removed.
