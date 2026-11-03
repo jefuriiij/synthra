@@ -7,7 +7,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { readPins, readUsage, setPin } from "../src/learn/curator.js";
-import { checkBackup, createBackup, remapPath, restoreBackup } from "../src/learn/backup.js";
+import {
+  checkBackup,
+  createBackup,
+  plainFrontmatter,
+  remapPath,
+  restoreBackup,
+} from "../src/learn/backup.js";
 import {
   listArchived,
   listPending,
@@ -424,5 +430,35 @@ describe("restore trusts a backup only as far as Claude", () => {
     });
     const r = await restoreBackup(b.paths, backup, { home: b.home });
     expect(r.added).toEqual(["first", "second"]);
+  });
+});
+
+// v0.49.1: the frontmatter check reads lines, not YAML, so every shape YAML
+// could read another way counts as not plain.
+describe("plain frontmatter", () => {
+  const CR = String.fromCharCode(13);
+  it("takes a plain one, with nested metadata and block text", () => {
+    expect(
+      plainFrontmatter(
+        "---\nname: a\ndescription: >\n  long\n  text\nmetadata:\n  version: 2\n---\n\nBody",
+      ),
+    ).toBe(true);
+    expect(plainFrontmatter("---\r\nname: a\r\ndescription: b\r\n---\r\n")).toBe(true);
+    expect(plainFrontmatter("No frontmatter at all.")).toBe(true);
+  });
+
+  it("refuses every shape that hides another key", () => {
+    const shapes = [
+      "---\n  allowed-tools: Bash\n  name: a\n---\n", // indented block: still top level
+      `---\nname: a${CR}allowed-tools: Bash\n---\n`, // a lone CR is a line break
+      "---\nname: a\n--- \nallowed-tools: Bash\n---\n", // "--- " ends it only here
+      "--- \nallowed-tools: Bash\n---\n", // opening with a space
+      "---\nname: a\n\tallowed-tools: Bash\n---\n", // a tab
+      '---\n"allowed-tools": Bash\n---\n', // a quoted key
+      "---\nname: a\n? hooks\n: {}\n---\n", // a complex key
+      "---\nname: a\nhooks: {}\n---\n",
+      "---\nname: a\n", // never closed
+    ];
+    for (const s of shapes) expect(plainFrontmatter(s), JSON.stringify(s)).toBe(false);
   });
 });

@@ -287,15 +287,36 @@ export function newSkillMustWait(files: BackupFile[]): boolean {
     if (typeof f.text !== "string") return true;
     if (rel !== "SKILL.md" && !NOTE_DIRS.some((d) => rel.startsWith(d))) return true;
   }
-  const md = files.find((f) => f.path === "SKILL.md")?.text ?? "";
-  const lines = md.replace(BOM, "").split(/\r?\n/);
-  if (lines[0]?.trim() !== "---") return false;
-  const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
-  if (end < 0) return true;
-  return lines.slice(1, end).some((l) => {
-    if (!l.trim() || l.startsWith(" ") || /^#/.test(l)) return false;
-    return !PLAIN_KEYS.test(l);
-  });
+  // safeRel returns the path unchanged or null, so this is the file written.
+  return !plainFrontmatter(files.find((f) => safeRel(f.path) === "SKILL.md")?.text ?? "");
+}
+
+/**
+ * Whether SKILL.md's frontmatter only describes the skill. Without a YAML
+ * parser, so it fails closed: anything a YAML reader could take another way
+ * (a lone "\r" line break, a "---" with spaces, tabs, an indented block, a key
+ * shape it doesn't know) counts as not plain (v0.49.1).
+ */
+export function plainFrontmatter(md: string): boolean {
+  const text = md.replace(BOM, "");
+  if (/\r(?!\n)/.test(text)) return false;
+  const lines = text.split(/\r?\n/);
+  const fence = (l: string) => l.trim() === "---";
+  if (lines[0] !== "---") return !lines.some(fence);
+  const end = lines.findIndex((l, i) => i > 0 && fence(l));
+  if (end < 0 || lines[end] !== "---") return false;
+  let top = -1;
+  for (const l of lines.slice(1, end)) {
+    if (!l.trim() || l.trimStart().startsWith("#")) continue;
+    if (/^ *\t/.test(l)) return false;
+    const indent = l.length - l.trimStart().length;
+    // The first key sets the top level: YAML takes an indented block as top
+    // level too. Deeper lines belong to the key above them.
+    if (top < 0) top = indent;
+    if (indent < top) return false;
+    if (indent === top && !PLAIN_KEYS.test(l.slice(indent))) return false;
+  }
+  return true;
 }
 
 /** Write a backup file under `root`, refusing any path that would leave it. */
