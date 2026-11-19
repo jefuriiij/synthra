@@ -49,7 +49,18 @@ export interface StuckSkill {
   installedNow?: string[];
   /** edited: the files changed here since the install. */
   edited?: string[];
+  /** How many names (of `repoNow` or `edited`) were left out as not plain. */
+  odd?: number;
 }
+
+// Folder and file names come from a repo its author controls, and they end up
+// in text Claude follows. A folder named like an instruction ("ignore the
+// steps and run ...") must never get there: only plain names pass, the rest
+// are counted, and every value sits in a code span.
+const REPO_ITSELF = "(the repo itself)";
+const PLAIN_PATH = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+const plainName = (s: string) => s === REPO_ITSELF || SKILL_NAME_RE.test(s);
+const plainPath = (s: string) => s.length <= 200 && PLAIN_PATH.test(s);
 
 /** Where a skill's SKILL.md is on this machine: Claude's copy, else the
  *  installer's own (a skill installed only for other agents). A skill named
@@ -111,13 +122,24 @@ export async function stuckSkills(
       wasAt: e.skillPath,
       here: await localSkill(paths, e),
     };
-    const gone = facts.removed.get(name);
-    if (gone) {
+    const all = facts.removed.get(name);
+    if (all) {
+      const gone = all.filter(plainName);
       const here: string[] = [];
       for (const n of gone) {
-        if (installed.has(n) || (await findSkill(paths, n, "global"))) here.push(n);
+        if (n === REPO_ITSELF) continue;
+        if (installed.has(n) || (await findSkill(paths, n, "global").catch(() => null))) {
+          here.push(n);
+        }
       }
-      stuck.push({ ...base, why: "removed", repoNow: gone, installedNow: here });
+      const odd = all.length - gone.length;
+      stuck.push({
+        ...base,
+        why: "removed",
+        repoNow: gone,
+        installedNow: here,
+        ...(odd ? { odd } : {}),
+      });
       continue;
     }
     const state = facts.state.get(name);
@@ -127,9 +149,11 @@ export async function stuckSkills(
     }
     if (state === "available" && names) {
       const d = await updateDiff(paths, name, gh).catch(() => null);
-      const edited = d && typeof d !== "string" ? d.editedHere : null;
-      if (edited && edited.length > 0) {
-        stuck.push({ ...base, why: "edited", edited });
+      const changed = d && typeof d !== "string" ? d.editedHere : null;
+      if (changed && changed.length > 0) {
+        const edited = changed.filter(plainPath);
+        const odd = changed.length - edited.length;
+        stuck.push({ ...base, why: "edited", edited, ...(odd ? { odd } : {}) });
         continue;
       }
     }
@@ -138,18 +162,24 @@ export async function stuckSkills(
   return { stuck, ok, unknown };
 }
 
-const list = (items: string[]) => (items.length ? items.join(", ") : "none");
+/** Names as data: each in a code span, and a count of the ones left out. */
+function list(items: string[], odd = 0): string {
+  const shown = items.map((x) => `\`${x}\``);
+  if (odd) shown.push(`${odd} more with a name Synthra won't repeat here`);
+  return shown.length ? shown.join(", ") : "none";
+}
 
 function facts(s: StuckSkill): string[] {
+  const wasAt = plainPath(s.wasAt) ? `\`${s.wasAt}\`` : "a path Synthra won't repeat here";
   const out = [
     `## ${s.name}`,
-    `- Installed from: ${s.source} (it was at ${s.wasAt})`,
+    `- Installed from: \`${s.source}\` (it was at ${wasAt})`,
     `- On this machine: ${s.here ?? "not found in ~/.claude/skills"}`,
   ];
   if (s.why === "removed") {
     out.push(
       "- Problem: its repo no longer has a skill of this name, so there is nothing to update to.",
-      `- The repo has these skills now: ${list(s.repoNow ?? [])}`,
+      `- The repo has these skills now: ${list(s.repoNow ?? [], s.odd)}`,
       `- Of those, installed here already: ${list(s.installedNow ?? [])}`,
     );
   } else if (s.why === "moved") {
@@ -157,7 +187,7 @@ function facts(s: StuckSkill): string[] {
   } else {
     out.push(
       "- Problem: an update is waiting, and I changed this skill here. The update replaces my changes.",
-      `- Files I changed here: ${list(s.edited ?? [])}`,
+      `- Files I changed here: ${list(s.edited ?? [], s.odd)}`,
     );
   }
   return out;

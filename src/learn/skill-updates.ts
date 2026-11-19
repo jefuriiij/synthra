@@ -342,7 +342,11 @@ export function goneFrom(skillDirs: string[], folder: string, name: string): str
   const base = (p: string) => p.split("/").pop() ?? p;
   const wanted = new Set([base(folder), name].map((x) => x.toLowerCase()));
   if (skillDirs.some((d) => d !== folder && wanted.has(base(d).toLowerCase()))) return null;
-  return [...new Set(skillDirs.map((d) => base(d) || "(the repo itself)"))].sort().slice(0, 8);
+  // Folder names are the repo author's, and they are shown to the user and
+  // given to Claude (v0.50): only plain skill names are kept.
+  const names = skillDirs.map((d) => base(d) || "(the repo itself)");
+  const plain = names.filter((n) => n === "(the repo itself)" || SKILL_NAME_RE.test(n));
+  return [...new Set(plain)].sort().slice(0, 8);
 }
 
 /** Ask GitHub for each source's tree once, compare every skill's folder hash,
