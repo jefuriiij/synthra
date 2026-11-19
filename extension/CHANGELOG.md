@@ -3,6 +3,27 @@
 What changed in the Synthra extension, newest first. For the full technical
 list, see the [Synthra changelog](https://github.com/jefuriiij/synthra/blob/main/CHANGELOG.md).
 
+## 0.41.0 (2026-11-19)
+
+These come with Synthra 0.50.0. The extension offers the update, or run
+`npm install -g @jefuriiij/synthra`.
+
+- **Fix a stuck skill update with Claude.** A skill its repo removed has
+  nothing to update to, and the installer skips it. In Capabilities, a
+  repo with such skills now shows **Fix** (or **Fix N**) and **Copy
+  request**, and a skill's menu has **Fix with Claude**. Fix opens a
+  terminal named "Synthra: fix skills" and starts Claude Code there.
+  Claude finds what replaced the skill, shows you one plan and waits for
+  your OK before it changes anything.
+- **Keep my edits.** When you changed an installed skill yourself, the
+  Update dialog offers this next to Update: Claude updates the skill, then
+  puts back the edits that still fit.
+- A removed skill you decided to keep shows **kept** and is no longer
+  marked.
+- The cost numbers in the dashboard were two to three times too high.
+  Synthra 0.50.0 fixes the count; `syn recount` fixes what is already
+  logged.
+
 ## 0.40.0 (2026-11-03)
 
 These come with Synthra 0.49.0. The extension offers the update, or run

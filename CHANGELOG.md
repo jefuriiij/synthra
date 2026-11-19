@@ -7,6 +7,40 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.50.0] (2026-11-19)
+
+### Fixed
+
+- **Cost was counted two to three times.** Claude Code writes one reply
+  on several lines of its transcript (one per thinking, text or tool
+  block), and every line repeats the reply's whole token use. Synthra added
+  up every line. Measured on a real session: $1,170.82 shown, $476.06 real.
+  Each reply now counts once, for the main session and for subagents. Each
+  project gets the new hooks the next time Synthra starts there.
+- **Fable 5.2 has its own price** ($8 in, $40 out, $0.20 cache read per
+  million tokens). It was charged as Fable 5.1, 25% too high.
+
+### Added
+
+- **`syn recount [path]`** fixes the cost already in a project's log. It
+  reads the transcripts Claude Code still keeps (30 days by default),
+  counts each reply once, shows the numbers before and after, and asks
+  before it replaces anything (`--yes` skips the question). The old log is
+  kept as a backup. Entries older than the oldest transcript stay as they
+  are. Run it once in each project you care about.
+- **Fix a stuck skill update with Claude.** `npx skills update` can't
+  finish some updates: it skips a skill its repo removed, so the skill
+  stayed "removed from its repo" for good. Extension 0.41 adds **Fix**: it
+  starts Claude Code in a terminal, Claude finds what replaced the skill,
+  shows you one plan (replace it, keep your copy, or remove it) and waits
+  for your OK before it runs the installer. **Copy request** puts the same
+  request on the clipboard. When you changed an installed skill yourself,
+  Update offers **Keep my edits**: Claude updates it, then puts back the
+  edits that still fit. Claude gets the facts and the steps from a new
+  Synthra tool, `skill_updates`.
+
+---
+
 ## [0.49.2] (2026-11-03)
 
 ### Fixed
