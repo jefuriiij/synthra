@@ -56,6 +56,7 @@ import { handleRoute } from "./routes/route.js";
 import { handleSettingsPost, settingsView } from "./routes/settings.js";
 import {
   handleCheckUpdates,
+  handleFixCommand,
   handleHold,
   handleUpdateCommand,
   handleUpdateDiff,
@@ -328,6 +329,10 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
   app.post("/skills/update-command", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     return c.json(await handleUpdateCommand(body, ctx));
+  });
+  app.post("/skills/fix-command", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(await handleFixCommand(body, ctx));
   });
 
   // The IDE's Settings tab: ~/.synthra/settings.json, with where each value

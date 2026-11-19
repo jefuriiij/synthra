@@ -34,6 +34,7 @@ import {
   waitingFor,
   writeSupportFile,
 } from "../learn/skills.js";
+import { fixRequestText, keepSkill, stuckSkills } from "../learn/skill-fix.js";
 import { appendAccess } from "../learn/store.js";
 import type { AccessEvent } from "../learn/usage.js";
 import { recallEntries, rememberEntry } from "../memory/index.js";
@@ -359,6 +360,30 @@ const TOOLS = [
     },
   },
   {
+    name: "skill_updates",
+    description:
+      "Skills installed with `npx skills` whose update is stuck: removed from their repo, moved inside it, or changed here by the user. Use it when the user asks to fix stuck skill updates. action list: the facts about each stuck skill and the steps to fix them. Follow those steps: show one plan and wait for the user's OK before any command. action keep: the user keeps their copy of a skill its repo removed; Synthra then stops marking it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "keep"],
+          description:
+            "list: the stuck skills (all, or the ones in `names`) with the steps. keep: mark `name` as kept.",
+        },
+        names: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "list: only these skills. A named skill with a normal update waiting is also checked for changes the user made to it here.",
+        },
+        name: { type: "string", description: "keep: the skill." },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "context_recall",
     annotations: READ_ONLY,
     description:
@@ -510,6 +535,8 @@ async function callTool(
       return memoryTool(args, ctx);
     case "skill_manage":
       return skillManage(args, ctx);
+    case "skill_updates":
+      return skillUpdates(args, ctx);
     case "recent_activity":
       return recentActivity(args, ctx);
     case "count_tokens":
@@ -1560,6 +1587,32 @@ function outcomeText(o: Outcome, verb: string): ReturnType<typeof textContent> {
   return textContent(
     `${verb}: waiting for the user's OK in Synthra's Learning tab (proposal ${p.id}, ${what}, ${SCOPE_WORD[p.scope]}). It is not active until approved. Tell the user it is there.${o.always ? " (Changes to the user's own skills and to scripts always wait for the user's OK.)" : ""}`,
   );
+}
+
+/** Stuck updates of installed skills: the facts and the steps for Claude, and
+ *  "keep" for a skill its repo removed (v0.50, src/learn/skill-fix.ts). */
+async function skillUpdates(args: Record<string, unknown> | undefined, ctx: ServerContext) {
+  const action = typeof args?.action === "string" ? args.action : "";
+  if (action === "keep") {
+    const name = typeof args?.name === "string" ? args.name.trim() : "";
+    if (!name) return errorContent("skill_updates: keep needs `name`.");
+    const why = await keepSkill(ctx.paths, name);
+    if (why) return errorContent(`skill_updates: ${why}`);
+    return textContent(
+      `Kept: "${name}" stays as it is. Synthra offers it no update and no longer marks it. ("Allow updates" in the Capabilities tab undoes this.)`,
+    );
+  }
+  if (action !== "list") return errorContent("skill_updates: `action` must be 'list' or 'keep'.");
+  // A model may send "a, b" where the schema says a list: take both.
+  const raw = args?.names;
+  const given = Array.isArray(raw)
+    ? raw.filter((n): n is string => typeof n === "string")
+    : typeof raw === "string"
+      ? raw.split(/[\s,]+/)
+      : [];
+  const names = [...new Set(given.map((n) => n.trim()).filter(Boolean))].slice(0, 50);
+  const found = await stuckSkills(ctx.paths, names.length ? names : undefined);
+  return textContent(fixRequestText(found));
 }
 
 async function skillManage(args: Record<string, unknown> | undefined, ctx: ServerContext) {

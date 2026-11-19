@@ -307,6 +307,23 @@ export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export const UPDATE_COMMAND_RE =
   /^npx -y skills update( [A-Za-z0-9][A-Za-z0-9._:-]{0,127})+ -g -y$/;
 
+// "Fix" (extension 0.41, Synthra 0.50+): the one sentence that hands stuck
+// updates to Claude, and the command that starts Claude Code with it. Only the
+// engine's own wording passes, with plain skill names: the sentence goes into
+// a terminal as a quoted argument, so nothing in it may end the quotes.
+const FIX_NAME = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+const FIX_SENTENCE = `Fix my stuck skill updates\\. Call the tool mcp__synthra__skill_updates with action list and names ${FIX_NAME}(, ${FIX_NAME})*\\. Then follow the steps it returns\\.`;
+export const FIX_REQUEST_RE = new RegExp(`^${FIX_SENTENCE}$`);
+export const FIX_COMMAND_RE = new RegExp(`^claude "${FIX_SENTENCE}"$`);
+
+/** A skill whose update Claude has to sort out: its repo removed it, or it
+ *  moved there (Update finds most of those; Fix is for the ones it can't). */
+export const canFix = (r: {
+  held?: boolean;
+  update?: "available" | "moved";
+  removedUpstream?: string[];
+}): boolean => !r.held && (r.removedUpstream !== undefined || r.update === "moved");
+
 // ─── Agents ─────────────────────────────────────────────────────────────────
 
 function agentsTab(p: PanelsPayload): AgentsTab {

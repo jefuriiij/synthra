@@ -33,8 +33,10 @@
   /** A skill its repo removed: why there is no Update, and what is there now. */
   const removedTitle = (r: CapabilityRow) => {
     const now = r.removedUpstream?.length ? ` It has ${r.removedUpstream.join(", ")} now.` : "";
-    return `${r.thirdParty ?? "Its repo"} no longer has this skill, so there is nothing to update to.${now} Your copy keeps working; delete it when you no longer want it.`;
+    return `${r.thirdParty ?? "Its repo"} no longer has this skill, so there is nothing to update to.${now} Your copy keeps working. Fix hands it to Claude, which finds what replaced it and shows you a plan first.`;
   };
+  const keptTitle = (r: CapabilityRow) =>
+    `${r.thirdParty ?? "Its repo"} no longer has this skill, and you keep your copy. "Allow updates" in its menu brings the mark back.`;
   const updates = $derived(rows.filter(hasUpdate).length);
   const inGroup = (r: CapabilityRow, g: string) =>
     g === "all" ||
@@ -116,6 +118,12 @@
   const updateKey = (names: string[]) => `update:${names.join(" ")}`;
   const pending = (s: Section) =>
     s.rows.flatMap((r) => (hasUpdate(r) && r.updatable ? [r.updatable] : []));
+  // Fix (Synthra 0.50+): a skill its repo removed has nothing to update to.
+  // What replaced it is a judgment, so it goes to Claude, with a plan first.
+  const fixKey = (names: string[]) => `fix:${names.join(" ")}`;
+  const isRemoved = (r: CapabilityRow) => r.removedUpstream !== undefined && !r.held;
+  const stuck = (s: Section) =>
+    s.rows.flatMap((r) => (isRemoved(r) && r.updatable ? [r.updatable] : []));
 
   const icon = (r: CapabilityRow): IconName =>
     kind === "mcp"
@@ -208,6 +216,25 @@
           ...(r.update === "moved" ? { sep: true } : {}),
           disabled: busy,
           run: () => store.updateSkills([name]),
+        });
+      }
+      // Removed from its repo, or moved where Update may not find it.
+      if (isRemoved(r) || (r.update === "moved" && !r.held)) {
+        const fixBusy = busy || store.skillBusy[fixKey([name])];
+        items.push({
+          label: "Fix with Claude",
+          icon: "robot",
+          sep: true,
+          hint: "a plan first",
+          disabled: fixBusy,
+          run: () => store.fixSkills([name]),
+        });
+        items.push({
+          label: "Copy the fix request",
+          icon: "file",
+          hint: "paste in Claude Code",
+          disabled: fixBusy,
+          run: () => store.fixSkills([name], true),
         });
       }
       items.push({
@@ -363,6 +390,7 @@
       {#each sections as s (s.name)}
         {@const open = isOpen(s)}
         {@const names = pending(s)}
+        {@const toFix = stuck(s)}
         <section class="section">
           {#if sections.length > 1 || s.sort === "repo"}
             <div class="sec-head">
@@ -377,6 +405,9 @@
                 <span class="n small muted">{s.rows.length}</span>
                 {#if names.length}
                   <span class="tag syn-tag small"><Icon name="update" size={10} /> {plural(names.length, "update")}</span>
+                {/if}
+                {#if toFix.length}
+                  <span class="tag warn-tag small" title="Removed from this repo: there is nothing to update to.">{toFix.length} to fix</span>
                 {/if}
               </button>
               {#if s.sort === "repo"}
@@ -394,8 +425,29 @@
                   <Icon name="update" size={12} /> {names.length === 1 ? "Update" : `Update ${names.length}`}
                 </button>
               {/if}
+              {#if toFix.length && !merging}
+                <button
+                  type="button"
+                  class="btn small-btn"
+                  title="Starts Claude Code in a terminal. It finds what replaced {toFix.length === 1 ? 'this skill' : 'these skills'}, shows you one plan and waits for your OK."
+                  disabled={store.skillBusy[fixKey(toFix)]}
+                  onclick={() => store.fixSkills(toFix)}
+                >
+                  <Icon name="robot" size={12} /> {toFix.length === 1 ? "Fix" : `Fix ${toFix.length}`}
+                </button>
+                <button
+                  type="button"
+                  class="link-btn small"
+                  title="Puts the same request on the clipboard, to paste in a Claude Code chat that is open already."
+                  disabled={store.skillBusy[fixKey(toFix)]}
+                  onclick={() => store.fixSkills(toFix, true)}
+                >
+                  Copy request
+                </button>
+              {/if}
             </div>
             {#if store.skillErrors[updateKey(names)]}<p class="stale">{store.skillErrors[updateKey(names)]}</p>{/if}
+            {#if store.skillErrors[fixKey(toFix)]}<p class="stale">{store.skillErrors[fixKey(toFix)]}</p>{/if}
           {/if}
           {#if open}
             <div class="card">
@@ -449,6 +501,9 @@
                       {#if r.updatable && store.skillErrors[updateKey([r.updatable])]}
                         <span class="stale">{store.skillErrors[updateKey([r.updatable])]}</span>
                       {/if}
+                      {#if r.updatable && store.skillErrors[fixKey([r.updatable])]}
+                        <span class="stale">{store.skillErrors[fixKey([r.updatable])]}</span>
+                      {/if}
                     </span>
                     {#if !merging}<Menu items={menu(r)} label="Actions for {r.name}" />{/if}
                   </div>
@@ -482,7 +537,7 @@
   {#if r.synthra}<span class="tag syn-tag"><Icon name="sparkle" size={10} /> Synthra</span>{/if}
   {#if r.update === "available" && !r.held}<span class="tag syn-tag"><Icon name="update" size={10} /> update</span>{/if}
   {#if r.update === "moved" && !r.held}<span class="tag warn-tag" title="Its folder isn't where it was in its repo. Update finds where it went.">moved in its repo</span>{/if}
-  {#if r.removedUpstream}<span class="tag" title={removedTitle(r)}>removed from its repo</span>{/if}
+  {#if r.removedUpstream && r.held}<span class="tag" title={keptTitle(r)}>kept</span>{:else if r.removedUpstream}<span class="tag warn-tag" title={removedTitle(r)}>removed from its repo</span>{/if}
   {#if r.held}<span class="tag" title="You set it to Don't update."><Icon name="hold" size={10} /> kept</span>{/if}
   {#if r.linkedTo}<span class="tag" title="A link to {r.linkedTo}"><Icon name="link" size={11} /> linked</span>{/if}
   {#if r.favorite}<span class="tag"><Icon name="star-full" size={10} class="fav" /> favorite</span>{/if}

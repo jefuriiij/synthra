@@ -12,6 +12,9 @@ import * as vscode from "vscode";
 import { buildHtml } from "./html";
 import {
   buildTabs,
+  canFix,
+  FIX_COMMAND_RE,
+  FIX_REQUEST_RE,
   mergePrompt,
   messageTabs,
   REPO_RE,
@@ -300,6 +303,27 @@ export class SynthraEditorPanel implements vscode.Disposable {
           .then((error) => this.post({ type: "skillResult", target, error }));
         return;
       }
+      case "fixSkills": {
+        const names = Array.isArray(msg.names)
+          ? msg.names.filter((n): n is string => typeof n === "string")
+          : [];
+        const target = `fix:${names.join(" ")}`;
+        // Only what the view offers: a stuck skill, or one with an update
+        // waiting (its own edits may be in the way).
+        const offered = names.every((n) => {
+          const r = this.installed.get(n);
+          return r !== undefined && !r.held && (canFix(r) || r.update === "available");
+        });
+        if (names.length === 0 || !offered) {
+          this.log("[ext] ignored a fix the current view does not offer");
+          this.post({ type: "skillResult", target, error: "" });
+          return;
+        }
+        void this.runFix(names, msg.copy === true)
+          .catch((e: Error) => e.message)
+          .then((error) => this.post({ type: "skillResult", target, error }));
+        return;
+      }
       case "openRepo": {
         const known =
           typeof msg.repo === "string" &&
@@ -365,6 +389,35 @@ export class SynthraEditorPanel implements vscode.Disposable {
    * official installer does the work, so its lock and every agent's copy stay
    * right; the lock-file watcher refreshes the panel when it is done.
    */
+  /**
+   * Hand stuck skill updates to Claude (extension 0.41, Synthra 0.50+): start
+   * Claude Code in a terminal in the project's folder, with one sentence that
+   * points it at Synthra's `skill_updates` tool. That tool holds the facts and
+   * the steps; Claude shows a plan and waits for the user's OK before it runs
+   * anything. With `copy`, the sentence goes to the clipboard instead, for a
+   * Claude Code chat that is open already. Returns "" or what went wrong.
+   */
+  private async runFix(names: string[], copy: boolean): Promise<string> {
+    const r = await this.source.fixCommand(names);
+    if (r.error) return r.error;
+    // Only the engine's own wording: this text is typed into a shell.
+    if (!FIX_COMMAND_RE.test(r.command) || !FIX_REQUEST_RE.test(r.request)) {
+      return "Synthra sent a request this extension won't run.";
+    }
+    if (copy) {
+      await vscode.env.clipboard.writeText(r.request);
+      void vscode.window.showInformationMessage(
+        "Synthra: the fix request is on your clipboard. Paste it in a Claude Code chat in this project; Claude shows a plan first and waits for your OK.",
+      );
+      return "";
+    }
+    if (!this.folder) return "Open the project's folder first: Claude needs it to reach Synthra.";
+    const t = vscode.window.createTerminal({ name: "Synthra: fix skills", cwd: this.folder });
+    t.show();
+    t.sendText(r.command);
+    return "";
+  }
+
   private async runUpdate(rows: CapabilityRow[]): Promise<string> {
     const names = rows.flatMap((r) => (r.updatable ? [r.updatable] : []));
     const first = rows[0];
@@ -385,10 +438,11 @@ export class SynthraEditorPanel implements vscode.Disposable {
         modal: true,
         detail: [
           "npx skills downloads the new version and replaces the skill's files, in every AI tool it is installed for.",
-          edited ||
-            (rows.length === 1
+          edited
+            ? `${edited} "Keep my edits" hands it to Claude: it updates the skill, then puts back the edits that still fit.`
+            : rows.length === 1
               ? "Use See changes first to read what is new."
-              : "Changes you made to these skills here are replaced too."),
+              : "Changes you made to these skills here are replaced too.",
           rows.some((r) => r.update === "moved")
             ? "A skill that moved in its repo is looked up there; one that was removed is reported."
             : "",
@@ -397,7 +451,9 @@ export class SynthraEditorPanel implements vscode.Disposable {
           .join("\n\n"),
       },
       "Update",
+      ...(edited ? ["Keep my edits"] : []),
     );
+    if (pick === "Keep my edits") return this.runFix(names, false);
     if (pick !== "Update") return "";
     const r = await this.source.updateCommand(names);
     if (r.error) return r.error;

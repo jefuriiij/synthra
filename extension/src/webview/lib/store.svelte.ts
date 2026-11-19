@@ -124,6 +124,15 @@ class Store {
     post({ type: "updateSkills", names });
   }
 
+  /** Hand stuck skills to Claude: a terminal with Claude Code, or with `copy`
+   *  the request on the clipboard. Busy and errors under "fix:<names>". */
+  fixSkills(names: string[], copy = false): void {
+    const target = `fix:${names.join(" ")}`;
+    this.skillBusy = { ...this.skillBusy, [target]: true };
+    this.skillErrors = { ...this.skillErrors, [target]: "" };
+    post({ type: "fixSkills", names, ...(copy ? { copy: true } : {}) });
+  }
+
   /** "Don't update" on or off, or the update's changes as a diff; busy and
    *  errors under the skill's path. */
   installed(

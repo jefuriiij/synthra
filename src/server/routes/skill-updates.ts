@@ -4,6 +4,7 @@
 //   GET  /skills/update-diff?name=x       what updating x would change
 //   POST /skills/hold {name, on}          never offer x an update (or again)
 //   POST /skills/update-command {names}   the command the IDE runs to update
+//   POST /skills/fix-command {names}      the command that hands stuck ones to Claude
 //
 // Only names in the lock file are taken; a held skill gets no command.
 
@@ -18,6 +19,7 @@ import {
   updateCommand,
   updateDiff,
 } from "../../learn/skill-updates.js";
+import { fixCommand, fixSentence } from "../../learn/skill-fix.js";
 import { skillLockPath } from "../../learn/skills.js";
 import type { ServerContext } from "../context.js";
 
@@ -79,4 +81,26 @@ export async function handleUpdateCommand(
   return command
     ? { ok: true, command }
     : { ok: false, error: "Only skills installed with npx skills can be updated here." };
+}
+
+/**
+ * POST /skills/fix-command {names}: how the IDE hands stuck updates to Claude
+ * (v0.50). `command` starts Claude Code in a terminal with one sentence that
+ * points at the `skill_updates` tool; `request` is that sentence alone, for
+ * the clipboard. Only names in the lock file are taken.
+ */
+export async function handleFixCommand(
+  body: { names?: unknown },
+  ctx: ServerContext,
+): Promise<{ ok: true; command: string; request: string } | Fail> {
+  const names = Array.isArray(body?.names) ? body.names : [];
+  const known = await installed(ctx);
+  const take = [
+    ...new Set(names.filter((n): n is string => typeof n === "string" && known.has(n))),
+  ];
+  const command = take.length && take.length === names.length ? fixCommand(take) : null;
+  const request = command ? fixSentence(take) : null;
+  return command && request
+    ? { ok: true, command, request }
+    : { ok: false, error: "Only skills installed with npx skills can be fixed here." };
 }

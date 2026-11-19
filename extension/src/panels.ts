@@ -38,6 +38,8 @@ const DIFF_SCHEME = "synthra-skill";
 
 const TOO_OLD_FOR_UPDATES =
   "This version of Synthra can't check skills for updates. Update Synthra to 0.38 or later.";
+const TOO_OLD_FOR_FIX =
+  "This version of Synthra can't hand stuck updates to Claude. Update Synthra to 0.50 or later.";
 
 /** What updating one installed skill changes (GET /skills/update-diff). */
 export interface UpdateDiff {
@@ -529,6 +531,27 @@ export class SynthraPanels implements vscode.Disposable {
   /** "Don't update" on or off. Resolves to "" or why not. */
   async holdSkill(name: string, on: boolean): Promise<string> {
     return this.skillPost("/skills/hold", { name, on }, "", TOO_OLD_FOR_UPDATES);
+  }
+
+  /** How to hand these stuck skills to Claude, from the engine (which checks
+   *  each is installed): the terminal command and the request alone. */
+  async fixCommand(names: string[]): Promise<{ command: string; request: string; error: string }> {
+    const none = { command: "", request: "" };
+    const port = this.deps.port();
+    if (port === null) return { ...none, error: "Synthra is not running." };
+    const r = await this.deps.postJson<{
+      ok?: boolean;
+      error?: string;
+      command?: string;
+      request?: string;
+    }>(`http://127.0.0.1:${port}/skills/fix-command`, { names }, 10_000);
+    if (r.status === 404) return { ...none, error: TOO_OLD_FOR_FIX };
+    if (r.status !== 200 || !r.body) {
+      return { ...none, error: "Synthra did not answer. See the log (Synthra: Show log)." };
+    }
+    return r.body.ok && r.body.command && r.body.request
+      ? { command: r.body.command, request: r.body.request, error: "" }
+      : { ...none, error: r.body.error ?? "Nothing to fix." };
   }
 
   /** The command that updates these skills, from the engine (which checks

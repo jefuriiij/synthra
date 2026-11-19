@@ -18,10 +18,19 @@ import {
   updateDiff,
   updateFacts,
 } from "../src/learn/skill-updates.js";
+import {
+  fixCommand,
+  fixRequestText,
+  fixSentence,
+  keepSkill,
+  stuckSkills,
+} from "../src/learn/skill-fix.js";
 import type { ServerContext } from "../src/server/context.js";
+import { handleMcpRequest } from "../src/server/mcp.js";
 import { handlePanels } from "../src/server/routes/panels.js";
 import {
   handleCheckUpdates,
+  handleFixCommand,
   handleHold,
   handleUpdateCommand,
 } from "../src/server/routes/skill-updates.js";
@@ -411,5 +420,183 @@ description: x
     expect(
       JSON.parse(await readFile(join(paths.skillState, "updates.json"), "utf8")),
     ).toHaveProperty("skills.fresh.latest", h("5"));
+  });
+});
+
+// v0.50: `npx skills update` can't finish some updates by itself. With -y it
+// skips a skill its repo removed ("Skipping deletion in non-interactive
+// mode"), so the skill stayed "removed from its repo" for good. What replaced
+// it is a judgment: Synthra gives Claude the facts and the steps, and Claude
+// shows a plan first.
+describe("stuck updates go to Claude", () => {
+  const skillMd = (name: string) =>
+    `---\nname: ${name}\ndescription: Use when ${name}.\n---\n\nBody\n`;
+
+  async function stuckMachine() {
+    const m = await machine();
+    await lock(m.home, {
+      gone: entry("o/r", "skills/gone/SKILL.md", h("1")),
+      "react:parts": entry("o/r", "skills/react-parts/SKILL.md", h("2")),
+      fresh: entry("o/r", "skills/fresh/SKILL.md", h("3")),
+      parked: entry("o/r", "skills/parked/SKILL.md", h("4")),
+      big: entry("o/r", "skills/big/SKILL.md", h("5")),
+    });
+    await put(
+      join(m.paths.skillState, "updates.json"),
+      JSON.stringify({
+        checkedAt: "2026-11-19T00:00:00.000Z",
+        skills: {
+          gone: { installed: h("1"), latest: null, branch: "main", gone: ["big", "small"] },
+          "react:parts": { installed: h("2"), latest: null, branch: "main" },
+          fresh: { installed: h("3"), latest: h("3"), branch: "main" },
+          parked: { installed: h("4"), latest: null, branch: "main", gone: ["big"] },
+          big: { installed: h("5"), latest: h("5"), branch: "main" },
+        },
+        errors: {},
+      }),
+    );
+    await put(join(m.paths.globalSkillsDir, "gone", "SKILL.md"), skillMd("gone"));
+    await put(join(m.paths.globalSkillsDir, "big", "SKILL.md"), skillMd("big"));
+    // Named "react:parts", in the folder its repo gave it.
+    await put(join(m.paths.globalSkillsDir, "react-parts", "SKILL.md"), skillMd("react:parts"));
+    await setHold(m.paths.skillState, "parked", true);
+    return m;
+  }
+
+  it("lists the removed and the moved ones, with what the repo has now", async () => {
+    const { paths } = await stuckMachine();
+    const found = await stuckSkills(paths);
+    expect(found.stuck.map((s) => [s.name, s.why])).toEqual([
+      ["gone", "removed"],
+      ["react:parts", "moved"],
+    ]);
+    const [gone, moved] = found.stuck;
+    expect(gone).toMatchObject({ source: "o/r", wasAt: "skills/gone/SKILL.md" });
+    expect(gone?.repoNow).toEqual(["big", "small"]);
+    expect(gone?.installedNow).toEqual(["big"]);
+    expect(gone?.here).toBe(join(paths.globalSkillsDir, "gone", "SKILL.md"));
+    expect(moved?.here).toBe(join(paths.globalSkillsDir, "react-parts", "SKILL.md"));
+  });
+
+  it("takes a named skill even when held, and says what needs no fix", async () => {
+    const { paths } = await stuckMachine();
+    const found = await stuckSkills(paths, ["parked", "fresh", "nope"]);
+    expect(found.stuck.map((s) => s.name)).toEqual(["parked"]);
+    expect(found.ok).toEqual(["fresh"]);
+    expect(found.unknown).toEqual(["nope"]);
+  });
+
+  it("finds a named skill whose update would replace edits made here", async () => {
+    const { home, paths } = await machine();
+    const oldSkill = skillMd("tool");
+    await lock(home, { tool: entry("o/r", "skills/tool/SKILL.md", h("1")) });
+    await put(
+      join(paths.skillState, "updates.json"),
+      JSON.stringify({
+        checkedAt: "2026-11-19T00:00:00.000Z",
+        skills: { tool: { installed: h("1"), latest: h("2"), branch: "main" } },
+        errors: {},
+      }),
+    );
+    await put(join(paths.globalSkillsDir, "tool", "SKILL.md"), oldSkill);
+    await put(join(paths.globalSkillsDir, "tool", "notes.md"), "added here");
+    const gh = github(
+      {
+        [`o/r@${h("1")}`]: {
+          sha: h("1"),
+          tree: [{ path: "SKILL.md", type: "blob", sha: sha(oldSkill) }],
+        },
+        "o/r@HEAD": {
+          sha: h("9"),
+          tree: [
+            { path: "skills/tool", type: "tree", sha: h("2") },
+            { path: "skills/tool/SKILL.md", type: "blob", sha: sha("new") },
+          ],
+        },
+      },
+      { "o/r@HEAD:skills/tool/SKILL.md": "new" },
+    );
+    const found = await stuckSkills(paths, ["tool"], { fetch: gh.fetch, token: null, ghApi: null });
+    expect(found.stuck).toHaveLength(1);
+    expect(found.stuck[0]).toMatchObject({ name: "tool", why: "edited", edited: ["notes.md"] });
+    // Without a name it stays a normal update: no GitHub lookups per skill.
+    expect((await stuckSkills(paths)).stuck).toEqual([]);
+  });
+
+  it("writes the facts, then steps that start with a plan", async () => {
+    const { paths } = await stuckMachine();
+    const text = fixRequestText(await stuckSkills(paths));
+    expect(text).toContain("# Stuck skill updates (2)");
+    expect(text).toContain("## gone");
+    expect(text).toContain("The repo has these skills now: big, small");
+    expect(text).toContain("Of those, installed here already: big");
+    expect(text).toContain("## react:parts");
+    expect(text).toContain("its folder moved inside its repo");
+    expect(text).toContain("Then STOP and wait for my OK");
+    expect(text).toContain("`npx -y skills remove <old skill> -g -y`");
+    expect(text).toContain("Never remove a skill before its replacement is installed.");
+    expect(text).toContain("mcp__synthra__skill_updates with action keep");
+    expect(text.indexOf("# Steps")).toBeGreaterThan(text.indexOf("## react:parts"));
+    expect(fixRequestText({ stuck: [], ok: ["fresh"], unknown: [] })).toContain(
+      "No installed skill has a stuck update.",
+    );
+  });
+
+  it("starts Claude with one plain sentence, and only for plain names", () => {
+    expect(fixSentence(["gone", "react:parts"])).toBe(
+      "Fix my stuck skill updates. Call the tool mcp__synthra__skill_updates with action list and names gone, react:parts. Then follow the steps it returns.",
+    );
+    expect(fixCommand(["gone"])).toBe(`claude "${fixSentence(["gone"])}"`);
+    for (const bad of [[], ['a"b'], ["a b"], ["$(x)"], ["a;b"], ["ok", "`x`"]]) {
+      expect(fixCommand(bad)).toBeNull();
+    }
+  });
+
+  it("gives the IDE the command only for installed skills", async () => {
+    const { ctx } = await stuckMachine();
+    const r = await handleFixCommand({ names: ["gone", "react:parts"] }, ctx);
+    expect(r).toEqual({
+      ok: true,
+      command: fixCommand(["gone", "react:parts"]),
+      request: fixSentence(["gone", "react:parts"]),
+    });
+    expect((await handleFixCommand({ names: ["gone", "nope"] }, ctx)).ok).toBe(false);
+    expect((await handleFixCommand({ names: [] }, ctx)).ok).toBe(false);
+  });
+
+  it("keep: a removed skill stays, held, and is no longer listed", async () => {
+    const { paths } = await stuckMachine();
+    expect(await keepSkill(paths, "fresh")).toMatch(/still in its repo/);
+    expect(await keepSkill(paths, "nope")).toMatch(/isn't a skill installed/);
+    expect(await keepSkill(paths, "gone")).toBeNull();
+    expect((await updateFacts(paths)).held.has("gone")).toBe(true);
+    expect((await stuckSkills(paths)).stuck.map((s) => s.name)).toEqual(["react:parts"]);
+  });
+
+  it("serves both through the skill_updates MCP tool", async () => {
+    const { ctx, paths } = await stuckMachine();
+    const call = async (args: Record<string, unknown>) => {
+      const res = await handleMcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "skill_updates", arguments: args },
+        },
+        ctx,
+      );
+      return res.result as { content: Array<{ text: string }>; isError?: boolean };
+    };
+    // A model may send the names as one string.
+    const listed = await call({ action: "list", names: "gone, fresh" });
+    expect(listed.content[0]?.text).toContain("## gone");
+    expect(listed.content[0]?.text).toContain("Nothing to fix");
+    expect(listed.content[0]?.text).not.toContain("## react:parts");
+    expect((await call({ action: "list" })).content[0]?.text).toContain("## react:parts");
+    const kept = await call({ action: "keep", name: "gone" });
+    expect(kept.content[0]?.text).toContain("Kept");
+    expect((await updateFacts(paths)).held.has("gone")).toBe(true);
+    expect((await call({ action: "keep", name: "fresh" })).isError).toBe(true);
+    expect((await call({ action: "nope" })).isError).toBe(true);
   });
 });

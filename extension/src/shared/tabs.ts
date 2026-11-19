@@ -327,6 +327,10 @@ export type WebviewToHost =
   | { type: "checkUpdates" }
   /** Capabilities: update these installed skills (lock names; the host asks first). */
   | { type: "updateSkills"; names: string[] }
+  /** Capabilities: hand these stuck skills to Claude (lock names). The host
+   *  starts Claude Code in a terminal, or with `copy` puts the request on the
+   *  clipboard. Answered with a skillResult for "fix:<names>". */
+  | { type: "fixSkills"; names: string[]; copy?: boolean }
   /** Capabilities: "Don't update" on or off for one installed skill. */
   | { type: "holdSkill"; name: string; on: boolean }
   /** Capabilities: show what updating one installed skill changes. */
