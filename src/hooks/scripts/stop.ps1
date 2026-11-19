@@ -55,8 +55,20 @@ $toolCalls = 0
 $readCalls = 0
 $lineNum = 0
 $badLine = 0
+# Claude Code writes one reply on several lines, one per thinking, text or
+# tool block, and every line repeats the reply's whole usage. Adding up every
+# line counted a reply two to three times (measured: 2.46x); count each
+# message id once (v0.50).
+$seenReplies = @{}
 foreach ($line in $lines) {
     $lineNum++
+    if ($lineNum -eq $startOffset -and $line) {
+        # The reply the last Stop ended on may go on in this window.
+        try {
+            $prevId = ($line | ConvertFrom-Json -ErrorAction Stop).message.id
+            if ($prevId) { $seenReplies["$prevId"] = $true }
+        } catch {}
+    }
     if ($lineNum -le $startOffset) { continue }
     if (-not $line) { continue }
     try { $e = $line | ConvertFrom-Json -ErrorAction Stop } catch { $badLine = $lineNum; continue }
@@ -81,6 +93,11 @@ foreach ($line in $lines) {
 
     $usage = $e.message.usage
     if (-not $usage) { continue }
+    $replyId = $e.message.id
+    if ($replyId) {
+        if ($seenReplies.ContainsKey("$replyId")) { continue }
+        $seenReplies["$replyId"] = $true
+    }
     $inT  += [int]($usage.input_tokens               | ForEach-Object { if ($_) { $_ } else { 0 } })
     $outT += [int]($usage.output_tokens              | ForEach-Object { if ($_) { $_ } else { 0 } })
     $cc   += [int]($usage.cache_creation_input_tokens | ForEach-Object { if ($_) { $_ } else { 0 } })

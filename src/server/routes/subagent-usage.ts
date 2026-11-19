@@ -9,6 +9,10 @@
 // model, marked `subagent`, so it counts as cost but never as a reply.
 // Before Claude Code 2.1.307, streamed subagent replies recorded placeholder
 // usage; those older numbers can be off.
+//
+// Claude Code writes one reply on several lines, one per content block, each
+// with the same message id and the same usage. Each id counts once (v0.50);
+// before, a reply was counted once per line, 2.4 times too much on real files.
 
 import { open, readdir, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
@@ -25,6 +29,8 @@ const AGENT_FILE = /^agent-[A-Za-z0-9_-]{1,128}\.jsonl$/;
 interface Mark {
   offset: number;
   at: string;
+  /** The last reply counted before `offset`: its other lines may follow. */
+  last?: string;
 }
 type Marks = Record<string, Mark>;
 
@@ -39,13 +45,18 @@ export interface SubagentUsage {
   cache_creation_1h_input_tokens: number;
 }
 
-/** The usage in one stretch of a subagent file, per model. Lines that don't
- *  parse are skipped, not fatal. */
-export function sumSubagentUsage(text: string, subagent: string): SubagentUsage[] {
+/** The usage in one stretch of a subagent file, per model, each reply counted
+ *  once. `seen` holds the reply ids already counted and gets the new ones.
+ *  Lines that don't parse are skipped, not fatal. */
+export function sumSubagentUsage(
+  text: string,
+  subagent: string,
+  seen: Set<string> = new Set(),
+): SubagentUsage[] {
   const byModel = new Map<string, SubagentUsage>();
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
-    let e: { message?: { model?: unknown; usage?: Record<string, unknown> } };
+    let e: { message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> } };
     try {
       e = JSON.parse(line);
     } catch {
@@ -53,6 +64,11 @@ export function sumSubagentUsage(text: string, subagent: string): SubagentUsage[
     }
     const u = e?.message?.usage;
     if (!u || typeof u !== "object") continue;
+    const id = typeof e.message?.id === "string" ? e.message.id : "";
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
     const model = typeof e.message?.model === "string" ? e.message.model : "";
     const n = (v: unknown) => (typeof v === "number" && v > 0 ? v : 0);
     const one =
@@ -116,7 +132,7 @@ export async function newSubagentUsage(
   const read = await readJsonFile<Marks>(marksFile);
   const marks: Marks = read.status === "ok" && read.data ? read.data : {};
   const out: SubagentUsage[] = [];
-  const claims: Record<string, { from: number; to: number }> = {};
+  const claims: Record<string, { from: number; to: number; last?: string }> = {};
   for (const name of names) {
     const file = join(dir, name);
     const from = marks[file]?.offset ?? 0;
@@ -127,8 +143,12 @@ export async function newSubagentUsage(
     if (size < 0 || size === from) continue;
     const got = await readNew(file, from).catch(() => null);
     if (!got || got.end === from) continue;
-    claims[file] = { from, to: got.end };
-    out.push(...sumSubagentUsage(got.text, name.slice("agent-".length, -".jsonl".length)));
+    // The reply the last stretch ended on may go on in this one.
+    const prev = marks[file]?.last;
+    const seen = new Set<string>(prev ? [prev] : []);
+    out.push(...sumSubagentUsage(got.text, name.slice("agent-".length, -".jsonl".length), seen));
+    const last = [...seen].pop();
+    claims[file] = { from, to: got.end, ...(last ? { last } : {}) };
   }
   if (Object.keys(claims).length === 0) return [];
   // Only the first Stop to move a file's offset logs that stretch.
@@ -141,7 +161,9 @@ export async function newSubagentUsage(
       }
       const now = new Date().toISOString();
       const next: Marks = { ...current };
-      for (const [file, c] of Object.entries(claims)) next[file] = { offset: c.to, at: now };
+      for (const [file, c] of Object.entries(claims)) {
+        next[file] = { offset: c.to, at: now, ...(c.last ? { last: c.last } : {}) };
+      }
       const files = Object.keys(next).sort((a, b) =>
         (next[b]?.at ?? "").localeCompare(next[a]?.at ?? ""),
       );

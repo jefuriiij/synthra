@@ -33,6 +33,7 @@ import { codexHookCommand } from "./codex-hook.js";
 import { dashboardCommand } from "./dashboard-command.js";
 import { doctorCommand } from "./doctor-command.js";
 import { mcpBridgeCommand } from "./mcp-bridge.js";
+import { recountCommand } from "./recount-command.js";
 import { removeCommand } from "./remove-command.js";
 import { requireFolder } from "./require-folder.js";
 import { scanCommand, type ScanResult } from "./scan-command.js";
@@ -334,6 +335,16 @@ export function buildProgram() {
     )
     .action(async (file: string) => {
       await restoreCommand(file);
+    });
+
+  prog
+    .command(
+      "recount [path]",
+      "Rebuild this project's token log from Claude Code's transcripts, each reply counted once.",
+    )
+    .option("--yes", "Replace the log without asking", false)
+    .action(async (path: string | undefined, opts: { yes?: boolean }) => {
+      await recountCommand(path ?? ".", { yes: opts.yes });
     });
 
   return prog;

@@ -32,7 +32,9 @@ const p = (
 
 /** By family, then version ("5.5", "4.7", "5"). */
 const PRICES: Record<string, Record<string, ModelPricing>> = {
-  fable: { "5.1": p(10, 50, 0.25, 12.5), "5": p(10, 50, 1, 12.5) },
+  // Fable 5.2 came with its own, lower price (Claude Code 2.1.321); before
+  // v0.50 it was charged as 5.1, 25% too high.
+  fable: { "5.2": p(8, 40, 0.2, 10), "5.1": p(10, 50, 0.25, 12.5), "5": p(10, 50, 1, 12.5) },
   mythos: { "5.1": p(10, 50, 0.25, 12.5), "5": p(10, 50, 1, 12.5) },
   opus: {
     "5.5": p(4, 20, 0.2, 5),

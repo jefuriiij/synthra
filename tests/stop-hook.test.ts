@@ -102,10 +102,14 @@ async function runStopHook(
   await writeFile(join(proj, ".synthra-graph", "mcp_port"), String(port), "utf8");
 
   // Transcript: one assistant turn with usage + a Task delegation, one user line.
+  // The reply is on three lines, one per content block, each with the same
+  // message id and the same usage: that is how Claude Code writes it, and
+  // before v0.50 the hooks counted its tokens once per line.
   const transcript = join(proj, "sess-1234.jsonl");
   const assistant = {
     timestamp: "2026-07-15T10:00:00.000Z",
     message: {
+      id: "msg_01reply",
       model: "claude-fable-5",
       usage: {
         input_tokens: 5,
@@ -130,7 +134,10 @@ async function runStopHook(
     },
   };
   const user = { timestamp: "2026-07-15T10:01:00.000Z", message: { content: "hi" } };
-  await writeFile(transcript, `${JSON.stringify(assistant)}\n${JSON.stringify(user)}\n`, "utf8");
+  const perBlock = assistant.message.content.map((block) =>
+    JSON.stringify({ ...assistant, message: { ...assistant.message, content: [block] } }),
+  );
+  await writeFile(transcript, `${perBlock.join("\n")}\n${JSON.stringify(user)}\n`, "utf8");
 
   // Never inherit the caller's CLAUDE_PROJECT_DIR: run inside Claude Code, it
   // would point the hook at the real project instead of this one.
@@ -245,7 +252,7 @@ describe.runIf(process.platform === "win32")("stop.ps1 live e2e (Windows)", () =
 
   it("marks the turns sent only when /log took them", async () => {
     expect((await runStopHook("powershell.exe", PS1, { logStatus: 500 })).offset).toBeNull();
-    expect((await runStopHook("powershell.exe", PS1)).offset).toBe("2");
+    expect((await runStopHook("powershell.exe", PS1)).offset).toBe("4");
   }, 20_000);
 });
 
@@ -268,7 +275,7 @@ describe.runIf(process.platform !== "win32" && hasTools("bash", "jq", "curl"))(
     it("marks the turns sent only when /log took them", async () => {
       const sh = [join(SCRIPTS, "stop.sh")];
       expect((await runStopHook("bash", sh, { logStatus: 500 })).offset).toBeNull();
-      expect((await runStopHook("bash", sh)).offset).toBe("2");
+      expect((await runStopHook("bash", sh)).offset).toBe("4");
     }, 20_000);
   },
 );

@@ -54,18 +54,34 @@ SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 # is still writing, and reading it now counted it twice (v0.49).
 NEW_LINES=$(sed -n "$((START_OFFSET + 1)),${TOTAL_LINES}p" "$TRANSCRIPT" 2>/dev/null | jq -cR 'fromjson? // empty' 2>/dev/null)
 
+# Claude Code writes one reply on several lines, one per thinking, text or tool
+# block, and every line repeats the reply's whole usage. Adding up every line
+# counted a reply two to three times (measured: 2.46x); count each message id
+# once (v0.50). The reply the last Stop ended on may go on in this window.
+PREV_ID=""
+if [ "$START_OFFSET" -gt 0 ]; then
+  PREV_ID=$(sed -n "${START_OFFSET}p" "$TRANSCRIPT" 2>/dev/null | jq -rR 'fromjson? | .message.id? // empty' 2>/dev/null)
+fi
+
 USAGE=$(printf '%s\n' "$NEW_LINES" \
-  | jq -s '
+  | jq -s --arg prev "$PREV_ID" '
       map(select(.message.usage != null) | .message)
       | reduce .[] as $m (
-          {in:0, out:0, cc:0, cr:0, c1h:0, model:""};
-          .in    += ($m.usage.input_tokens // 0)
-          | .out += ($m.usage.output_tokens // 0)
-          | .cc  += ($m.usage.cache_creation_input_tokens // 0)
-          | .cr  += ($m.usage.cache_read_input_tokens // 0)
-          | .c1h += ($m.usage.cache_creation.ephemeral_1h_input_tokens // 0)
-          | .model = ($m.model // .model)
+          {seen: (if $prev == "" then {} else {($prev): true} end),
+           in:0, out:0, cc:0, cr:0, c1h:0, model:""};
+          (($m.id // "") | tostring) as $id
+          | if ($id != "" and .seen[$id]) then .
+            else
+              (if $id != "" then .seen[$id] = true else . end)
+              | .in  += ($m.usage.input_tokens // 0)
+              | .out += ($m.usage.output_tokens // 0)
+              | .cc  += ($m.usage.cache_creation_input_tokens // 0)
+              | .cr  += ($m.usage.cache_read_input_tokens // 0)
+              | .c1h += ($m.usage.cache_creation.ephemeral_1h_input_tokens // 0)
+              | .model = ($m.model // .model)
+            end
         )
+      | del(.seen)
     ' 2>/dev/null)
 
 # Subagent delegations in the same window: Task/Agent tool_use content blocks.
