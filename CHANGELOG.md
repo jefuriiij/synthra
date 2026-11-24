@@ -7,6 +7,33 @@ For older versions, see [GitHub Releases](https://github.com/jefuriiij/synthra/r
 
 ---
 
+## [0.51.0] (2026-11-25)
+
+### Fixed
+
+- **Synthra no longer takes a port another app is using.** On Windows,
+  Synthra's server (on `127.0.0.1`) could start on a port where another
+  program already listened on `0.0.0.0`, `::` or `::1`. Both then held the
+  port, and everything sent to `localhost` went to Synthra: a backend on
+  port 8080 had its sign-in requests answered with "cross-origin request
+  refused". Synthra now checks whether anything answers on a port before
+  it takes it, also for a pinned `SYN_MCP_PORT` and for the dashboard.
+
+### Changed
+
+- **The MCP server's ports are now 47080 to 47099**, not 8080 to 8099,
+  which dev servers use too. An app that starts after Synthra could still
+  open the same port beside it, so Synthra stays away from those ports.
+  Each project moves to a new port once; reload open Claude chats after
+  the update. If you set `SYN_MCP_PORT` to work around the clash, remove
+  it: a pinned port serves only one project at a time.
+- **A refusal says who answered.** When a request meant for another app
+  reaches Synthra, the answer now reads "This is Synthra's local server
+  on port N, not your app", and Synthra's log names where the request
+  came from.
+
+---
+
 ## [0.50.0] (2026-11-19)
 
 ### Fixed
