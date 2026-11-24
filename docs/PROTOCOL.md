@@ -17,9 +17,9 @@ header to key on: browsers forbid page script from setting it, so a rebound
 request always names the attacker's domain. `Origin` cannot substitute — a
 rebound request is same-origin, so no `Origin` is sent at all.
 
-## HTTP routes — MCP server (port 8080–8099)
+## HTTP routes — MCP server (port 47080–47099)
 
-Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in `8080–8099`, written to `.synthra-graph/mcp_port`. This is a *separate* process/port from the dashboard (see below) — one MCP server owns one project (`mcp_owner.json`; see ARCHITECTURE.md).
+Served by the local MCP server at `http://127.0.0.1:<port>` where `<port>` is in `47080–47099` (`8080–8099` before 0.51), written to `.synthra-graph/mcp_port`. Synthra takes a port only when nothing answers on it over `127.0.0.1` or `::1`: on Windows a bind to `127.0.0.1` works beside another app on `0.0.0.0`, `::` or `::1`, and localhost then reaches Synthra instead of that app. The range keeps away from common dev-server ports because an app that starts after Synthra can still bind beside it. Every refusal (403 cross-origin, 415 content type, 404 unknown path) says it comes from Synthra's local server and names the port. This is a *separate* process/port from the dashboard (see below) — one MCP server owns one project (`mcp_owner.json`; see ARCHITECTURE.md).
 
 | Method | Path | Caller | Purpose |
 |---|---|---|---|

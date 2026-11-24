@@ -1,15 +1,33 @@
-// Finds a free port in the 8080–8099 range. The chosen port is written to
+// Finds a free port in the 47080–47099 range. The chosen port is written to
 // .synthra-graph/mcp_port so PowerShell/Bash hook scripts can read it.
 //
 // `reserveFreePort` binds and HOLDS the socket, then hands it back. The older
 // close-then-return shape left a TOCTOU gap: the port was free again for the
 // microseconds between the probe and the real listen, so two `syn` starting
 // together could both pick it and one would die on EADDRINUSE.
+//
+// Why not 8080–8099 (the range until v0.51): Synthra listens on 127.0.0.1
+// only, and on Windows that bind works while another program holds the same
+// port on 0.0.0.0, "::" or "::1" (unless it asked for exclusive use, and most
+// dev servers don't). Both then listen, and every request to localhost goes to
+// the more specific address: Synthra. A user's backend on 0.0.0.0:8080 had its
+// sign-in requests answered by Synthra's "cross-origin request refused".
+// Two guards:
+//   1. `answers`: before taking a port, try to connect to it on 127.0.0.1 and
+//      ::1. Whatever answers owns it, whatever flags it bound with.
+//   2. The range. A check at start can't see an app that starts LATER (the
+//      editor opens, then the backend): Windows lets it bind next to Synthra
+//      with no error. So the default range keeps away from the ports dev
+//      servers use; it is below the range the OS hands out by itself (49152+).
 
-import { createServer, type Server } from "node:net";
+import { type Server, connect, createServer } from "node:net";
 
-export const PORT_RANGE_START = 8080;
-export const PORT_RANGE_END = 8099;
+export const PORT_RANGE_START = 47080;
+export const PORT_RANGE_END = 47099;
+
+/** How long a connect may take before the port counts as silent. A refused
+ *  connect on loopback answers in 1 to 2 ms. */
+const ANSWER_TIMEOUT_MS = 250;
 
 export interface PortReservation {
   port: number;
@@ -53,7 +71,30 @@ export async function findFreePort(
   return r.port;
 }
 
-function hold(port: number): Promise<Server | null> {
+/** Whether something accepts a connection on this loopback address. */
+function answersOn(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ port, host });
+    const done = (yes: boolean) => {
+      socket.destroy();
+      resolve(yes);
+    };
+    socket.setTimeout(ANSWER_TIMEOUT_MS, () => done(false));
+    socket.once("connect", () => done(true));
+    // Refused, or no IPv6 on this machine: nothing is there.
+    socket.once("error", () => done(false));
+  });
+}
+
+/** Whether another program already serves this port on localhost, over IPv4
+ *  or IPv6. A bind alone can't tell on Windows (see the top of the file). */
+export async function answers(port: number): Promise<boolean> {
+  const [v4, v6] = await Promise.all([answersOn(port, "127.0.0.1"), answersOn(port, "::1")]);
+  return v4 || v6;
+}
+
+async function hold(port: number): Promise<Server | null> {
+  if (await answers(port)) return null;
   return new Promise((resolve) => {
     const s = createServer();
     s.once("error", () => resolve(null));

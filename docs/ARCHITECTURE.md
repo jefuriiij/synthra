@@ -23,7 +23,7 @@ git ops     │   Git watcher           │──┐
                                       │
                                       ▼
                             ┌────────────────────┐
-                            │ HTTP MCP server    │  port 8080-8099, one owner
+                            │ HTTP MCP server    │  port 47080-47099, one owner
                             │  /prime /pack /log │  per project (mcp_owner.json)
                             │  /gate /route /mcp │
                             │  /activity /health │  ← Claude Code hooks + MCP

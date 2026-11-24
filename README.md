@@ -31,7 +31,7 @@ After `syn .` you see:
 
 ```
   ✅  scanned   123 files · 490 symbols · 574 edges
-  🧠  MCP       http://127.0.0.1:8080   →  registered as 'synthra'
+  🧠  MCP       http://127.0.0.1:47080  →  registered as 'synthra'
   📊  Dashboard http://127.0.0.1:8901
   🪝  Hooks     installed in .claude/settings.local.json
 
@@ -312,7 +312,7 @@ Everything works without setup. The everyday settings are in the extension's **S
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SYN_MCP_PORT` | (auto 8080 to 8099) | Pin the MCP server port |
+| `SYN_MCP_PORT` | (auto 47080 to 47099) | Pin the MCP server to one port. One port serves one project, so with this set only one project can run Synthra at a time. Before 0.51 the range was 8080 to 8099, which dev servers use too |
 | `SYN_DASHBOARD_PORT` | `8901` | Dashboard port (tries up to 8910) |
 | `SYN_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `SYN_CLAUDE_BIN` | `claude` | Where the `claude` binary is |

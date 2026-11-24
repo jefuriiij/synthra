@@ -12,7 +12,7 @@ import { createFileWatcher, type FileWatcher } from "../activity/file-watcher.js
 import { createGitWatcher, type GitWatcher } from "../activity/git-watcher.js";
 import { runDoctorChecks, worstStatus } from "../cli/doctor-command.js";
 import { scanProject } from "../cli/scan-command.js";
-import { checkLocalJsonPost } from "../dashboard/origin-guard.js";
+import { checkLocalJsonPost, whoAnswered } from "../dashboard/origin-guard.js";
 import { readGraph, readSymbolIndex } from "../graph/store.js";
 import { SCHEMA_VERSION } from "../graph/types.js";
 import { runCurator } from "../learn/curator.js";
@@ -33,7 +33,7 @@ import type { ServerContext } from "./context.js";
 import { type HookName, noteHook } from "./heartbeat.js";
 import { handleMcpRequest, mcpConnection, VIA_HEADER } from "./mcp.js";
 import { checkOwner, claimOwnership, releaseOwnership } from "./owner.js";
-import { reserveFreePort, type PortReservation } from "./port.js";
+import { answers, reserveFreePort, type PortReservation } from "./port.js";
 import { type Reindexer, createReindexer, rescanAndSwap } from "./reindex.js";
 import { handleActivity } from "./routes/activity.js";
 import { handleContextUpdate } from "./routes/context-update.js";
@@ -159,7 +159,12 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     if (c.req.method === "POST") {
       const guard = checkLocalJsonPost(c.req.header("content-type"), c.req.header("origin"), port);
       if (!guard.ok) {
-        log.warn(`refused POST ${c.req.path}: ${guard.error}`);
+        // The log gets the short reason and where the request came from: an
+        // origin like http://localhost:5173 points at the app whose traffic
+        // landed here. Plain characters only; the header is the sender's.
+        const from = (c.req.header("origin") ?? "").replace(/[^\x21-\x7e]/g, "").slice(0, 100);
+        const why = guard.error.split(". ")[0];
+        log.warn(`refused POST ${c.req.path.slice(0, 120)}${from ? ` from ${from}` : ""}: ${why}`);
         return c.json({ error: guard.error }, guard.status);
       }
     }
@@ -358,6 +363,13 @@ function buildApp(ctx: ServerContext, port: number, version: string): Hono {
     return c.json({ error: err.message }, 400);
   });
 
+  // A request for a path Synthra doesn't have is often meant for another app
+  // on this port number (v0.51: a backend's /api calls landed here). Say who
+  // answered, so the cause is found in one look.
+  app.notFound((c) =>
+    c.json({ error: `${whoAnswered(port)} It has no ${c.req.path.slice(0, 120)}.` }, 404),
+  );
+
   return app;
 }
 
@@ -414,6 +426,13 @@ async function bindServer(
     let port: number;
     if (explicitPort) {
       port = explicitPort;
+      // A pinned port gets the same check as a searched one: on Windows the
+      // bind below would work beside another app on 0.0.0.0 (v0.51).
+      if (await answers(port)) {
+        throw new Error(
+          `Synthra: port ${port} (SYN_MCP_PORT) is already in use by another program`,
+        );
+      }
     } else {
       // The first try asks for the last port; a lost race asks for any.
       const reservation: PortReservation = await reserveFreePort(

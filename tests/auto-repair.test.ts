@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { type DoctorCheck, markRestartFixes } from "../src/cli/doctor-command.js";
 import { startServer } from "../src/server/http.js";
-import { reserveFreePort } from "../src/server/port.js";
+import { PORT_RANGE_END, PORT_RANGE_START, reserveFreePort } from "../src/server/port.js";
 import { resolvePaths } from "../src/shared/paths.js";
 import { fixedBy, shouldAutoRepair, type DoctorCheck as ExtCheck } from "../extension/src/logic.js";
 
@@ -118,18 +118,35 @@ describe("deciding to repair by itself", () => {
 
 describe("a restart keeps its port", () => {
   it("tries the preferred port first", async () => {
-    const a = await reserveFreePort(8090, 8099);
+    const a = await reserveFreePort(PORT_RANGE_START + 10, PORT_RANGE_END);
     const port = a.port;
     await a.release();
-    const b = await reserveFreePort(8080, 8099, port);
+    const b = await reserveFreePort(PORT_RANGE_START, PORT_RANGE_END, port);
     expect(b.port).toBe(port);
     await b.release();
   });
 
+  // v0.51 moved the range away from 8080-8099. A project's old port is not
+  // carried over: it moves into the new range once.
+  it("drops a last port from the old range", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syn-oldport-"));
+    const paths = resolvePaths(root);
+    const first = await startServer(paths, { version: "t" });
+    await first.stop();
+    await writeFile(paths.lastPort, "8080");
+    const second = await startServer(paths, { version: "t" });
+    try {
+      expect(second.port).toBeGreaterThanOrEqual(PORT_RANGE_START);
+      expect(second.port).toBeLessThanOrEqual(PORT_RANGE_END);
+    } finally {
+      await second.stop();
+    }
+  }, 30_000);
+
   it("starts on the port it had last time", async () => {
     const root = await mkdtemp(join(tmpdir(), "syn-lastport-"));
     const paths = resolvePaths(root);
-    const probe = await reserveFreePort(8090, 8099);
+    const probe = await reserveFreePort(PORT_RANGE_START + 10, PORT_RANGE_END);
     const wanted = probe.port;
     await probe.release();
     const first = await startServer(paths, { version: "t" });
